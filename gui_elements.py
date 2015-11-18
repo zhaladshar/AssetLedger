@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import *
 
 class ClickableLabel(QLabel):
     released = pyqtSignal()
-    
+
     def __init__(self, text):
         super().__init__(text)
 
@@ -22,7 +22,7 @@ class CollapsableFrame(QFrame):
         headerLayout.setSpacing(0)
         self.bodyLayout = QVBoxLayout()
         self.body = QWidget()
-        
+
         mainLayout = QVBoxLayout()
 
         headerWidget = QWidget()
@@ -30,7 +30,7 @@ class CollapsableFrame(QFrame):
         headerLbl = QLabel(headerText)
         headerLbl.setMaximumHeight(15)
         headerLbl.setMargin(0)
-        self.caretLbl = ClickableLabel("▲")
+        self.caretLbl = ClickableLabel("â–²")
         self.caretLbl.setMaximumWidth(15)
         self.caretLbl.setStyleSheet("QLabel:hover { color: yellow }")
         self.caretLbl.released.connect(lambda: self.showHideBody())
@@ -40,7 +40,7 @@ class CollapsableFrame(QFrame):
         headerWidget.setLayout(headerLayout)
 
         self.body.setLayout(self.bodyLayout)
-        
+
         mainLayout.addWidget(headerWidget)
         mainLayout.addWidget(self.body)
 
@@ -59,27 +59,27 @@ class CollapsableFrame(QFrame):
     def showHideBody(self):
         if self.body.isHidden() == True:
             self.body.show()
-            self.caretLbl.setText("▲")
+            self.caretLbl.setText("â–²")
         else:
             self.body.hide()
-            self.caretLbl.setText("▼")
-            
+            self.caretLbl.setText("â–¼")
+
 class ButtonToggleBoxItem(QPushButton):
         buttonPressed = pyqtSignal(str)
-        
+
         def __init__(self, text):
                 super().__init__()
                 self.setCheckable(True)
                 self.setChecked(False)
                 self.setText(text)
-                
+
         def mousePressEvent(self, event):
                 self.buttonPressed.emit(self.text())
                 event.accept()
-                
+
 class ButtonToggleBox(QWidget):
         selectionChanged = pyqtSignal(str)
-    
+
         def __init__(self, layoutStyle):
                 super().__init__()
                 self.btnList = []
@@ -89,12 +89,12 @@ class ButtonToggleBox(QWidget):
                     self.layout = QHBoxLayout()
                 self.layout.setSpacing(0)
                 self.layout.addStretch(1)
-                
+
         def addButton(self, button):
                 button.setCheckable(True)
                 button.setChecked(False)
                 button.buttonPressed.connect(self.changeSelection)
-                
+
                 self.btnList.append(button)
 
                 self.layout.takeAt(self.layout.count() - 1)
@@ -129,8 +129,8 @@ class ButtonToggleBox(QWidget):
                 self.selectionChanged.emit(btnText)
 
 class VendorTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, vendorItem):
-        super().__init__()
+    def __init__(self, vendorItem, parent):
+        super().__init__(parent)
         self.vendor = vendorItem
         self.main = QWidget()
 
@@ -158,16 +158,16 @@ class VendorTreeWidgetItem(QTreeWidgetItem):
         self.invoicesLabel = QLabel("Invoices: %d / %d" % (0,
                                                            len(self.vendor.invoices)))
         self.balanceLabel = QLabel(str(self.vendor.balance()))
-        
+
 class VendorTreeWidget(QTreeWidget):
     def __init__(self, vendorDict):
         super().__init__()
         self.vendors = vendorDict
-        self.buildItems()
+        self.buildItems(self)
 
-    def buildItems(self):
+    def buildItems(self, parent):
         for vendorKey in self.vendors.keys():
-            item = VendorTreeWidgetItem(self.vendors[vendorKey])
+            item = VendorTreeWidgetItem(self.vendors[vendorKey], parent)
             self.setItemWidget(item, 0, item.main)
 
     def refreshData(self):

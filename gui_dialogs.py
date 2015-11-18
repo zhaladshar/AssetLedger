@@ -9,19 +9,20 @@ class APView(QWidget):
     def __init__(self, dataConnection, parent):
         super().__init__(parent)
         self.dataConnection = dataConnection
-        self.dbCursor = dbCursor
         self.parent = parent
 
         layout = QVBoxLayout()
 
-        self.vendorLabel = QLabel("Vendors: %d" % len(dataConnection.vendors))
+        self.vendorLabel = QLabel("Vendors: %d" % len(self.dataConnection.vendors))
         layout.addWidget(self.vendorLabel)
 
         # Piece together the vendor layout
         vendorLayout = QHBoxLayout()
 
-        self.vendorDetail = VendorTreeWidget(dataConnection.vendors)
-        
+        self.vendorDetail = VendorTreeWidget(self.dataConnection.vendors)
+        self.vendorDetail.setIndentation(0)
+        self.vendorDetail.setHeaderHidden(True)
+
         newVendor = QPushButton("New")
         newVendor.clicked.connect(self.showNewVendorDialog)
         viewVendor = QPushButton("View")
@@ -49,14 +50,15 @@ class APView(QWidget):
                                dialog.stateText.text(),
                                dialog.zipText.text(),
                                dialog.phoneText.text())
+            self.dataConnection.vendors[newVendor.idNum] = newVendor
             self.parent.dbCursor.execute("""INSERT INTO Vendors (Name, Address, City, State, ZIP, Phone) VALUES (?, ?, ?, ?, ?, ?)""",
                                   (newVendor.name, newVendor.address, newVendor.city, newVendor.state, newVendor.zip, newVendor.phone))
             self.parent.dbConnection.commit()
-        
+
 class VendorDialog(QDialog):
     def __init__(self, mode, parent=None):
         super().__init__(parent)
-        
+
         layout = QGridLayout()
 
         nameLbl = QLabel("Name:")
@@ -65,7 +67,7 @@ class VendorDialog(QDialog):
         stateLbl = QLabel("State:")
         zipLbl = QLabel("ZIP:")
         phoneLbl = QLabel("Phone:")
-        
+
         if mode == "View":
             self.nameText = QLabel(vendor.name)
             self.addressText = QLabel(vendor.address)
@@ -87,7 +89,7 @@ class VendorDialog(QDialog):
             self.stateText = QLineEdit()
             self.zipText = QLineEdit()
             self.phoneText = QLineEdit()
-            
+
         layout.addWidget(nameLbl, 0, 0)
         layout.addWidget(self.nameText, 0, 1)
         layout.addWidget(addressLbl, 1, 0)
@@ -121,4 +123,4 @@ class VendorDialog(QDialog):
 
     def accept(self):
         QDialog.accept(self)
-        
+

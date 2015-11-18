@@ -18,7 +18,7 @@ MAIN_OVERVIEW_INDEX = 0
 COMPANY_OVERVIEW_INDEX = 1
 PROJECT_OVERVIEW_INDEX = 2
 VENDOR_OVERVIEW_INDEX = 3
-                                
+
 class Window(QMainWindow):
     def __init__(self, dbName):
         super().__init__()
@@ -27,6 +27,11 @@ class Window(QMainWindow):
         self.dbCursor = self.dbConnection.cursor()
         self.mainMenu = self.menuBar()
         self.mainWidget = QWidget()
+
+        # Import data
+        self.importData()
+
+        # Provide layout for views
         self.views = QStackedWidget()
         self.generalView = QWidget()
         self.companyOverview = QWidget()
@@ -34,20 +39,21 @@ class Window(QMainWindow):
         self.APOverview = APView(self.data, self)
         self.companyViewSelected = None
         self.detailViewSelected = None
-        
-        # Import data
-        self.importData()
 
         # Build menus
         self.buildMenus()
 
         # Build layout
         self.buildLayout()
-        
+
     def importData(self):
         self.dbCursor.execute("SELECT * FROM Companies")
         for each in self.dbCursor:
             self.data.companies[each[0]] = Company(each[1], each[2], each[0])
+
+        self.dbCursor.execute("SELECT * FROM Vendors")
+        for each in self.dbCursor:
+            self.data.vendors[each[0]] = Vendor(each[1], each[2], each[3], each[4], each[5], each[6], each[0])
 
     def newFile(self):
         pass
@@ -91,7 +97,7 @@ class Window(QMainWindow):
             action.setStatusTip(option[3])
             action.triggered.connect(eval(option[1]))
             self.createMenu.addAction(action)
-            
+
     def buildLayout(self):
         # The mainLayout will be a horizontal layout that will hold a left
         # vertical layout and a right vertical layout
@@ -139,13 +145,13 @@ class Window(QMainWindow):
 
         self.generalView.setLayout(mainOverviewLayout)
         self.views.addWidget(self.generalView)
-        
+
         # Build the company overview widget
         companyOverviewLayout = QVBoxLayout()
         self.companyOverviewProjects = CollapsableFrame("Projects")
         self.companyOverviewProjects.addEntry("Ongoing: # / #")
         self.companyOverviewProjects.addEntry("CIP: $#")
-        self.companyOverviewProjects.addEntry("Budget vs. Actual (excl. ongoing): #↑")
+        self.companyOverviewProjects.addEntry("Budget vs. Actual (excl. ongoing): #â†‘")
         self.companyOverviewProjects.addEntry("Longest ongoing project: # months")
         self.companyOverviewProjects.addEntry("Unpaid invoices: # / $#")
         companyOverviewLayout.addWidget(self.companyOverviewProjects)
@@ -170,7 +176,7 @@ class Window(QMainWindow):
         self.companyOverviewVendors.addEntry("Past due: # / $#")
         companyOverviewLayout.addWidget(self.companyOverviewVendors)
         companyOverviewLayout.addStretch(1)
-        
+
         self.companyOverview.setLayout(companyOverviewLayout)
         self.views.addWidget(self.companyOverview)
 
@@ -184,7 +190,7 @@ class Window(QMainWindow):
         self.projectOverviewBudgets = CollapsableFrame("Budgets")
         self.projectOverviewBudgets.addEntry("Active budgeted projects: # / #")
         self.projectOverviewBudgets.addEntry("Total budgeted projects: # / #")
-        self.projectOverviewBudgets.addEntry("Budget vs. actual (excl. ongoing): #↑")
+        self.projectOverviewBudgets.addEntry("Budget vs. actual (excl. ongoing): #â†‘")
         projectOverviewLayout.addWidget(self.projectOverviewBudgets)
 
         self.projectOverviewProjects = CollapsableFrame("Projects")
@@ -210,14 +216,14 @@ class Window(QMainWindow):
         # Build the asset overview widget
         # Build the ledger overview widget
         # Build the A/P overview widget
-        
+
         rightLayout.addWidget(viewsLayout)
         rightLayout.addWidget(self.views)
 
         # Piece everything together
         mainLayout.addLayout(leftLayout)
         mainLayout.addLayout(rightLayout)
-        
+
         self.mainWidget.setLayout(mainLayout)
         self.setCentralWidget(self.mainWidget)
 
@@ -265,7 +271,7 @@ class Window(QMainWindow):
     def newInvoice(self):
         print("New invoice")
 
-        
+
 if __name__ == "__main__":
         app = QApplication(sys.argv)
         form = Window("data.db")
