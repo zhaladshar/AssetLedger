@@ -1,3 +1,21 @@
+class InvoicesDict(dict):
+    def __init__(self):
+        super().__init__()
+
+    def openInvoices(self):
+        tempDict = {}
+        for invoiceKey in self.keys():
+            if self[invoiceKey].balance() != 0:
+                tempDict[invoiceKey] = self[invoiceKey]
+        return tempDict
+
+    def paidInvoices(self):
+        tempDict = {}
+        for invoiceKey in self.keys():
+            if self[invoiceKey].balance() == 0:
+                tempDict[invoiceKey] = self[invoiceKey]
+        return tempDict
+
 class Payment:
     paymentList = {}
     
@@ -88,3 +106,4 @@ class CorporateStructure:
     def __init__(self):
         self.companies = {}
         self.vendors = {}
+        self.invoices = InvoicesDict()

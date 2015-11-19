@@ -1,62 +1,11 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
-from gui_elements import *
 from classes import *
-
-
-class APView(QWidget):
-    def __init__(self, dataConnection, parent):
-        super().__init__(parent)
-        self.dataConnection = dataConnection
-        self.parent = parent
-
-        layout = QVBoxLayout()
-
-        self.vendorLabel = QLabel("Vendors: %d" % len(self.dataConnection.vendors))
-        layout.addWidget(self.vendorLabel)
-
-        # Piece together the vendor layout
-        vendorLayout = QHBoxLayout()
-
-        self.vendorDetail = VendorTreeWidget(self.dataConnection.vendors)
-        self.vendorDetail.setIndentation(0)
-        self.vendorDetail.setHeaderHidden(True)
-
-        newVendor = QPushButton("New")
-        newVendor.clicked.connect(self.showNewVendorDialog)
-        viewVendor = QPushButton("View")
-        deleteVendor = QPushButton("Delete")
-
-        buttonLayout = QVBoxLayout()
-        buttonLayout.addWidget(newVendor)
-        buttonLayout.addWidget(viewVendor)
-        buttonLayout.addWidget(deleteVendor)
-        buttonLayout.addStretch(1)
-
-        vendorLayout.addWidget(self.vendorDetail)
-        vendorLayout.addLayout(buttonLayout)
-
-        layout.addLayout(vendorLayout)
-
-        self.setLayout(layout)
-
-    def showNewVendorDialog(self):
-        dialog = VendorDialog("New", self)
-        if dialog.exec_():
-            newVendor = Vendor(dialog.nameText.text(),
-                               dialog.addressText.text(),
-                               dialog.cityText.text(),
-                               dialog.stateText.text(),
-                               dialog.zipText.text(),
-                               dialog.phoneText.text())
-            self.dataConnection.vendors[newVendor.idNum] = newVendor
-            self.parent.dbCursor.execute("""INSERT INTO Vendors (Name, Address, City, State, ZIP, Phone) VALUES (?, ?, ?, ?, ?, ?)""",
-                                  (newVendor.name, newVendor.address, newVendor.city, newVendor.state, newVendor.zip, newVendor.phone))
-            self.parent.dbConnection.commit()
+import gui_elements
 
 class VendorDialog(QDialog):
-    def __init__(self, mode, parent=None):
+    def __init__(self, mode, parent=None, vendor=None):
         super().__init__(parent)
 
         layout = QGridLayout()
@@ -102,23 +51,29 @@ class VendorDialog(QDialog):
         layout.addWidget(self.zipText,4, 1)
         layout.addWidget(phoneLbl, 5, 0)
         layout.addWidget(self.phoneText, 5, 1)
+        nextRow = 6
 
-        ######################
-        ############# Add proposal and invoice boxes
-        ######################
+        if mode == "View":
+            invoicesWidget = gui_elements.InvoiceTreeWidget(vendor.invoices)
+            invoicesWidget.setIndentation(0)
+            invoicesWidget.setHeaderHidden(True)
+            layout.addWidget(invoicesWidget, nextRow, 0, 1, 2)
+            nextRow += 1
 
         buttonLayout = QHBoxLayout()
         saveButton = QPushButton("Save")
         saveButton.clicked.connect(self.accept)
-        editButton = QPushButton("Edit")
+        buttonLayout.addWidget(saveButton)
+
+        if mode == "View":
+            editButton = QPushButton("Edit")
+            buttonLayout.addWidget(editButton)
+
         cancelButton = QPushButton("Cancel")
         cancelButton.clicked.connect(self.reject)
-
-        buttonLayout.addWidget(saveButton)
-        buttonLayout.addWidget(editButton)
         buttonLayout.addWidget(cancelButton)
 
-        layout.addLayout(buttonLayout, 6, 0, 2, 0)
+        layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
         self.setLayout(layout)
 
     def accept(self):

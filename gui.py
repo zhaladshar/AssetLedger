@@ -7,7 +7,7 @@ from classes import *
 from gui_elements import *
 from gui_dialogs import *
 
-VIEWS_LIST = ["Projects", "Assets", "Ledger", "Vendors", "A/P"]
+VIEWS_LIST = ["Companies", "Proposals", "Projects", "Assets", "G/L", "A/P"]
 SPLASH_OPTIONS = [("+New Company", "self.newCompany", "Company...", "Create new company"),
                   ("+New Project", "self.newProject", "Project...", "Create new project"),
                   ("+New Proposal", "self.newProposal", "Proposal...", "Create new proposal"),
