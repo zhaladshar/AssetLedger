@@ -32,7 +32,7 @@ class CollapsableFrame(QFrame):
         headerLbl = QLabel(headerText)
         headerLbl.setMaximumHeight(15)
         headerLbl.setMargin(0)
-        self.caretLbl = ClickableLabel("Ã¢â€“Â²")
+        self.caretLbl = ClickableLabel("ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â²")
         self.caretLbl.setMaximumWidth(15)
         self.caretLbl.setStyleSheet("QLabel:hover { color: yellow }")
         self.caretLbl.released.connect(lambda: self.showHideBody())
@@ -61,10 +61,10 @@ class CollapsableFrame(QFrame):
     def showHideBody(self):
         if self.body.isHidden() == True:
             self.body.show()
-            self.caretLbl.setText("Ã¢â€“Â²")
+            self.caretLbl.setText("ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â²")
         else:
             self.body.hide()
-            self.caretLbl.setText("Ã¢â€“Â¼")
+            self.caretLbl.setText("ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¼")
 
 class ButtonToggleBoxItem(QPushButton):
         buttonPressed = pyqtSignal(str)
@@ -397,16 +397,18 @@ class InvoiceWidget(QWidget):
             else:
                 nextId = 1
 
-            # Create new invoice and add links between it and the vendor
-            # Then and the invoice and the link information to the database
+            # Create new invoice and add invoice<-->vendor links
+            # Then add the invoice to the corporate data structure and
+            # update the invoice and the link information to the database
             newInvoice = Invoice(dialog.invoiceDateText.text(),
                                  dialog.dueDateText.text(),
-                                 dialog.amountText.text(),
+                                 float(dialog.amountText.text()),
                                  nextId)
             vendorRegex = re.match(r"\s*([1-9]+).*",dialog.vendorBox.currentText())
-            vendorId = vendorRegex.groups()[0]
-            print(vendorId)
-            #self.invoicesDict[newInvoice.idNum] = newInvoice
+            vendorId = int(vendorRegex.groups()[0])
+            newInvoice.addVendor(self.parent.dataConnection.vendors[vendorId])
+            self.parent.dataConnection.vendors[vendorId].addInvoice(newInvoice)
+            self.invoicesDict[newInvoice.idNum] = newInvoice
             #self.parent.parent.dbCursor.execute("INSERT INTO Invoices (InvoiceDate, DueDate, Amount) VALUES (?, ?, ?)",
                                   #(newInvoice.invoiceDate, newInvoice.dueDate, newInvoice.amount))
             #self.parent.parent.dbConnection.commit()

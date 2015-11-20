@@ -18,7 +18,7 @@ class InvoicesDict(dict):
 
 class Payment:
     paymentList = {}
-    
+
     def __init__(self, invoice, datePaid, amountPaid, idNum=None):
         if self.idNum == None:
             self.idNum = len(paymentList) + 1
@@ -30,7 +30,7 @@ class Payment:
 
 class Invoice:
     invoiceList = {}
-    
+
     def __init__(self, date, dueDate, amount, idNum=None):
         if idNum == None:
             self.idNum = len(invoiceList) + 1
@@ -39,6 +39,7 @@ class Invoice:
         self.invoiceDate = date
         self.dueDate = dueDate
         self.amount = amount
+        self.vendor = None
         self.payments = []
 
     def balance(self):
@@ -50,9 +51,12 @@ class Invoice:
             amtPaid += payment.amountPaid
         return amtPaid
 
+    def addVendor(self, vendor):
+        self.vendor = vendor
+
 class Vendor:
     vendorList = {}
-    
+
     def __init__(self, name, address, city, state, zipcode, phone, idNum=None):
         if idNum == None:
             self.idNum = self.getLargestVendorKey() + 1
@@ -77,9 +81,12 @@ class Vendor:
             amountInvoiced += self.invoices[invoiceKey].balance()
         return amountInvoiced - amountPaid
 
+    def addInvoice(self, invoice):
+        self.invoices[invoice.idNum] = invoice
+
 class Company:
     companyList = {}
-    
+
     def __init__(self, name, shortName, idNum=None):
         if idNum == None:
             self.idNum = len(companyList) + 1
