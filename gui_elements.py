@@ -2,6 +2,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from gui_dialogs import *
+import re
 
 class ClickableLabel(QLabel):
     released = pyqtSignal()
@@ -31,7 +32,7 @@ class CollapsableFrame(QFrame):
         headerLbl = QLabel(headerText)
         headerLbl.setMaximumHeight(15)
         headerLbl.setMargin(0)
-        self.caretLbl = ClickableLabel("â–²")
+        self.caretLbl = ClickableLabel("Ã¢â€“Â²")
         self.caretLbl.setMaximumWidth(15)
         self.caretLbl.setStyleSheet("QLabel:hover { color: yellow }")
         self.caretLbl.released.connect(lambda: self.showHideBody())
@@ -60,10 +61,10 @@ class CollapsableFrame(QFrame):
     def showHideBody(self):
         if self.body.isHidden() == True:
             self.body.show()
-            self.caretLbl.setText("â–²")
+            self.caretLbl.setText("Ã¢â€“Â²")
         else:
             self.body.hide()
-            self.caretLbl.setText("â–¼")
+            self.caretLbl.setText("Ã¢â€“Â¼")
 
 class ButtonToggleBoxItem(QPushButton):
         buttonPressed = pyqtSignal(str)
@@ -153,12 +154,12 @@ class VendorTreeWidgetItem(QTreeWidgetItem):
         self.main.setLayout(layout)
 
     def refreshData(self):
-        self.nameLabel = QLabel(self.vendor.name)
-        self.bidsLabel = QLabel("Bids: %d / %d" % (len(self.vendor.proposals),
+        self.nameLabel.setText(self.vendor.name)
+        self.bidsLabel.setText("Bids: %d / %d" % (len(self.vendor.proposals),
                                                    0))
-        self.invoicesLabel = QLabel("Invoices: %d / %d" % (0,
+        self.invoicesLabel.setText("Invoices: %d / %d" % (0,
                                                            len(self.vendor.invoices)))
-        self.balanceLabel = QLabel(str(self.vendor.balance()))
+        self.balanceLabel.setText(str(self.vendor.balance()))
 
 class VendorTreeWidget(QTreeWidget):
     def __init__(self, vendorsDict):
@@ -174,15 +175,15 @@ class VendorTreeWidget(QTreeWidget):
         self.setItemWidget(widgetItem, 0, widgetItem.main)
 
     def refreshData(self):
-        for item in self.items():
-            item.refreshData()
+        for idx in range(self.topLevelItemCount()):
+            self.topLevelItem(idx).refreshData()
 
 class VendorWidget(QWidget):
     def __init__(self, vendorsDict, parent):
         super().__init__()
         self.vendorsDict = vendorsDict
         self.parent = parent
-        
+
         mainLayout = QVBoxLayout()
 
         self.vendorLabel = QLabel("Vendors: %d" % len(self.vendorsDict))
@@ -223,15 +224,20 @@ class VendorWidget(QWidget):
     def showNewVendorDialog(self):
         dialog = VendorDialog("New", self)
         if dialog.exec_():
+            # Find current largest id and increment by one
+            largestId = self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'Vendors'")
+            nextId = largestId.fetchone()[0] + 1
+
             # Create new vendor and add it to database and company data
             newVendor = Vendor(dialog.nameText.text(),
                                dialog.addressText.text(),
                                dialog.cityText.text(),
                                dialog.stateText.text(),
                                dialog.zipText.text(),
-                               dialog.phoneText.text())
+                               dialog.phoneText.text(),
+                               nextId)
             self.vendorsDict[newVendor.idNum] = newVendor
-            self.parent.parent.dbCursor.execute("""INSERT INTO Vendors (Name, Address, City, State, ZIP, Phone) VALUES (?, ?, ?, ?, ?, ?)""",
+            self.parent.parent.dbCursor.execute("INSERT INTO Vendors (Name, Address, City, State, ZIP, Phone) VALUES (?, ?, ?, ?, ?, ?)",
                                   (newVendor.name, newVendor.address, newVendor.city, newVendor.state, newVendor.zip, newVendor.phone))
             self.parent.parent.dbConnection.commit()
 
@@ -244,11 +250,32 @@ class VendorWidget(QWidget):
         idxToShow = self.vendorTreeWidget.indexFromItem(self.vendorTreeWidget.currentItem())
         item = self.vendorTreeWidget.itemFromIndex(idxToShow)
 
+        # Only display dialog if an item in the widget tree has been selected
         if item:
             dialog = VendorDialog("View", self, item.vendor)
             if dialog.exec_():
-                print("Closed")
-            
+                if dialog.hasChanges == True:
+                    # Commit changes to database and to vendor entry
+                    sql = ("UPDATE Vendors SET Name = '" + dialog.nameText_edit.text() +
+                          "', Address = '" + dialog.addressText_edit.text() +
+                          "', City = '" + dialog.cityText_edit.text() +
+                          "', State = '" + dialog.stateText_edit.text() +
+                          "', ZIP = '" + dialog.zipText_edit.text() +
+                          "', Phone = '" + dialog.phoneText_edit.text() +
+                          "' WHERE idNum = " + str(item.vendor.idNum))
+
+                    self.parent.parent.dbCursor.execute(sql)
+                    self.parent.parent.dbConnection.commit()
+
+                    self.vendorsDict[item.vendor.idNum].name = dialog.nameText_edit.text()
+                    self.vendorsDict[item.vendor.idNum].address = dialog.addressText_edit.text()
+                    self.vendorsDict[item.vendor.idNum].city = dialog.cityText_edit.text()
+                    self.vendorsDict[item.vendor.idNum].state = dialog.stateText_edit.text()
+                    self.vendorsDict[item.vendor.idNum].zip = dialog.zipText_edit.text()
+                    self.vendorsDict[item.vendor.idNum].phone = dialog.phoneText_edit.text()
+
+                    self.vendorTreeWidget.refreshData()
+
     def deleteSelectedVendorFromList(self):
         # Get item that was deleted from VendorTreeWidget
         idxToDelete = self.vendorTreeWidget.indexOfTopLevelItem(self.vendorTreeWidget.currentItem())
@@ -287,7 +314,7 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
         layout.addWidget(invoiceAmountLabel)
         layout.addWidget(invoicePaidLabel)
         layout.addWidget(invoiceBalanceLabel)
-        
+
         self.main.setLayout(layout)
 
     def refreshData(self):
@@ -330,7 +357,7 @@ class InvoiceWidget(QWidget):
         self.openInvoicesTreeWidget.setHeaderHidden(True)
         self.openInvoicesTreeWidget.setMinimumWidth(500)
         self.openInvoicesTreeWidget.setMaximumHeight(100)
-        
+
         self.paidInvoicesTreeWidget = InvoiceTreeWidget(self.invoicesDict.paidInvoices())
         self.paidInvoicesTreeWidget.setIndentation(0)
         self.paidInvoicesTreeWidget.setHeaderHidden(True)
@@ -345,6 +372,7 @@ class InvoiceWidget(QWidget):
 
         buttonLayout = QVBoxLayout()
         newInvoiceButton = QPushButton("New")
+        newInvoiceButton.clicked.connect(self.showNewInvoiceDialog)
         viewInvoiceButton = QPushButton("View")
         deleteInvoiceButton = QPushButton("Delete")
 
@@ -358,7 +386,42 @@ class InvoiceWidget(QWidget):
         mainLayout.addLayout(subLayout)
 
         self.setLayout(mainLayout)
-        
+
+    def showNewInvoiceDialog(self):
+        dialog = InvoiceDialog("New", self)
+        if dialog.exec_():
+            # Find current largest id and increment by one
+            largestId = self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'Invoices'")
+            if largestId.fetchone():
+                nextId = largestId.fetchone()[0] + 1
+            else:
+                nextId = 1
+
+            # Create new invoice and add links between it and the vendor
+            # Then and the invoice and the link information to the database
+            newInvoice = Invoice(dialog.invoiceDateText.text(),
+                                 dialog.dueDateText.text(),
+                                 dialog.amountText.text(),
+                                 nextId)
+            vendorRegex = re.match(r"\s*([1-9]+).*",dialog.vendorBox.currentText())
+            vendorId = vendorRegex.groups()[0]
+            print(vendorId)
+            #self.invoicesDict[newInvoice.idNum] = newInvoice
+            #self.parent.parent.dbCursor.execute("INSERT INTO Invoices (InvoiceDate, DueDate, Amount) VALUES (?, ?, ?)",
+                                  #(newInvoice.invoiceDate, newInvoice.dueDate, newInvoice.amount))
+            #self.parent.parent.dbConnection.commit()
+
+
+
+            # Make invoice into an InvoiceTreeWidgetItem and add it to VendorTree
+            item = InvoiceTreeWidgetItem(newInvoice, self.openInvoicesTreeWidget)
+            self.openInvoicesTreeWidget.addItem(item)
+            self.updateInvoicesCount()
+
+    def updateInvoicesCount(self):
+        self.openInvoicesLabel.setText("Open Invoices: %d" % len(self.invoicesDict.openInvoices()))
+        self.paidInvoicesLabel.setText("Paid Invoices: %d" % len(self.invoicesDict.paidInvoices()))
+
 class APView(QWidget):
     def __init__(self, dataConnection, parent):
         super().__init__(parent)

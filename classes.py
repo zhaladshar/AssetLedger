@@ -31,12 +31,11 @@ class Payment:
 class Invoice:
     invoiceList = {}
     
-    def __init__(self, vendor, date, dueDate, amount, idNum=None):
+    def __init__(self, date, dueDate, amount, idNum=None):
         if idNum == None:
             self.idNum = len(invoiceList) + 1
         else:
             self.idNum = idNum
-        self.vendor = vendor
         self.invoiceDate = date
         self.dueDate = dueDate
         self.amount = amount
@@ -56,7 +55,7 @@ class Vendor:
     
     def __init__(self, name, address, city, state, zipcode, phone, idNum=None):
         if idNum == None:
-            self.idNum = len(Vendor.vendorList) + 1
+            self.idNum = self.getLargestVendorKey() + 1
         else:
             self.idNum = idNum
         self.name = name
