@@ -55,6 +55,15 @@ class Window(QMainWindow):
         for each in self.dbCursor:
             self.data.vendors[each[0]] = Vendor(each[1], each[2], each[3], each[4], each[5], each[6], each[0])
 
+        self.dbCursor.execute("SELECT * FROM Invoices")
+        for each in self.dbCursor:
+            self.data.invoices[each[0]] = Invoice(each[1], each[2], each[3], each[0])
+
+        self.dbCursor.execute("SELECT * FROM Xref")
+        for each in self.dbCursor:
+            eval("self.data." + each[0] + "[" + str(each[1]) + "]." + each[2] + \
+                 "(" + "self.data." + each[3] + "[" + str(each[4]) + "])")
+
     def newFile(self):
         pass
 

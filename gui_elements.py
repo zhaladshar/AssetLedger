@@ -140,7 +140,7 @@ class VendorTreeWidgetItem(QTreeWidgetItem):
         self.nameLabel = QLabel(self.vendor.name)
         self.bidsLabel = QLabel("Bids: %d / %d" % (len(self.vendor.proposals),
                                                    0))
-        self.invoicesLabel = QLabel("Invoices: %d / %d" % (0,
+        self.invoicesLabel = QLabel("Invoices: %d / %d" % (self.vendor.openInvoiceCount(),
                                                            len(self.vendor.invoices)))
         self.balanceLabel = QLabel(str(self.vendor.balance()))
 
@@ -157,7 +157,7 @@ class VendorTreeWidgetItem(QTreeWidgetItem):
         self.nameLabel.setText(self.vendor.name)
         self.bidsLabel.setText("Bids: %d / %d" % (len(self.vendor.proposals),
                                                    0))
-        self.invoicesLabel.setText("Invoices: %d / %d" % (0,
+        self.invoicesLabel.setText("Invoices: %d / %d" % (self.vendor.openInvoiceCount(),
                                                            len(self.vendor.invoices)))
         self.balanceLabel.setText(str(self.vendor.balance()))
 
@@ -225,8 +225,12 @@ class VendorWidget(QWidget):
         dialog = VendorDialog("New", self)
         if dialog.exec_():
             # Find current largest id and increment by one
-            largestId = self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'Vendors'")
-            nextId = largestId.fetchone()[0] + 1
+            self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'Vendors'")
+            largestId = self.parent.parent.dbCursor.fetchone()
+            if largestId != None:
+                nextId = largestId[0] + 1
+            else:
+                nextId = 1
 
             # Create new vendor and add it to database and company data
             newVendor = Vendor(dialog.nameText.text(),
@@ -281,17 +285,27 @@ class VendorWidget(QWidget):
         idxToDelete = self.vendorTreeWidget.indexOfTopLevelItem(self.vendorTreeWidget.currentItem())
 
         if idxToDelete >= 0:
-            item = self.vendorTreeWidget.takeTopLevelItem(idxToDelete)
+            item = self.vendorTreeWidget.topLevelItem(idxToDelete)
 
-            # Delete item from database and update the vendors dictionary
-            self.parent.parent.dbCursor.execute("DELETE FROM Vendors WHERE idNum=?", (item.vendor.idNum,))
-            self.parent.parent.dbConnection.commit()
-            self.vendorsDict.pop(item.vendor.idNum)
-            self.updateVendorCount()
+            # Only delete vendor if it has no invoices or proposals linked to it
+            if item.vendor.invoices or item.vendor.proposals:
+                deleteError = QMessageBox()
+                deleteError.setText("Cannot delete a vendor that has issued invoices or bids.  Delete those first.")
+                deleteError.exec_()
+            else:
+                # Delete item from database and update the vendors dictionary
+                self.vendorTreeWidget.takeTopLevelItem(idxToDelete)
+                self.parent.parent.dbCursor.execute("DELETE FROM Vendors WHERE idNum=?", (item.vendor.idNum,))
+                self.parent.parent.dbConnection.commit()
+                self.vendorsDict.pop(item.vendor.idNum)
+                self.updateVendorCount()
 
     def updateVendorCount(self):
         self.vendorLabel.setText("Vendors: %d" % len(self.vendorsDict))
 
+    def refreshVendorTree(self):
+        self.vendorTreeWidget.refreshData()
+        
 class InvoiceTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, invoiceItem, parent):
         super().__init__(parent)
@@ -305,6 +319,11 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
         invoiceAmountLabel = QLabel(str(self.invoice.amount))
         invoicePaidLabel = QLabel(str(self.invoice.paid()))
         invoiceBalanceLabel = QLabel(str(self.invoice.balance()))
+        payInvoiceLabel = ClickableLabel("$")
+        payInvoiceLabel.setStyleSheet("QLabel { color: black } QLabel:hover { color: green }")
+
+        if self.invoice.balance() == 0:
+            payInvoiceLabel.setText("")
 
         layout = QHBoxLayout()
         layout.addWidget(idLabel)
@@ -314,6 +333,7 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
         layout.addWidget(invoiceAmountLabel)
         layout.addWidget(invoicePaidLabel)
         layout.addWidget(invoiceBalanceLabel)
+        layout.addWidget(payInvoiceLabel)
 
         self.main.setLayout(layout)
 
@@ -375,6 +395,7 @@ class InvoiceWidget(QWidget):
         newInvoiceButton.clicked.connect(self.showNewInvoiceDialog)
         viewInvoiceButton = QPushButton("View")
         deleteInvoiceButton = QPushButton("Delete")
+        deleteInvoiceButton.clicked.connect(self.deleteSelectedInvoiceFromList)
 
         buttonLayout.addWidget(newInvoiceButton)
         buttonLayout.addWidget(viewInvoiceButton)
@@ -391,9 +412,10 @@ class InvoiceWidget(QWidget):
         dialog = InvoiceDialog("New", self)
         if dialog.exec_():
             # Find current largest id and increment by one
-            largestId = self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'Invoices'")
-            if largestId.fetchone():
-                nextId = largestId.fetchone()[0] + 1
+            self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'Invoices'")
+            largestId = self.parent.parent.dbCursor.fetchone()
+            if largestId != None:
+                nextId = largestId[0] + 1
             else:
                 nextId = 1
 
@@ -404,22 +426,48 @@ class InvoiceWidget(QWidget):
                                  dialog.dueDateText.text(),
                                  float(dialog.amountText.text()),
                                  nextId)
-            vendorRegex = re.match(r"\s*([1-9]+).*",dialog.vendorBox.currentText())
+            vendorRegex = re.match(r"\s*([0-9]+).*",dialog.vendorBox.currentText())
             vendorId = int(vendorRegex.groups()[0])
             newInvoice.addVendor(self.parent.dataConnection.vendors[vendorId])
             self.parent.dataConnection.vendors[vendorId].addInvoice(newInvoice)
             self.invoicesDict[newInvoice.idNum] = newInvoice
-            #self.parent.parent.dbCursor.execute("INSERT INTO Invoices (InvoiceDate, DueDate, Amount) VALUES (?, ?, ?)",
-                                  #(newInvoice.invoiceDate, newInvoice.dueDate, newInvoice.amount))
-            #self.parent.parent.dbConnection.commit()
-
-
+            self.parent.parent.dbCursor.execute("INSERT INTO Invoices (InvoiceDate, DueDate, Amount) VALUES (?, ?, ?)",
+                                  (newInvoice.invoiceDate, newInvoice.dueDate, newInvoice.amount))
+            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, 'addVendor', 'vendors', ?)", (nextId, vendorId))
+            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('vendors', ?, 'addInvoice', 'invoices', ?)", (vendorId, nextId))
+            self.parent.parent.dbConnection.commit()
 
             # Make invoice into an InvoiceTreeWidgetItem and add it to VendorTree
             item = InvoiceTreeWidgetItem(newInvoice, self.openInvoicesTreeWidget)
             self.openInvoicesTreeWidget.addItem(item)
             self.updateInvoicesCount()
 
+            # Update vendor tree widget to display new information based on
+            # invoice just created
+            self.parent.vendorWidget.refreshVendorTree()
+
+    def deleteSelectedInvoiceFromList(self):
+        # Check to see if the item to delete is in the open invoices tree widget
+        idxToDelete = self.openInvoicesTreeWidget.indexOfTopLevelItem(self.openInvoicesTreeWidget.currentItem())
+
+        if idxToDelete >= 0:
+            item = self.openInvoicesTreeWidget.takeTopLevelItem(idxToDelete)
+        else:
+            # Selected item not in open invoices tree widget--delete from paid
+            # invoices tree widget
+            idxToDelete = self.paidInvoicesTreeWidget.indexOfTopLevelItem(self.paidInvoicesTreeWidget.currentItem())
+            item = self.paidInvoicesTreeWidget.takeTopLevelItem(idxToDelete)
+
+        self.parent.parent.dbCursor.execute("DELETE FROM Invoices WHERE idNum=?", (item.invoice.idNum,))
+        self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='vendors' AND ObjectIdBeingLinked=?)",
+                                            (item.invoice.idNum, item.invoice.vendor.idNum))
+        self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
+                                            (item.invoice.vendor.idNum, item.invoice.idNum))
+        self.parent.parent.dbConnection.commit()
+        self.invoicesDict.pop(item.invoice.idNum)
+        self.updateInvoicesCount()
+        self.parent.vendorWidget.refreshVendorTree()
+        
     def updateInvoicesCount(self):
         self.openInvoicesLabel.setText("Open Invoices: %d" % len(self.invoicesDict.openInvoices()))
         self.paidInvoicesLabel.setText("Paid Invoices: %d" % len(self.invoicesDict.paidInvoices()))
@@ -431,7 +479,6 @@ class APView(QWidget):
         self.parent = parent
 
         layout = QVBoxLayout()
-
         self.vendorWidget = VendorWidget(self.dataConnection.vendors, self)
         self.invoiceWidget = InvoiceWidget(self.dataConnection.invoices, self)
         layout.addWidget(self.vendorWidget)

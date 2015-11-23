@@ -57,11 +57,8 @@ class Invoice:
 class Vendor:
     vendorList = {}
 
-    def __init__(self, name, address, city, state, zipcode, phone, idNum=None):
-        if idNum == None:
-            self.idNum = self.getLargestVendorKey() + 1
-        else:
-            self.idNum = idNum
+    def __init__(self, name, address, city, state, zipcode, phone, idNum):
+        self.idNum = idNum
         self.name = name
         self.address = address
         self.city = city
@@ -83,6 +80,13 @@ class Vendor:
 
     def addInvoice(self, invoice):
         self.invoices[invoice.idNum] = invoice
+
+    def openInvoiceCount(self):
+        count = 0
+        for invoiceKey in self.invoices.keys():
+            if self.invoices[invoiceKey].balance != 0:
+                count += 1
+        return count
 
 class Company:
     companyList = {}
@@ -113,3 +117,6 @@ class CorporateStructure:
         self.companies = {}
         self.vendors = {}
         self.invoices = InvoicesDict()
+        self.proposals = {}
+        self.assets = {}
+        self.projects = {}
