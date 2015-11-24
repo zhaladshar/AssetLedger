@@ -81,6 +81,9 @@ class Vendor:
     def addInvoice(self, invoice):
         self.invoices[invoice.idNum] = invoice
 
+    def removeInvoice(self, invoice):
+        self.invoices.pop(invoice.idNum)
+
     def openInvoiceCount(self):
         count = 0
         for invoiceKey in self.invoices.keys():

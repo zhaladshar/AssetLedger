@@ -112,6 +112,8 @@ class VendorDialog(QDialog):
 class InvoiceDialog(QDialog):
     def __init__(self, mode, parent=None, invoice=None):
         super().__init__(parent)
+        self.hasChanges = False
+        self.vendorChanged = False
 
         self.layout = QGridLayout()
 
@@ -127,11 +129,13 @@ class InvoiceDialog(QDialog):
         self.vendorBox.addItems(vendorList)
 
         if mode == "View":
-            self.vendorBox.setCurrentIndex(self.vendorBox.findText(invoice.vendor.name))
-            self.vendorBox.setEditable(False)
+            self.vendorBox.setCurrentIndex(self.vendorBox.findText(str("%4s" % invoice.vendor.idNum) + " - " + invoice.vendor.name))
+            self.vendorBox.setEnabled(False)
+            self.currentVendor = self.vendorBox.currentIndex()
             self.invoiceDateText = QLabel(invoice.invoiceDate)
             self.dueDateText = QLabel(invoice.dueDate)
-            self.amountText = QLabel(invoice.amount)
+            self.amountText = QLabel(str(invoice.amount))
+
         else:
             self.invoiceDateText = QLineEdit()
             self.dueDateText = QLineEdit()
@@ -168,5 +172,23 @@ class InvoiceDialog(QDialog):
         self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
         self.setLayout(self.layout)
 
+    def makeLabelsEditable(self):
+        self.vendorBox.setEnabled(True)
+        self.invoiceDateText_edit = QLineEdit(self.invoiceDateText.text())
+        self.invoiceDateText_edit.textEdited.connect(self.changed)
+        self.dueDateText_edit = QLineEdit(self.dueDateText.text())
+        self.dueDateText_edit.textEdited.connect(self.changed)
+        self.amountText_edit = QLineEdit(self.amountText.text())
+        self.amountText_edit.textEdited.connect(self.changed)
+
+        self.layout.addWidget(self.invoiceDateText_edit, 1, 1)
+        self.layout.addWidget(self.dueDateText_edit, 2, 1)
+        self.layout.addWidget(self.amountText_edit, 3, 1)
+
+    def changed(self):
+        self.hasChanges = True
+
     def accept(self):
+        if self.currentVendor != self.vendorBox.currentIndex():
+            self.vendorChanged = True
         QDialog.accept(self)

@@ -290,6 +290,7 @@ class VendorWidget(QWidget):
             # Only delete vendor if it has no invoices or proposals linked to it
             if item.vendor.invoices or item.vendor.proposals:
                 deleteError = QMessageBox()
+                deleteError.setWindowTitle("Can't delete")
                 deleteError.setText("Cannot delete a vendor that has issued invoices or bids.  Delete those first.")
                 deleteError.exec_()
             else:
@@ -394,6 +395,7 @@ class InvoiceWidget(QWidget):
         newInvoiceButton = QPushButton("New")
         newInvoiceButton.clicked.connect(self.showNewInvoiceDialog)
         viewInvoiceButton = QPushButton("View")
+        viewInvoiceButton.clicked.connect(self.showViewInvoiceDialog)
         deleteInvoiceButton = QPushButton("Delete")
         deleteInvoiceButton.clicked.connect(self.deleteSelectedInvoiceFromList)
 
@@ -446,6 +448,36 @@ class InvoiceWidget(QWidget):
             # invoice just created
             self.parent.vendorWidget.refreshVendorTree()
 
+    def showViewInvoiceDialog(self):
+        # Determine which invoice tree (if any) has been selected
+        idxToShow = self.openInvoicesTreeWidget.indexFromItem(self.openInvoicesTreeWidget.currentItem())
+        item = self.openInvoicesTreeWidget.itemFromIndex(idxToShow)
+        if item == None:
+            idxToShow = self.paidInvoicesTreeWidget.indexFromItem(self.paidInvoicesTreeWidget.currentItem())
+            item = self.paidInvoicesTreeWidget.itemFromIndex(idxToShow)
+
+        # Only show dialog if an item has been selected
+        if item:
+            dialog = InvoiceDialog("View", self, item.invoice)
+            if dialog.exec_():
+                print(dialog.hasChanges)
+                if dialog.hasChanges == True:
+                    # Commit changes to database and to vendor entry
+                    sql = ("UPDATE Invoices SET InvoiceDate = '" + dialog.invoiceDateText_edit.text() +
+                          "', DueDate = '" + dialog.dueDateText_edit.text() +
+                          "', Amount = '" + dialog.amountText_edit.text() +
+                          "' WHERE idNum = " + str(item.invoice.idNum))
+
+                    self.parent.parent.dbCursor.execute(sql)
+                    self.parent.parent.dbConnection.commit()
+
+                    self.invoicesDict[item.invoice.idNum].invoiceDate = dialog.invoiceDateText_edit.text()
+                    self.invoicesDict[item.invoice.idNum].dueDate = dialog.dueDateText_edit.text()
+                    self.invoicesDict[item.invoice.idNum].amount = dialog.amountText_edit.text()
+
+                    self.openInvoicesTreeWidget.refreshData()
+                    self.paidInvoicesTreeWidget.refreshData()
+        
     def deleteSelectedInvoiceFromList(self):
         # Check to see if the item to delete is in the open invoices tree widget
         idxToDelete = self.openInvoicesTreeWidget.indexOfTopLevelItem(self.openInvoicesTreeWidget.currentItem())
@@ -458,15 +490,16 @@ class InvoiceWidget(QWidget):
             idxToDelete = self.paidInvoicesTreeWidget.indexOfTopLevelItem(self.paidInvoicesTreeWidget.currentItem())
             item = self.paidInvoicesTreeWidget.takeTopLevelItem(idxToDelete)
 
-        self.parent.parent.dbCursor.execute("DELETE FROM Invoices WHERE idNum=?", (item.invoice.idNum,))
-        self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='vendors' AND ObjectIdBeingLinked=?)",
-                                            (item.invoice.idNum, item.invoice.vendor.idNum))
-        self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
-                                            (item.invoice.vendor.idNum, item.invoice.idNum))
-        self.parent.parent.dbConnection.commit()
-        self.invoicesDict.pop(item.invoice.idNum)
-        self.updateInvoicesCount()
-        self.parent.vendorWidget.refreshVendorTree()
+        if item:
+            self.parent.parent.dbCursor.execute("DELETE FROM Invoices WHERE idNum=?", (item.invoice.idNum,))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='vendors' AND ObjectIdBeingLinked=?)",
+                                                (item.invoice.idNum, item.invoice.vendor.idNum))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
+                                                (item.invoice.vendor.idNum, item.invoice.idNum))
+            self.parent.parent.dbConnection.commit()
+            self.invoicesDict.pop(item.invoice.idNum)
+            self.updateInvoicesCount()
+            self.parent.vendorWidget.refreshVendorTree()
         
     def updateInvoicesCount(self):
         self.openInvoicesLabel.setText("Open Invoices: %d" % len(self.invoicesDict.openInvoices()))
