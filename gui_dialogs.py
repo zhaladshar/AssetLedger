@@ -114,6 +114,7 @@ class InvoiceDialog(QDialog):
         super().__init__(parent)
         self.hasChanges = False
         self.vendorChanged = False
+        self.mode = mode
 
         self.layout = QGridLayout()
 
@@ -128,7 +129,7 @@ class InvoiceDialog(QDialog):
             vendorList.append(str("%4s" % vendor.idNum) + " - " + vendor.name)
         self.vendorBox.addItems(vendorList)
 
-        if mode == "View":
+        if self.mode == "View":
             self.vendorBox.setCurrentIndex(self.vendorBox.findText(str("%4s" % invoice.vendor.idNum) + " - " + invoice.vendor.name))
             self.vendorBox.setEnabled(False)
             self.currentVendor = self.vendorBox.currentIndex()
@@ -156,7 +157,7 @@ class InvoiceDialog(QDialog):
         saveButton.clicked.connect(self.accept)
         buttonLayout.addWidget(saveButton)
 
-        if mode == "View":
+        if self.mode == "View":
             editButton = QPushButton("Edit")
             editButton.clicked.connect(self.makeLabelsEditable)
             buttonLayout.addWidget(editButton)
@@ -189,6 +190,7 @@ class InvoiceDialog(QDialog):
         self.hasChanges = True
 
     def accept(self):
-        if self.currentVendor != self.vendorBox.currentIndex():
-            self.vendorChanged = True
+        if self.mode == "View":
+            if self.currentVendor != self.vendorBox.currentIndex():
+                self.vendorChanged = True
         QDialog.accept(self)

@@ -497,6 +497,7 @@ class InvoiceWidget(QWidget):
             self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
                                                 (item.invoice.vendor.idNum, item.invoice.idNum))
             self.parent.parent.dbConnection.commit()
+            self.parent.parent.data.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
             self.invoicesDict.pop(item.invoice.idNum)
             self.updateInvoicesCount()
             self.parent.vendorWidget.refreshVendorTree()
