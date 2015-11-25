@@ -314,34 +314,42 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
         self.main = QWidget()
 
         idLabel = QLabel(str(self.invoice.idNum))
-        vendorLabel = QLabel(self.invoice.vendor.name)
-        invoiceDateLabel = QLabel(self.invoice.invoiceDate)
-        dueDateLabel = QLabel(self.invoice.dueDate)
-        invoiceAmountLabel = QLabel(str(self.invoice.amount))
-        invoicePaidLabel = QLabel(str(self.invoice.paid()))
-        invoiceBalanceLabel = QLabel(str(self.invoice.balance()))
-        payInvoiceLabel = ClickableLabel("$")
-        payInvoiceLabel.setStyleSheet("QLabel { color: black } QLabel:hover { color: green }")
+        self.vendorLabel = QLabel(self.invoice.vendor.name)
+        self.invoiceDateLabel = QLabel(self.invoice.invoiceDate)
+        self.dueDateLabel = QLabel(self.invoice.dueDate)
+        self.invoiceAmountLabel = QLabel(str(self.invoice.amount))
+        self.invoicePaidLabel = QLabel(str(self.invoice.paid()))
+        self.invoiceBalanceLabel = QLabel(str(self.invoice.balance()))
+        self.payInvoiceLabel = ClickableLabel("$")
+        self.payInvoiceLabel.setStyleSheet("QLabel { color: black } QLabel:hover { color: green }")
 
         if self.invoice.balance() == 0:
-            payInvoiceLabel.setText("")
+            self.payInvoiceLabel.setText("")
 
         layout = QHBoxLayout()
         layout.addWidget(idLabel)
-        layout.addWidget(vendorLabel)
-        layout.addWidget(invoiceDateLabel)
-        layout.addWidget(dueDateLabel)
-        layout.addWidget(invoiceAmountLabel)
-        layout.addWidget(invoicePaidLabel)
-        layout.addWidget(invoiceBalanceLabel)
-        layout.addWidget(payInvoiceLabel)
+        layout.addWidget(self.vendorLabel)
+        layout.addWidget(self.invoiceDateLabel)
+        layout.addWidget(self.dueDateLabel)
+        layout.addWidget(self.invoiceAmountLabel)
+        layout.addWidget(self.invoicePaidLabel)
+        layout.addWidget(self.invoiceBalanceLabel)
+        layout.addWidget(self.payInvoiceLabel)
 
         self.main.setLayout(layout)
 
     def refreshData(self):
-        pass
+        self.vendorLabel.setText(self.invoice.vendor.name)
+        self.invoiceDateLabel.setText(self.invoice.invoiceDate)
+        self.dueDateLabel.setText(self.invoice.dueDate)
+        self.invoiceAmountLabel.setText(str(self.invoice.amount))
+        self.invoicePaidLabel.setText(str(self.invoice.paid()))
+        self.invoiceBalanceLabel.setText(str(self.invoice.balance()))
 
 class InvoiceTreeWidget(QTreeWidget):
+    balanceZero = pyqtSignal(int)
+    balanceNotZero = pyqtSignal(int)
+    
     def __init__(self, invoicesDict):
         super().__init__()
         self.buildItems(self, invoicesDict)
@@ -355,8 +363,13 @@ class InvoiceTreeWidget(QTreeWidget):
         self.setItemWidget(widgetItem, 0, widgetItem.main)
 
     def refreshData(self):
-        for item in self.items():
-            item.refreshData()
+        for idx in range(self.topLevelItemCount()):
+            self.topLevelItem(idx).refreshData()
+
+            if self.topLevelItem(idx).invoice.balance() == 0:
+                self.balanceZero.emit(idx)
+            else:
+                self.balanceNotZero.emit(idx)
 
 class InvoiceWidget(QWidget):
     def __init__(self, invoicesDict, parent):
@@ -378,12 +391,14 @@ class InvoiceWidget(QWidget):
         self.openInvoicesTreeWidget.setHeaderHidden(True)
         self.openInvoicesTreeWidget.setMinimumWidth(500)
         self.openInvoicesTreeWidget.setMaximumHeight(100)
+        self.openInvoicesTreeWidget.balanceZero.connect(self.moveOpenInvoiceToPaid)
 
         self.paidInvoicesTreeWidget = InvoiceTreeWidget(self.invoicesDict.paidInvoices())
         self.paidInvoicesTreeWidget.setIndentation(0)
         self.paidInvoicesTreeWidget.setHeaderHidden(True)
         self.paidInvoicesTreeWidget.setMinimumWidth(500)
         self.paidInvoicesTreeWidget.setMaximumHeight(200)
+        self.paidInvoicesTreeWidget.balanceNotZero.connect(self.movePaidInvoiceToOpen)
 
         self.paidInvoicesLabel = QLabel("Paid Invoices: %d" % len(self.invoicesDict.paidInvoices()))
 
@@ -410,6 +425,10 @@ class InvoiceWidget(QWidget):
 
         self.setLayout(mainLayout)
 
+    def stripAllButNumbers(self, string):
+        regex = re.match(r"\s*([0-9]+).*", string)
+        return int(regex.groups()[0])
+
     def showNewInvoiceDialog(self):
         dialog = InvoiceDialog("New", self)
         if dialog.exec_():
@@ -428,8 +447,7 @@ class InvoiceWidget(QWidget):
                                  dialog.dueDateText.text(),
                                  float(dialog.amountText.text()),
                                  nextId)
-            vendorRegex = re.match(r"\s*([0-9]+).*",dialog.vendorBox.currentText())
-            vendorId = int(vendorRegex.groups()[0])
+            vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
             newInvoice.addVendor(self.parent.dataConnection.vendors[vendorId])
             self.parent.dataConnection.vendors[vendorId].addInvoice(newInvoice)
             self.invoicesDict[newInvoice.idNum] = newInvoice
@@ -460,24 +478,45 @@ class InvoiceWidget(QWidget):
         if item:
             dialog = InvoiceDialog("View", self, item.invoice)
             if dialog.exec_():
-                print(dialog.hasChanges)
                 if dialog.hasChanges == True:
                     # Commit changes to database and to vendor entry
                     sql = ("UPDATE Invoices SET InvoiceDate = '" + dialog.invoiceDateText_edit.text() +
                           "', DueDate = '" + dialog.dueDateText_edit.text() +
                           "', Amount = '" + dialog.amountText_edit.text() +
                           "' WHERE idNum = " + str(item.invoice.idNum))
-
                     self.parent.parent.dbCursor.execute(sql)
+
+                    if dialog.vendorChanged == True:
+                        newVendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
+
+                        # Change vendor<->invoice links in Xref table
+                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newVendorId) +
+                               " WHERE ObjectToAddLinkTo = 'invoices' AND" + 
+                               " ObjectIdToAddLinkTo = " + str(item.invoice.idNum) + " AND" +
+                               " ObjectBeingLinked = 'vendors'")
+                        self.parent.parent.dbCursor.execute(sql)
+
+                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(newVendorId) +
+                               " WHERE ObjectToAddLinkTo = 'vendors' AND" +
+                               " ObjectBeingLinked = 'invoices' AND" +
+                               " ObjectIdBeingLinked = " + str(item.invoice.idNum))
+                        self.parent.parent.dbCursor.execute(sql)
+
+                        # Change vendor<->invoice links in dataConnection
+                        self.parent.dataConnection.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
+                        self.invoicesDict[item.invoice.idNum].addVendor(self.parent.dataConnection.vendors[newVendorId])
+                        self.parent.dataConnection.vendors[newVendorId].addInvoice(item.invoice)
+
                     self.parent.parent.dbConnection.commit()
 
                     self.invoicesDict[item.invoice.idNum].invoiceDate = dialog.invoiceDateText_edit.text()
                     self.invoicesDict[item.invoice.idNum].dueDate = dialog.dueDateText_edit.text()
-                    self.invoicesDict[item.invoice.idNum].amount = dialog.amountText_edit.text()
+                    self.invoicesDict[item.invoice.idNum].amount = float(dialog.amountText_edit.text())
 
                     self.openInvoicesTreeWidget.refreshData()
                     self.paidInvoicesTreeWidget.refreshData()
-        
+                    self.parent.vendorWidget.refreshVendorTree()
+                    
     def deleteSelectedInvoiceFromList(self):
         # Check to see if the item to delete is in the open invoices tree widget
         idxToDelete = self.openInvoicesTreeWidget.indexOfTopLevelItem(self.openInvoicesTreeWidget.currentItem())
@@ -497,7 +536,7 @@ class InvoiceWidget(QWidget):
             self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
                                                 (item.invoice.vendor.idNum, item.invoice.idNum))
             self.parent.parent.dbConnection.commit()
-            self.parent.parent.data.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
+            self.parent.dataConnection.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
             self.invoicesDict.pop(item.invoice.idNum)
             self.updateInvoicesCount()
             self.parent.vendorWidget.refreshVendorTree()
@@ -505,6 +544,16 @@ class InvoiceWidget(QWidget):
     def updateInvoicesCount(self):
         self.openInvoicesLabel.setText("Open Invoices: %d" % len(self.invoicesDict.openInvoices()))
         self.paidInvoicesLabel.setText("Paid Invoices: %d" % len(self.invoicesDict.paidInvoices()))
+
+    def moveOpenInvoiceToPaid(self, idx):
+        item = self.openInvoicesTreeWidget.takeTopLevelItem(idx)
+        newItem = InvoiceTreeWidgetItem(item.invoice, self.paidInvoicesTreeWidget)
+        self.paidInvoicesTreeWidget.addItem(newItem)
+
+    def movePaidInvoiceToOpen(self, idx):
+        item = self.paidInvoicesTreeWidget.takeTopLevelItem(idx)
+        newItem = InvoiceTreeWidgetItem(item.invoice, self.openInvoicesTreeWidget)
+        self.openInvoicesTreeWidget.addItem(newItem)
 
 class APView(QWidget):
     def __init__(self, dataConnection, parent):
@@ -520,3 +569,45 @@ class APView(QWidget):
         layout.addStretch(1)
 
         self.setLayout(layout)
+
+class ProposalTreeWidget(QTreeWidget):
+    def __init__(self, proposalsDict):
+        super().__init__()
+        self.buildItems(self, proposalsDict)
+
+    def buildItems(self, parent, proposalsDict):
+        for proposalKey in proposalsDict:
+            item = InvoiceTreeWidgetItem(proposalsDict[invoiceKey], parent)
+            self.addItem(item)
+
+    def addItem(self, widgetItem):
+        self.setItemWidget(widgetItem, 0, widgetItem.main)
+
+    def refreshData(self):
+        for idx in range(self.topLevelItemCount()):
+            self.topLevelItem(idx).refreshData()
+    
+class ProposalWidget(QWidget):
+    def __init__(self, proposalsDict, parent):
+        super().__init__(parent)
+        self.proposalsDict = proposalsDict
+        self.parent = parent
+
+        mainLayout = QVBoxLayout()
+
+        self.openProposalsLabel = QLabel("Open: %d" % len(self.proposalsDict))
+        mainLayout.addWidget(self.openProposalsLabel)
+
+        # Piece together the proposals layout
+        subLayout = QHBoxLayout()
+        treeWidgetsLayout = QVBoxLayout()
+
+        self.openProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict)
+
+class ProposalView(QWidget):
+    def __init__(self, dataConnection, parent):
+        super().__init__(parent)
+        self.dataConnection = dataConnection
+        self.parent = parent
+
+        self = ProposalWidget(self.dataConnection.proposals, self)

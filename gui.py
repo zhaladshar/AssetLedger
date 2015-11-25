@@ -16,8 +16,9 @@ SPLASH_OPTIONS = [("+New Company", "self.newCompany", "Company...", "Create new 
                   ("+New Invoice", "self.newInvoice", "Invoice...", "Create new invoice")]
 MAIN_OVERVIEW_INDEX = 0
 COMPANY_OVERVIEW_INDEX = 1
-PROJECT_OVERVIEW_INDEX = 2
-VENDOR_OVERVIEW_INDEX = 3
+PROPOSAL_OVERVIEW_INDEX = 2
+PROJECT_OVERVIEW_INDEX = 3
+AP_OVERVIEW_INDEX = 4
 
 class Window(QMainWindow):
     def __init__(self, dbName):
@@ -35,6 +36,7 @@ class Window(QMainWindow):
         self.views = QStackedWidget()
         self.generalView = QWidget()
         self.companyOverview = QWidget()
+        self.proposalOverview = ProposalView(self.data, self)
         self.projectOverview = QWidget()
         self.APOverview = APView(self.data, self)
         self.companyViewSelected = None
@@ -189,6 +191,9 @@ class Window(QMainWindow):
         self.companyOverview.setLayout(companyOverviewLayout)
         self.views.addWidget(self.companyOverview)
 
+        # Build the proposal overview widget
+        self.views.addWidget(self.proposalOverview)
+
         # Build the project overview widget
         projectOverviewLayout = QVBoxLayout()
         self.projectOverviewProposals = CollapsableFrame("Proposals")
@@ -258,7 +263,10 @@ class Window(QMainWindow):
                 self.views.setCurrentIndex(COMPANY_OVERVIEW_INDEX)
         else:
             if self.detailViewSelected:
-                self.views.setCurrentIndex(VENDOR_OVERVIEW_INDEX)
+                if self.detailViewSelected == "Proposals":
+                    pass
+                elif self.detailViewSelected == "A/P":
+                    self.views.setCurrentIndex(AP_OVERVIEW_INDEX)
             else:
                 self.views.setCurrentIndex(MAIN_OVERVIEW_INDEX)
 

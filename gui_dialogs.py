@@ -175,6 +175,7 @@ class InvoiceDialog(QDialog):
 
     def makeLabelsEditable(self):
         self.vendorBox.setEnabled(True)
+        self.vendorBox.currentIndexChanged.connect(self.changed)
         self.invoiceDateText_edit = QLineEdit(self.invoiceDateText.text())
         self.invoiceDateText_edit.textEdited.connect(self.changed)
         self.dueDateText_edit = QLineEdit(self.dueDateText.text())

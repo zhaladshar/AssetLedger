@@ -16,14 +16,40 @@ class InvoicesDict(dict):
                 tempDict[invoiceKey] = self[invoiceKey]
         return tempDict
 
+class ProposalsDict(dict):
+    def __init__(self):
+        super().__init__()
+
+    def openProposals(self):
+        tempDict = {}
+        for proposalKey in self.keys():
+            if self[proposalKey]
+
+class Proposal:
+    def __init__(self, date, selected, idNum):
+        self.idNum = idNum
+        self.date = date
+        if selected == 1:
+            self.selected = True
+        else:
+            self.selected = False
+        self.vendor = None
+        self.proposalFor = None
+
+    def addVendor(self, vendor):
+        self.vendor = vendor
+
+    def addProject(self, project):
+        self.proposalFor = ("Project", project)
+
+    def addAsset(self, asset):
+        self.proposalFor = ("Asset", asset)
+
 class Payment:
     paymentList = {}
 
-    def __init__(self, invoice, datePaid, amountPaid, idNum=None):
-        if self.idNum == None:
-            self.idNum = len(paymentList) + 1
-        else:
-            self.idNum = idNum
+    def __init__(self, invoice, datePaid, amountPaid, idNum):
+        self.idNum = idNum
         self.invoice = invoice
         self.datePaid = datePaid
         self.amountPaid = amountPaid
@@ -31,11 +57,8 @@ class Payment:
 class Invoice:
     invoiceList = {}
 
-    def __init__(self, date, dueDate, amount, idNum=None):
-        if idNum == None:
-            self.idNum = len(invoiceList) + 1
-        else:
-            self.idNum = idNum
+    def __init__(self, date, dueDate, amount, idNum):
+        self.idNum = idNum
         self.invoiceDate = date
         self.dueDate = dueDate
         self.amount = amount
@@ -46,7 +69,7 @@ class Invoice:
         return self.amount - self.paid()
 
     def paid(self):
-        amtPaid = 0
+        amtPaid = 0.0
         for payment in self.payments:
             amtPaid += payment.amountPaid
         return amtPaid
@@ -94,11 +117,8 @@ class Vendor:
 class Company:
     companyList = {}
 
-    def __init__(self, name, shortName, idNum=None):
-        if idNum == None:
-            self.idNum = len(companyList) + 1
-        else:
-            self.idNum = idNum
+    def __init__(self, name, shortName, idNum):
+        self.idNum = idNum
         self.name = name
         self.shortName = shortName
         self.proposals = {}
