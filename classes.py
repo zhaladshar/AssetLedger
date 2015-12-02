@@ -20,21 +20,31 @@ class ProposalsDict(dict):
     def __init__(self):
         super().__init__()
 
-    def openProposals(self):
+    def proposalsByStatus(self, status):
         tempDict = {}
         for proposalKey in self.keys():
-            if self[proposalKey]
+            if self[proposalKey].status == status:
+                tempDict[proposalKey] = self[proposalKey]
+        return tempDict
+
+class ProposalDetail:
+    def __init__(self, description, cost, idNum):
+        self.idNum = idNum
+        self.description = description
+        self.cost = cost
+        self.detailOf = None
+
+    def addDetailOf(self, proposal):
+        self.detailOf = proposal
 
 class Proposal:
-    def __init__(self, date, selected, idNum):
+    def __init__(self, date, status, idNum):
         self.idNum = idNum
         self.date = date
-        if selected == 1:
-            self.selected = True
-        else:
-            self.selected = False
+        self.status = status
         self.vendor = None
         self.proposalFor = None
+        self.details = {}
 
     def addVendor(self, vendor):
         self.vendor = vendor
@@ -44,6 +54,15 @@ class Proposal:
 
     def addAsset(self, asset):
         self.proposalFor = ("Asset", asset)
+
+    def addDetail(self, detail):
+        self.details[detail.idNum] = detail
+
+    def totalCost(self):
+        cost = 0
+        for detailKey in self.details.keys():
+            cost += self.details[detailKey].cost
+        return cost
 
 class Payment:
     paymentList = {}
@@ -88,8 +107,8 @@ class Vendor:
         self.state = state
         self.zip = zipcode
         self.phone = phone
-        self.proposals = {}
-        self.invoices = {}
+        self.proposals = ProposalsDict()
+        self.invoices = InvoicesDict()
 
         Vendor.vendorList[idNum] = self
 
@@ -113,6 +132,12 @@ class Vendor:
             if self.invoices[invoiceKey].balance != 0:
                 count += 1
         return count
+
+    def addProposal(self, proposal):
+        self.proposals[proposal.idNum] = proposal
+
+    def removeProposal(self, proposal):
+        self.proposals.pop(proposal.idNum)
 
 class Company:
     companyList = {}
@@ -140,6 +165,7 @@ class CorporateStructure:
         self.companies = {}
         self.vendors = {}
         self.invoices = InvoicesDict()
-        self.proposals = {}
+        self.proposals = ProposalsDict()
+        self.proposalsDetails = {}
         self.assets = {}
         self.projects = {}

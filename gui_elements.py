@@ -3,7 +3,99 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from gui_dialogs import *
 import re
+from classes import *
 
+class ProposalDetailWidget(QWidget):
+    detailsHaveChanged = pyqtSignal()
+    
+    def __init__(self, detailsDict=None):
+        super().__init__()
+        self.details = {}
+        
+        self.layout = QVBoxLayout()
+        self.gridLayout = QGridLayout()
+        detailLine = QLabel("Detail")
+        costLine = QLabel("Cost")
+
+        self.gridLayout.addWidget(detailLine, 0, 0)
+        self.gridLayout.addWidget(costLine, 0, 1, 1, 2)
+        
+        if detailsDict == None:
+            self.addNewLine()
+        else:
+            for detail in detailsDict.keys():
+                self.addLine(detailsDict[detail].description, detailsDict[detail].cost, False, False, detailsDict[detail].idNum)
+
+        self.layout.addLayout(self.gridLayout)
+        self.layout.addStretch(1)
+        
+        self.setLayout(self.layout)
+
+    def addLine(self, detail, cost, showDelBtn=False, editable=True, detailIdNum=0):
+        rowToUse = self.gridLayout.rowCount()
+
+        if editable == True:
+            detailLine = QLineEdit(detail)
+            costLine = QLineEdit(str(cost))
+            costLine.editingFinished.connect(lambda: self.validateInput(rowToUse))
+            costLine.textEdited.connect(self.emitChange)
+        else:
+            detailLine = QLabel(detail)
+            costLine = QLabel(str(cost))
+
+        deleteButton = QPushButton("-")
+        deleteButton.clicked.connect(lambda: self.deleteLine(rowToUse))
+        if showDelBtn == False:
+            deleteButton.hide()
+        else:
+            deleteButton.show()
+
+        self.gridLayout.addWidget(detailLine, rowToUse, 0)
+        self.gridLayout.addWidget(costLine, rowToUse, 1)
+        self.gridLayout.addWidget(deleteButton, rowToUse, 2)
+
+        self.details[rowToUse] = (detailIdNum, detailLine, costLine)
+
+    def addNewLine(self):
+        self.addLine("", "")
+
+    def deleteLine(self, row):
+        print(row)
+        print(self.gridLayout.itemAtPosition(row, 1))
+        print(self.details.pop(row))
+
+        for n in range(3):
+            item = self.gridLayout.itemAtPosition(row, n).widget()
+            self.gridLayout.removeWidget(self.gridLayout.itemAtPosition(row, n).widget())
+            item.deleteLater()
+
+    def validateInput(self, row):
+        if self.gridLayout.itemAtPosition(row, 0).widget().text() != "" and \
+           self.gridLayout.itemAtPosition(row, 1).widget().text() != "":
+            if row == self.gridLayout.rowCount() - 1:
+                self.addNewLine()
+                self.gridLayout.itemAtPosition(row + 1, 0).widget().setFocus()
+                self.gridLayout.itemAtPosition(row, 2).widget().show()
+
+    def makeEditable(self):
+        for key in self.details.keys():
+            detailLine_edit = QLineEdit(self.details[key][1].text())
+            detailLine_edit.textEdited.connect(self.emitChange)
+            costLine_edit = QLineEdit(self.details[key][2].text())
+            costLine_edit.textEdited.connect(self.emitChange)
+
+            self.gridLayout.addWidget(detailLine_edit, key, 0)
+            self.gridLayout.addWidget(costLine_edit, key, 1)
+            
+            self.gridLayout.itemAtPosition(key, 2).widget().show()
+
+            self.details[key] = (self.details[key][0], detailLine_edit, costLine_edit)
+
+        self.addNewLine()
+
+    def emitChange(self):
+        self.detailsHaveChanged.emit()
+    
 class ClickableLabel(QLabel):
     released = pyqtSignal()
 
@@ -138,8 +230,8 @@ class VendorTreeWidgetItem(QTreeWidgetItem):
 
         idLabel = QLabel(str(self.vendor.idNum))
         self.nameLabel = QLabel(self.vendor.name)
-        self.bidsLabel = QLabel("Bids: %d / %d" % (len(self.vendor.proposals),
-                                                   0))
+        self.bidsLabel = QLabel("Bids: %d / %d" % (len(self.vendor.proposals.proposalsByStatus("Open")),
+                                                   len(self.vendor.proposals)))
         self.invoicesLabel = QLabel("Invoices: %d / %d" % (self.vendor.openInvoiceCount(),
                                                            len(self.vendor.invoices)))
         self.balanceLabel = QLabel(str(self.vendor.balance()))
@@ -155,8 +247,8 @@ class VendorTreeWidgetItem(QTreeWidgetItem):
 
     def refreshData(self):
         self.nameLabel.setText(self.vendor.name)
-        self.bidsLabel.setText("Bids: %d / %d" % (len(self.vendor.proposals),
-                                                   0))
+        self.bidsLabel.setText("Bids: %d / %d" % (len(self.vendor.proposals.proposalsByStatus("Open")),
+                                                   len(self.vendor.proposals)))
         self.invoicesLabel.setText("Invoices: %d / %d" % (self.vendor.openInvoiceCount(),
                                                            len(self.vendor.invoices)))
         self.balanceLabel.setText(str(self.vendor.balance()))
@@ -570,14 +662,56 @@ class APView(QWidget):
 
         self.setLayout(layout)
 
+class ProposalTreeWidgetItem(QTreeWidgetItem):
+    def __init__(self, proposalItem, parent, suppressClickableLabels):
+        super().__init__(parent)
+        self.proposal = proposalItem
+        self.suppressClickableLabels = suppressClickableLabels
+        self.main = QWidget()
+
+        idLabel = QLabel(str(self.proposal.idNum))
+        self.vendorLabel = QLabel(self.proposal.vendor.name)
+        self.dateLabel = QLabel(self.proposal.date)
+        self.description = QLabel("") # Put asset/project desc here
+        self.proposalAmountLabel = QLabel(str(self.proposal.totalCost()))
+        self.acceptProposal = ClickableLabel("✔")
+        self.acceptProposal.setStyleSheet("QLabel { color: black } QLabel:hover { color: green }")
+        self.rejectProposal = ClickableLabel("✘")
+        self.rejectProposal.setStyleSheet("QLabel { color: black } QLabel:hover { color: red }")
+
+        if self.suppressClickableLabels == True:
+            self.acceptProposal.hide()
+            self.rejectProposal.hide()
+
+        layout = QHBoxLayout()
+        layout.addWidget(idLabel)
+        layout.addWidget(self.vendorLabel)
+        layout.addWidget(self.dateLabel)
+        layout.addWidget(self.description)
+        layout.addWidget(self.proposalAmountLabel)
+        layout.addWidget(self.acceptProposal)
+        layout.addWidget(self.rejectProposal)
+
+        self.main.setLayout(layout)
+
+    def refreshData(self):
+        self.vendorLabel.setText(self.proposal.vendor.name)
+        self.dateLabel.setText(self.proposal.date)
+        self.proposalAmountLabel.setText(str(self.proposal.totalCost()))
+    
 class ProposalTreeWidget(QTreeWidget):
-    def __init__(self, proposalsDict):
+    openProposal = pyqtSignal(int)
+    rejectedProposal = pyqtSignal(int)
+    acceptedProposal = pyqtSignal(int)
+    
+    def __init__(self, proposalsDict, suppressClickableLabels=False):
         super().__init__()
+        self.suppressClickableLabels = suppressClickableLabels
         self.buildItems(self, proposalsDict)
 
     def buildItems(self, parent, proposalsDict):
         for proposalKey in proposalsDict:
-            item = InvoiceTreeWidgetItem(proposalsDict[invoiceKey], parent)
+            item = ProposalTreeWidgetItem(proposalsDict[proposalKey], parent, self.suppressClickableLabels)
             self.addItem(item)
 
     def addItem(self, widgetItem):
@@ -585,9 +719,25 @@ class ProposalTreeWidget(QTreeWidget):
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
-            self.topLevelItem(idx).refreshData()
+            # Need to use a try...except... method because if an item gets
+            # moved from one location to another during this refresh, idx
+            # will get an out of bounds error if any object other than the last
+            # item in the list had its status changed (and hence was moved)
+            try:
+                self.topLevelItem(idx).refreshData()
+    
+                if self.topLevelItem(idx).proposal.status == "Open":
+                    self.openProposal.emit(idx)
+                elif self.topLevelItem(idx).proposal.status == "Rejected":
+                    self.rejectedProposal.emit(idx)
+                else:
+                    self.acceptedProposal.emit(idx)
+            except:
+                pass
     
 class ProposalWidget(QWidget):
+    updateVendorWidgetTree = pyqtSignal()
+    
     def __init__(self, proposalsDict, parent):
         super().__init__(parent)
         self.proposalsDict = proposalsDict
@@ -595,19 +745,329 @@ class ProposalWidget(QWidget):
 
         mainLayout = QVBoxLayout()
 
-        self.openProposalsLabel = QLabel("Open: %d" % len(self.proposalsDict))
+        self.openProposalsLabel = QLabel("Open: %d" % len(self.proposalsDict.proposalsByStatus("Open")))
         mainLayout.addWidget(self.openProposalsLabel)
 
         # Piece together the proposals layout
         subLayout = QHBoxLayout()
         treeWidgetsLayout = QVBoxLayout()
 
-        self.openProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict)
+        self.openProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus("Open"))
+        self.openProposalsTreeWidget.setIndentation(0)
+        self.openProposalsTreeWidget.setHeaderHidden(True)
+        self.openProposalsTreeWidget.setMinimumWidth(500)
+        self.openProposalsTreeWidget.setMaximumHeight(100)
+        self.openProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
+        self.openProposalsTreeWidget.rejectedProposal.connect(self.moveOpenToRejected)
+        self.openProposalsTreeWidget.acceptedProposal.connect(self.moveOpenToAccepted)
 
+        self.rejectedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus("Rejected"))
+        self.rejectedProposalsTreeWidget.setIndentation(0)
+        self.rejectedProposalsTreeWidget.setHeaderHidden(True)
+        self.rejectedProposalsTreeWidget.setMinimumWidth(500)
+        self.rejectedProposalsTreeWidget.setMaximumHeight(100)
+        self.rejectedProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
+        self.rejectedProposalsTreeWidget.openProposal.connect(self.moveRejectedToOpen)
+        self.rejectedProposalsTreeWidget.acceptedProposal.connect(self.moveRejectedToAccepted)
+        
+        self.acceptedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus("Accepted"))
+        self.acceptedProposalsTreeWidget.setIndentation(0)
+        self.acceptedProposalsTreeWidget.setHeaderHidden(True)
+        self.acceptedProposalsTreeWidget.setMinimumWidth(500)
+        self.acceptedProposalsTreeWidget.setMaximumHeight(100)
+        self.acceptedProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(3))
+        self.acceptedProposalsTreeWidget.openProposal.connect(self.moveAcceptedToOpen)
+        self.acceptedProposalsTreeWidget.rejectedProposal.connect(self.moveAcceptedToRejected)
+
+        self.rejectedProposalsLabel = QLabel("Rejected: %d" % len(self.proposalsDict.proposalsByStatus("Rejected")))
+        self.acceptedProposalsLabel = QLabel("Accepted: %d" % len(self.proposalsDict.proposalsByStatus("Accepted")))
+
+        treeWidgetsLayout.addWidget(self.openProposalsTreeWidget)
+        treeWidgetsLayout.addWidget(self.rejectedProposalsLabel)
+        treeWidgetsLayout.addWidget(self.rejectedProposalsTreeWidget)
+        treeWidgetsLayout.addWidget(self.acceptedProposalsLabel)
+        treeWidgetsLayout.addWidget(self.acceptedProposalsTreeWidget)
+
+        buttonLayout = QVBoxLayout()
+        newButton = QPushButton("New")
+        newButton.clicked.connect(self.showNewProposalDialog)
+        viewButton = QPushButton("View")
+        viewButton.clicked.connect(self.showViewProposalDialog)
+        deleteButton = QPushButton("Delete")
+        deleteButton.clicked.connect(self.deleteSelectedProposalFromList)
+        buttonLayout.addWidget(newButton)
+        buttonLayout.addWidget(viewButton)
+        buttonLayout.addWidget(deleteButton)
+        buttonLayout.addStretch(1)
+        
+        subLayout.addLayout(treeWidgetsLayout)
+        subLayout.addLayout(buttonLayout)
+        mainLayout.addLayout(subLayout)
+        
+        self.setLayout(mainLayout)
+
+    def moveOpenToRejected(self, idx):
+        item = self.openProposalsTreeWidget.takeTopLevelItem(idx)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.rejectedProposalsTreeWidget, True)
+        self.rejectedProposalsTreeWidget.addItem(newItem)
+
+    def moveOpenToAccepted(self, idx):
+        item = self.openProposalsTreeWidget.takeTopLevelItem(idx)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.acceptedProposalsTreeWidget, True)
+        self.acceptedProposalsTreeWidget.addItem(newItem)
+
+    def moveRejectedToOpen(self, idx):
+        item = self.rejectedProposalsTreeWidget.takeTopLevelItem(idx)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.openProposalsTreeWidget, False)
+        self.openProposalsTreeWidget.addItem(newItem)
+
+    def moveRejectedToAccepted(self, idx):
+        item = self.rejectedProposalsTreeWidget.takeTopLevelItem(idx)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.acceptedProposalsTreeWidget, True)
+        self.acceptedProposalsTreeWidget.addItem(newItem)
+
+    def moveAcceptedToOpen(self, idx):
+        item = self.acceptedProposalsTreeWidget.takeTopLevelItem(idx)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.openProposalsTreeWidget, False)
+        self.openProposalsTreeWidget.addItem(newItem)
+
+    def moveAcceptedToRejected(self, idx):
+        item = self.acceptedProposalsTreeWidget.takeTopLevelItem(idx)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.rejectedProposalsTreeWidget, True)
+        self.rejectedProposalsTreeWidget.addItem(newItem)
+
+    def removeSelectionsFromAllBut(self, but):
+        if but == 1:
+            self.rejectedProposalsTreeWidget.setCurrentItem(self.rejectedProposalsTreeWidget.invisibleRootItem())
+            self.acceptedProposalsTreeWidget.setCurrentItem(self.acceptedProposalsTreeWidget.invisibleRootItem())
+        elif but == 2:
+            self.openProposalsTreeWidget.setCurrentItem(self.openProposalsTreeWidget.invisibleRootItem())
+            self.acceptedProposalsTreeWidget.setCurrentItem(self.acceptedProposalsTreeWidget.invisibleRootItem())
+        else:
+            self.openProposalsTreeWidget.setCurrentItem(self.openProposalsTreeWidget.invisibleRootItem())
+            self.rejectedProposalsTreeWidget.setCurrentItem(self.rejectedProposalsTreeWidget.invisibleRootItem())
+
+    def nextIdNum(self, name):
+        self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
+        largestId = self.parent.parent.dbCursor.fetchone()
+        if largestId != None:
+            return largestId[0] + 1
+        else:
+            return 1
+
+    def insertIntoDatabase(self, tblName, columns, values):
+        sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
+        self.parent.parent.dbCursor.execute(sql)
+                
+    def showNewProposalDialog(self):
+        dialog = ProposalDialog("New", self)
+        if dialog.exec_():
+            # Find current largest id and increment by one
+            nextId = self.nextIdNum("Proposals")
+            
+            # Create proposal and add to database
+            newProposal = Proposal(dialog.dateText.text(),
+                                   "Open",
+                                   nextId)
+            vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
+            newProposal.addVendor(self.parent.dataConnection.vendors[vendorId])
+            self.parent.dataConnection.vendors[vendorId].addProposal(newProposal)
+            self.proposalsDict[newProposal.idNum] = newProposal
+
+            self.insertIntoDatabase("Proposals", "(ProposalDate, Status)", "('" + newProposal.date + "', '" + newProposal.status + "')")
+            self.insertIntoDatabase("Xref", "", "('proposals', " + str(nextId) + ", 'addVendor', 'vendors', " + str(vendorId) + ")")
+            self.insertIntoDatabase("Xref", "", "('vendors', " + str(vendorId) + ", 'addProposal', 'proposals', " + str(nextId) + ")")
+
+            # Create proposal details and add to database
+            nextProposalDetId = self.nextIdNum("ProposalsDetails")
+                
+            for key in dialog.detailsWidget.details.keys():
+                if dialog.detailsWidget.details[key][2].text() == "":
+                    proposalDetail = None
+                else:
+                    proposalDetail = ProposalDetail(dialog.detailsWidget.details[key][1].text(), float(dialog.detailsWidget.details[key][2].text()), nextProposalDetId)
+
+                # Last item in the dialog is a blank line, so a blank proposal
+                # detail will be created.  Ignore it.
+                if proposalDetail:
+                    self.insertIntoDatabase("ProposalsDetails", "(Description, Cost)", "('" + proposalDetail.description + "', '" + str(proposalDetail.cost) + "')")
+                    self.insertIntoDatabase("Xref", "", "('proposalsDetails', " + str(nextProposalDetId) + ", 'addDetailOf', 'proposals', " + str(nextId) + ")")
+                    self.insertIntoDatabase("Xref", "", "('proposals', " + str(nextId) + ", 'addDetail', 'proposalsDetails', " + str(nextProposalDetId) + ")")
+
+                    newProposal.addDetail(proposalDetail)
+                    proposalDetail.addDetailOf(newProposal)
+                    self.parent.dataConnection.proposalsDetails[proposalDetail.idNum] = proposalDetail
+
+                    nextProposalDetId += 1
+
+            self.parent.parent.dbConnection.commit()
+
+            # Make proposal into a ProposalTreeWidgetItem and add it to ProposalTree
+            item = ProposalTreeWidgetItem(newProposal, self.openProposalsTreeWidget, False)
+            self.openProposalsTreeWidget.addItem(item)
+            self.updateProposalsCount()
+            self.updateVendorWidgetTree.emit()
+
+    def showViewProposalDialog(self):
+        # Determine which tree the proposal is in--if any.  If none, don't
+        # display dialog
+        idxToShow = self.openProposalsTreeWidget.indexFromItem(self.openProposalsTreeWidget.currentItem())
+        item = self.openProposalsTreeWidget.itemFromIndex(idxToShow)
+
+        if item == None:
+            idxToShow = self.rejectedProposalsTreeWidget.indexFromItem(self.rejectedProposalsTreeWidget.currentItem())
+            item = self.rejectedProposalsTreeWidget.itemFromIndex(idxToShow)
+
+            if item == None:
+                idxToShow = self.acceptedProposalsTreeWidget.indexFromItem(self.acceptedProposalsTreeWidget.currentItem())
+                item = self.acceptedProposalsTreeWidget.itemFromIndex(idxToShow)
+
+        if item:
+            dialog = ProposalDialog("View", self, item.proposal)
+            dialog.setWindowTitle("View Proposal")
+            if dialog.exec_():
+                if dialog.hasChanges == True:
+                    # Commit changes to database and to vendor entry
+                    sql = ("UPDATE Proposals SET ProposalDate = '" + dialog.dateText_edit.text() +
+                           "', Status = '" + dialog.statusBox.currentText() + 
+                           "' WHERE idNum = " + str(item.proposal.idNum))
+                    self.parent.parent.dbCursor.execute(sql)
+
+                    # If the details of the proposal have changed, update as well
+                    # If dialog.detailsWidget.details[key][0] > 0 then that means
+                    # we changed a currently existing detail.  If it equals 0, this
+                    # is a newly added detail and so it must be created and added
+                    # to database.
+                    for key in dialog.detailsWidget.details.keys():
+                        if dialog.detailsWidget.details[key][0] > 0:
+                            sql = ("UPDATE ProposalsDetails SET Description = '" + dialog.detailsWidget.details[key][1].text() +
+                                   "', Cost = " + dialog.detailsWidget.details[key][2].text() +
+                                   " WHERE idNum = " + str(dialog.detailsWidget.details[key][0]))
+                            self.parent.parent.dbCursor.execute(sql)
+                            
+                            item.proposal.details[dialog.detailsWidget.details[key][0]].description = dialog.detailsWidget.details[key][1].text()
+                            item.proposal.details[dialog.detailsWidget.details[key][0]].cost = float(dialog.detailsWidget.details[key][2].text())
+                        else:
+                            # Make sure description is not blank - if so, this
+                            # is the usual blank line at the end of the widget
+                            if dialog.detailsWidget.details[key][1].text() != "":
+                                nextProposalDetId = self.nextIdNum("ProposalsDetails")
+                                
+                                self.parent.parent.dbCursor.execute("INSERT INTO ProposalsDetails (Description, Cost) VALUES (?, ?)",
+                                                                    (dialog.detailsWidget.details[key][1].text(), dialog.detailsWidget.details[key][2].text()))
+                                self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('proposalsDetails', ?, 'addDetailOf', 'proposals', ?)", (nextProposalDetId, item.proposal.idNum))
+                                self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('proposals', ?, 'addDetail', 'proposalsDetails', ?)", (item.proposal.idNum, nextProposalDetId))
+                                
+                                newProposalDetail = ProposalDetail(dialog.detailsWidget.details[key][1].text(), float(dialog.detailsWidget.details[key][2].text()), nextProposalDetId)
+                                newProposalDetail.addDetailOf(item.proposal)
+                                item.proposal.addDetail(newProposalDetail)
+
+                                self.parent.dataConnection.proposalsDetails[newProposalDetail.idNum] = newProposalDetail
+
+                    if dialog.vendorChanged == True:
+                        newVendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
+
+                        # Change vendor<->invoice links in Xref table
+                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newVendorId) +
+                               " WHERE ObjectToAddLinkTo = 'proposals' AND" + 
+                               " ObjectIdToAddLinkTo = " + str(item.proposal.idNum) + " AND" +
+                               " ObjectBeingLinked = 'vendors'")
+                        self.parent.parent.dbCursor.execute(sql)
+
+                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(newVendorId) +
+                               " WHERE ObjectToAddLinkTo = 'vendors' AND" +
+                               " ObjectBeingLinked = 'proposals' AND" +
+                               " ObjectIdBeingLinked = " + str(item.proposal.idNum))
+                        self.parent.parent.dbCursor.execute(sql)
+
+                        # Change vendor<->invoice links in dataConnection
+                        self.parent.dataConnection.vendors[item.proposal.vendor.idNum].removeProposal(item.proposal)
+                        self.proposalsDict[item.proposal.idNum].addVendor(self.parent.dataConnection.vendors[newVendorId])
+                        self.parent.dataConnection.vendors[newVendorId].addProposal(item.proposal)
+
+                    self.parent.parent.dbConnection.commit()
+
+                    self.proposalsDict[item.proposal.idNum].date = dialog.dateText_edit.text()
+                    self.proposalsDict[item.proposal.idNum].status = dialog.statusBox.currentText()
+
+                    self.openProposalsTreeWidget.refreshData()
+                    self.rejectedProposalsTreeWidget.refreshData()
+                    self.acceptedProposalsTreeWidget.refreshData()
+                    self.updateVendorWidgetTree.emit()
+                
+    def deleteSelectedProposalFromList(self):
+        # Check to see if the item to delete is in the open proposal tree widget
+        idxToDelete = self.openProposalsTreeWidget.indexOfTopLevelItem(self.openProposalsTreeWidget.currentItem())
+
+        if idxToDelete >= 0:
+            item = self.openProposalsTreeWidget.takeTopLevelItem(idxToDelete)
+        else:
+            # Selected item not in open proposals tree widget--check if in
+            # rejected proposals tree widget
+            idxToDelete = self.rejectedProposalsTreeWidget.indexOfTopLevelItem(self.rejectedProposalsTreeWidget.currentItem())
+
+            if idxToDelete >= 0:
+                item = self.paidInvoicesTreeWidget.takeTopLevelItem(idxToDelete)
+            else:
+                item = None
+
+                idxToDelete = self.acceptedProposalsTreeWidget.indexOfTopLevelItem(self.acceptedProposalsTreeWidget.currentItem())
+
+                if idxToDelete >= 0:
+                    # Selected item in accepted proposal tree widget--throw up error
+                    deleteError = QMessageBox()
+                    deleteError.setWindowTitle("Can't Delete")
+                    deleteError.setText("Cannot delete an accepted proposal")
+                    deleteError.exec_()
+
+        if item:
+            self.parent.parent.dbCursor.execute("DELETE FROM Proposals WHERE idNum=?", (item.proposal.idNum,))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposals' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='vendors' AND ObjectIdBeingLinked=?)",
+                                                (item.proposal.idNum, item.proposal.vendor.idNum))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposals' AND ObjectIdBeingLinked=?)",
+                                                (item.proposal.vendor.idNum, item.proposal.idNum))
+
+            self.parent.dataConnection.vendors[item.proposal.vendor.idNum].removeProposal(item.proposal)
+            proposal = self.proposalsDict.pop(item.proposal.idNum)
+
+            for key in proposal.details.keys():
+                proposalDet = proposal.details[key]
+
+                self.parent.parent.dbCursor.execute("DELETE FROM ProposalsDetails WHERE idNum=?", (proposalDet.idNum,))
+                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposalsDetails' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposals' AND ObjectIdBeingLinked=?)",
+                                                    (proposalDet.idNum, proposal.idNum))
+                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposals' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposalsDetails' AND ObjectIdBeingLinked=?)",
+                                                    (proposal.idNum, proposalDet.idNum))
+                self.parent.dataConnection.proposalsDetails.pop(proposalDet.idNum)
+
+            self.parent.parent.dbConnection.commit()
+                
+            self.updateProposalsCount()
+            self.updateVendorWidgetTree.emit()
+
+    def stripAllButNumbers(self, string):
+        regex = re.match(r"\s*([0-9]+).*", string)
+        return int(regex.groups()[0])
+
+    def updateProposalsCount(self):
+        self.openProposalsLabel.setText("Open: %d" % len(self.proposalsDict.proposalsByStatus("Open")))
+        self.rejectedProposalsLabel.setText("Rejected: %d" % len(self.proposalsDict.proposalsByStatus("Rejected")))
+        self.acceptedProposalsLabel.setText("Accepted: %d" % len(self.proposalsDict.proposalsByStatus("Accepted")))
+    
 class ProposalView(QWidget):
+    updateVendorWidgetTree = pyqtSignal()
+    
     def __init__(self, dataConnection, parent):
         super().__init__(parent)
         self.dataConnection = dataConnection
         self.parent = parent
 
-        self = ProposalWidget(self.dataConnection.proposals, self)
+        self.proposalWidget = ProposalWidget(self.dataConnection.proposals, self)
+        self.proposalWidget.updateVendorWidgetTree.connect(self.emitVendorWidgetUpdate)
+        layout = QVBoxLayout()
+        layout.addWidget(self.proposalWidget)
+
+        self.setLayout(layout)
+
+    def emitVendorWidgetUpdate(self):
+        self.updateVendorWidgetTree.emit()

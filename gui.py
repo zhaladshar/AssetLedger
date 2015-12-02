@@ -4,21 +4,9 @@ from PyQt5.QtWidgets import *
 import sqlite3
 import sys
 from classes import *
+from constants import *
 from gui_elements import *
 from gui_dialogs import *
-
-VIEWS_LIST = ["Companies", "Proposals", "Projects", "Assets", "G/L", "A/P"]
-SPLASH_OPTIONS = [("+New Company", "self.newCompany", "Company...", "Create new company"),
-                  ("+New Project", "self.newProject", "Project...", "Create new project"),
-                  ("+New Proposal", "self.newProposal", "Proposal...", "Create new proposal"),
-                  ("+New Asset", "self.newAsset", "Asset...", "Create new asset"),
-                  ("+New Vendor", "self.newVendor", "Vendor...", "Create new vendor"),
-                  ("+New Invoice", "self.newInvoice", "Invoice...", "Create new invoice")]
-MAIN_OVERVIEW_INDEX = 0
-COMPANY_OVERVIEW_INDEX = 1
-PROPOSAL_OVERVIEW_INDEX = 2
-PROJECT_OVERVIEW_INDEX = 3
-AP_OVERVIEW_INDEX = 4
 
 class Window(QMainWindow):
     def __init__(self, dbName):
@@ -42,6 +30,9 @@ class Window(QMainWindow):
         self.companyViewSelected = None
         self.detailViewSelected = None
 
+        # Make signal-slot connections
+        self.proposalOverview.updateVendorWidgetTree.connect(self.APOverview.vendorWidget.refreshVendorTree)
+
         # Build menus
         self.buildMenus()
 
@@ -60,6 +51,14 @@ class Window(QMainWindow):
         self.dbCursor.execute("SELECT * FROM Invoices")
         for each in self.dbCursor:
             self.data.invoices[each[0]] = Invoice(each[1], each[2], each[3], each[0])
+
+        self.dbCursor.execute("SELECT * FROM Proposals")
+        for each in self.dbCursor:
+            self.data.proposals[each[0]] = Proposal(each[1], each[2], each[0])
+
+        self.dbCursor.execute("SELECT * FROM ProposalsDetails")
+        for each in self.dbCursor:
+            self.data.proposalsDetails[each[0]] = ProposalDetail(each[1], each[2], each[0])
 
         self.dbCursor.execute("SELECT * FROM Xref")
         for each in self.dbCursor:
@@ -264,7 +263,7 @@ class Window(QMainWindow):
         else:
             if self.detailViewSelected:
                 if self.detailViewSelected == "Proposals":
-                    pass
+                    self.views.setCurrentIndex(PROPOSAL_OVERVIEW_INDEX)
                 elif self.detailViewSelected == "A/P":
                     self.views.setCurrentIndex(AP_OVERVIEW_INDEX)
             else:
