@@ -4,14 +4,14 @@ class InvoicesDict(dict):
 
     def openInvoices(self):
         tempDict = {}
-        for invoiceKey in self.keys():
+        for invoiceKey in self:
             if self[invoiceKey].balance() != 0:
                 tempDict[invoiceKey] = self[invoiceKey]
         return tempDict
 
     def paidInvoices(self):
         tempDict = {}
-        for invoiceKey in self.keys():
+        for invoiceKey in self:
             if self[invoiceKey].balance() == 0:
                 tempDict[invoiceKey] = self[invoiceKey]
         return tempDict
@@ -22,10 +22,32 @@ class ProposalsDict(dict):
 
     def proposalsByStatus(self, status):
         tempDict = {}
-        for proposalKey in self.keys():
+        for proposalKey in self:
             if self[proposalKey].status == status:
                 tempDict[proposalKey] = self[proposalKey]
         return tempDict
+
+class ProjectsDict(dict):
+    def __init__(self):
+        super().__init__()
+
+    def projectsByStatus(self, status):
+        tempDict = {}
+        for projectKey in self:
+            if self[projectKey].status() == status:
+                tempDict[projectKey] = self[projectKey]
+        return tempDict
+            
+class CompanyDict(dict):
+    def __init__(self):
+        super().__init__()
+
+    def dictToList(self):
+        newList = []
+        for each in self.values():
+            newList.append(each.shortName)
+
+        return newList
 
 class ProposalDetail:
     def __init__(self, description, cost, idNum):
@@ -64,24 +86,60 @@ class Proposal:
             cost += self.details[detailKey].cost
         return cost
 
-class Payment:
-    paymentList = {}
-
-    def __init__(self, invoice, datePaid, amountPaid, idNum):
+class Project:
+    def __init__(self, desc, dateStart, idNum, dateEnd=None):
         self.idNum = idNum
-        self.invoice = invoice
+        self.description = desc
+        self.dateStart = dateStart
+        self.dateEnd = dateEnd
+        self.invoices = {}
+        self.company = None
+        self.becameAsset = None
+        self.fromProposal = None
+
+    def addInvoice(self, invoice):
+        self.invoices[invoice.idNum] = invoice
+
+    def addAsset(self, asset):
+        self.becameAsset = asset
+
+    def appProposal(self, proposal):
+        self.fromProposal = proposal
+
+    def addCompany(self, company):
+        self.company = company
+
+    def status(self):
+        if self.dateEnd == None or self.dateEnd == "":
+            return "Open"
+        else:
+            return "Closed"
+
+    def calculateCIP(self):
+        CIP = 0
+        for invoiceKey in self.invoices:
+            CIP += self.invoices[invoiceKey].amount
+        return CIP
+
+class Payment:
+    def __init__(self, datePaid, amountPaid, idNum):
+        self.idNum = idNum
+        self.invoicePaid = None
         self.datePaid = datePaid
         self.amountPaid = amountPaid
 
-class Invoice:
-    invoiceList = {}
+    def addInvoice(self, invoice):
+        self.invoicePaid = invoice
 
+class Invoice:
     def __init__(self, date, dueDate, amount, idNum):
         self.idNum = idNum
         self.invoiceDate = date
         self.dueDate = dueDate
         self.amount = amount
         self.vendor = None
+        self.company = None
+        self.assetProj = None
         self.payments = []
 
     def balance(self):
@@ -96,9 +154,16 @@ class Invoice:
     def addVendor(self, vendor):
         self.vendor = vendor
 
-class Vendor:
-    vendorList = {}
+    def addCompany(self, company):
+        self.company = company
 
+    def addProject(self, project):
+        self.assetProj = ("Project", project)
+
+    def addAsset(self, asset):
+        self.assetProj = ("Asset", asset)
+
+class Vendor:
     def __init__(self, name, address, city, state, zipcode, phone, idNum):
         self.idNum = idNum
         self.name = name
@@ -109,8 +174,6 @@ class Vendor:
         self.phone = phone
         self.proposals = ProposalsDict()
         self.invoices = InvoicesDict()
-
-        Vendor.vendorList[idNum] = self
 
     def balance(self):
         amountPaid = 0
@@ -140,8 +203,6 @@ class Vendor:
         self.proposals.pop(proposal.idNum)
 
 class Company:
-    companyList = {}
-
     def __init__(self, name, shortName, idNum):
         self.idNum = idNum
         self.name = name
@@ -149,23 +210,32 @@ class Company:
         self.proposals = {}
         self.projects = {}
         self.assets = {}
+        self.invoices = {}
 
-        Company.companyList[self.idNum] = self
+    def addInvoice(self, invoice):
+        self.invoices[invoice.idNum] = invoice
 
-    @classmethod
-    def dictToList(cls):
-        newList = []
-        for each in cls.companyList.values():
-            newList.append(each.shortName)
+    def removeInvoice(self, invoice):
+        self.invoices.pop(invoice.idNum)
 
-        return newList
+    def addProposal(self, proposal):
+        self.proposals[proposal.idNum] = proposal
+
+    def removeProposal(self, proposal):
+        self.proposals.pop(proposal.idNum)
+
+    def addProject(self, project):
+        self.projects[project.idNum] = project
+
+    def removeProject(self, project):
+        self.projects.pop(project.idNum)
 
 class CorporateStructure:
     def __init__(self):
-        self.companies = {}
+        self.companies = CompanyDict()
         self.vendors = {}
         self.invoices = InvoicesDict()
         self.proposals = ProposalsDict()
         self.proposalsDetails = {}
         self.assets = {}
-        self.projects = {}
+        self.projects = ProjectsDict()

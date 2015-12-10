@@ -114,16 +114,27 @@ class VendorDialog(QDialog):
 class InvoiceDialog(QDialog):
     def __init__(self, mode, parent=None, invoice=None):
         super().__init__(parent)
+        self.parent = parent
         self.hasChanges = False
+        self.companyChanged = False
         self.vendorChanged = False
+        self.projectAssetChanged = False
         self.mode = mode
 
         self.layout = QGridLayout()
 
+        companyLbl = QLabel("Company:")
         vendorLbl = QLabel("Vendor:")
         invoiceDateLbl = QLabel("Invoice Date:")
         dueDateLabel = QLabel("Due Date:")
         amountLabel = QLabel("Amount:")
+
+        self.companyBox = QComboBox()
+        companyList = []
+        for company in parent.parent.dataConnection.companies.values():
+            companyList.append(str("%4s" % company.idNum) + " - " + company.shortName)
+        self.companyBox.addItems(companyList)
+        self.companyBox.currentIndexChanged.connect(self.updateAssetProjSelector)
 
         self.vendorBox = QComboBox()
         vendorList = []
@@ -131,26 +142,47 @@ class InvoiceDialog(QDialog):
             vendorList.append(str("%4s" % vendor.idNum) + " - " + vendor.name)
         self.vendorBox.addItems(vendorList)
 
+        companyId = parent.stripAllButNumbers(self.companyBox.currentText())
+        self.assetProjSelector = gui_elements.AssetProjSelector(parent.parent.dataConnection.companies[companyId])
+        
         if self.mode == "View":
+            self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % invoice.company.idNum) + " - " + invoice.company.shortName))
+            self.companyBox.setEnabled(False)
+            
             self.vendorBox.setCurrentIndex(self.vendorBox.findText(str("%4s" % invoice.vendor.idNum) + " - " + invoice.vendor.name))
             self.vendorBox.setEnabled(False)
+            
+            companyId = parent.stripAllButNumbers(self.companyBox.currentText())
+            self.assetProjSelector.updateCompany(parent.parent.dataConnection.companies[companyId])
+            ######
+            ## When invoice gets project hooked up, replace the if with:
+            ## if invoice.assetProj[0] == "Asset":
+            ######
+            if invoice.assetProj:
+                self.assetProjSelector.assetRdoBtn.setChecked(True)
+            else:
+                self.assetProjSelector.projRdoBtn.setChecked(True)
+            self.assetProjSelector.setEnabled(False)
+            
             self.invoiceDateText = QLabel(invoice.invoiceDate)
             self.dueDateText = QLabel(invoice.dueDate)
             self.amountText = QLabel(str(invoice.amount))
-
         else:
             self.invoiceDateText = QLineEdit()
             self.dueDateText = QLineEdit()
             self.amountText = QLineEdit()
 
-        self.layout.addWidget(vendorLbl, 0, 0)
-        self.layout.addWidget(self.vendorBox, 0, 1)
-        self.layout.addWidget(invoiceDateLbl, 1, 0)
-        self.layout.addWidget(self.invoiceDateText, 1, 1)
-        self.layout.addWidget(dueDateLabel, 2, 0)
-        self.layout.addWidget(self.dueDateText, 2, 1)
-        self.layout.addWidget(amountLabel, 3, 0)
-        self.layout.addWidget(self.amountText, 3, 1)
+        self.layout.addWidget(companyLbl, 0, 0)
+        self.layout.addWidget(self.companyBox, 0, 1)
+        self.layout.addWidget(self.assetProjSelector, 1, 0, 1, 2)
+        self.layout.addWidget(vendorLbl, 2, 0)
+        self.layout.addWidget(self.vendorBox, 2, 1)
+        self.layout.addWidget(invoiceDateLbl, 3, 0)
+        self.layout.addWidget(self.invoiceDateText, 3, 1)
+        self.layout.addWidget(dueDateLabel, 4, 0)
+        self.layout.addWidget(self.dueDateText, 4, 1)
+        self.layout.addWidget(amountLabel, 5, 0)
+        self.layout.addWidget(self.amountText, 5, 1)
 
         buttonLayout = QHBoxLayout()
 
@@ -171,12 +203,16 @@ class InvoiceDialog(QDialog):
         #### Add payment history for View mode
         ########################
 
-        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        self.layout.addLayout(buttonLayout, 6, 0, 1, 2)
         self.setLayout(self.layout)
 
     def makeLabelsEditable(self):
+        self.companyBox.setEnabled(True)
+        self.companyBox.currentIndexChanged.connect(self.companyChange)
         self.vendorBox.setEnabled(True)
         self.vendorBox.currentIndexChanged.connect(self.vendorChange)
+        self.assetProjSelector.setEnabled(True)
+        self.assetProjSelector.changed.connect(self.projectAssetChange)
         self.invoiceDateText_edit = QLineEdit(self.invoiceDateText.text())
         self.invoiceDateText_edit.textEdited.connect(self.changed)
         self.dueDateText_edit = QLineEdit(self.dueDateText.text())
@@ -184,9 +220,13 @@ class InvoiceDialog(QDialog):
         self.amountText_edit = QLineEdit(self.amountText.text())
         self.amountText_edit.textEdited.connect(self.changed)
 
-        self.layout.addWidget(self.invoiceDateText_edit, 1, 1)
-        self.layout.addWidget(self.dueDateText_edit, 2, 1)
-        self.layout.addWidget(self.amountText_edit, 3, 1)
+        self.layout.addWidget(self.invoiceDateText_edit, 3, 1)
+        self.layout.addWidget(self.dueDateText_edit, 4, 1)
+        self.layout.addWidget(self.amountText_edit, 5, 1)
+
+    def updateAssetProjSelector(self):
+        companyId = self.parent.stripAllButNumbers(self.companyBox.currentText())
+        self.assetProjSelector.updateCompany(self.parent.parent.dataConnection.companies[companyId])
 
     def changed(self):
         self.hasChanges = True
@@ -194,6 +234,16 @@ class InvoiceDialog(QDialog):
     def vendorChange(self):
         self.vendorChanged = True
         self.hasChanges = True
+
+    def companyChange(self):
+        self.companyChanged = True
+        self.hasChanges = True
+
+        self.updateAssetProjSelector()
+
+    def projectAssetChange(self):
+        self.projectAssetChanged = True
+        self.hasChanged = True
 
     def accept(self):
         QDialog.accept(self)
@@ -290,3 +340,83 @@ class ProposalDialog(QDialog):
 
         self.detailsWidget.makeEditable()
         self.detailsWidget.detailsHaveChanged.connect(self.changed)
+
+class ProjectDialog(QDialog):
+    def __init__(self, mode, parent=None, project=None):
+        super().__init__(parent)
+        self.hasChanges = False
+        self.companyChanged = False
+
+        self.layout = QGridLayout()
+        
+        companyLbl = QLabel("Company:")
+        descriptionLbl = QLabel("Description:")
+        startDateLbl = QLabel("Start Date:")
+        self.endDateLbl = QLabel("End Date:")
+        
+        self.companyBox = QComboBox()
+        companyList = []
+        for company in parent.parent.dataConnection.companies.values():
+            companyList.append(str("%4s" % company.idNum) + " - " + company.shortName)
+        self.companyBox.addItems(companyList)
+        
+        if mode == "View":
+            self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % project.company.idNum) + " - " + project.company.shortName))
+            self.companyBox.setEnabled(False)
+            self.descriptionText = QLabel(project.description)
+            self.startDateText = QLabel(project.dateStart)
+            self.endDateText = QLineEdit()
+        else:
+            self.descriptionText = QLineEdit()
+            self.startDateText = QLineEdit()
+            self.endDateText = QLineEdit()
+        
+        self.layout.addWidget(companyLbl, 0, 0)
+        self.layout.addWidget(self.companyBox, 0, 1)
+        self.layout.addWidget(descriptionLbl, 1, 0)
+        self.layout.addWidget(self.descriptionText, 1, 1)
+        self.layout.addWidget(startDateLbl, 2, 0)
+        self.layout.addWidget(self.startDateText, 2, 1)
+        self.layout.addWidget(self.endDateLbl, 3, 0)
+        self.layout.addWidget(self.endDateText, 3, 1)
+        
+        self.endDateLbl.hide()
+        self.endDateText.hide()
+
+        buttonLayout = QHBoxLayout()
+        
+        saveButton = QPushButton("Save")
+        saveButton.clicked.connect(self.accept)
+        buttonLayout.addWidget(saveButton)
+        
+        if mode == "View":
+            editButton = QPushButton("Edit")
+            editButton.clicked.connect(self.makeLabelsEditable)
+            buttonLayout.addWidget(editButton)
+        
+        cancelButton = QPushButton("Cancel")
+        cancelButton.clicked.connect(self.reject)
+        buttonLayout.addWidget(cancelButton)
+        
+        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        self.setLayout(self.layout)
+        
+    def changed(self):
+        self.hasChanges = True
+
+    def companyChange(self):
+        self.companyChanged = True
+        self.hasChanges = True
+
+    def makeLabelsEditable(self):
+        self.companyBox.setEnabled(True)
+        self.companyBox.currentIndexChanged.connect(self.companyChange)
+        self.descriptionText_edit = QLineEdit(self.descriptionText.text())
+        self.descriptionText_edit.textEdited.connect(self.changed)
+        self.startDateText_edit = QLineEdit(self.startDateText.text())
+        self.startDateText_edit.textEdited.connect(self.changed)
+
+        self.endDateText.textEdited.connect(self.changed)
+
+        self.layout.addWidget(self.descriptionText_edit, 1, 1)
+        self.layout.addWidget(self.startDateText_edit, 2, 1)

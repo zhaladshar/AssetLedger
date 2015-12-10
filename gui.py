@@ -25,7 +25,7 @@ class Window(QMainWindow):
         self.generalView = QWidget()
         self.companyOverview = QWidget()
         self.proposalOverview = ProposalView(self.data, self)
-        self.projectOverview = QWidget()
+        self.projectOverview = ProjectView(self.data, self)
         self.APOverview = APView(self.data, self)
         self.companyViewSelected = None
         self.detailViewSelected = None
@@ -59,6 +59,10 @@ class Window(QMainWindow):
         self.dbCursor.execute("SELECT * FROM ProposalsDetails")
         for each in self.dbCursor:
             self.data.proposalsDetails[each[0]] = ProposalDetail(each[1], each[2], each[0])
+
+        self.dbCursor.execute("SELECT * FROM Projects")
+        for each in self.dbCursor:
+            self.data.projects[each[0]] = Project(each[1], each[2], each[0], each[3])
 
         self.dbCursor.execute("SELECT * FROM Xref")
         for each in self.dbCursor:
@@ -123,7 +127,7 @@ class Window(QMainWindow):
         lbl.setStyleSheet("QLabel { background-color: black }")
 
         companyLayout = ButtonToggleBox("Vertical")
-        companyLayout.addButtons(Company.dictToList())
+        companyLayout.addButtons(self.data.companies.dictToList())
         companyLayout.setLayout(companyLayout.layout)
         companyLayout.selectionChanged.connect(self.changeCompanySelection)
 
@@ -194,33 +198,6 @@ class Window(QMainWindow):
         self.views.addWidget(self.proposalOverview)
 
         # Build the project overview widget
-        projectOverviewLayout = QVBoxLayout()
-        self.projectOverviewProposals = CollapsableFrame("Proposals")
-        self.projectOverviewProposals.addEntry("Active bids: # / #")
-        self.projectOverviewProposals.addEntry("Projects accepting bids: #")
-        projectOverviewLayout.addWidget(self.projectOverviewProposals)
-
-        self.projectOverviewBudgets = CollapsableFrame("Budgets")
-        self.projectOverviewBudgets.addEntry("Active budgeted projects: # / #")
-        self.projectOverviewBudgets.addEntry("Total budgeted projects: # / #")
-        self.projectOverviewBudgets.addEntry("Budget vs. actual (excl. ongoing): #â†‘")
-        projectOverviewLayout.addWidget(self.projectOverviewBudgets)
-
-        self.projectOverviewProjects = CollapsableFrame("Projects")
-        self.projectOverviewProjects.addEntry("Active projects: # / #")
-        self.projectOverviewProjects.addEntry("CIP: $#")
-        self.projectOverviewProjects.addEntry("Avg. length of active projects: # mo")
-        self.projectOverviewProjects.addEntry("Avg. length of all projects: # mo")
-        projectOverviewLayout.addWidget(self.projectOverviewProjects)
-
-        self.projectOverviewAP = CollapsableFrame("A/P")
-        self.projectOverviewAP.addEntry("Active vendors: # / #")
-        self.projectOverviewAP.addEntry("Open invoices: # ($#)")
-        self.projectOverviewAP.addEntry("Overdue invoices: # ($#)")
-        projectOverviewLayout.addWidget(self.projectOverviewAP)
-        projectOverviewLayout.addStretch(1)
-
-        self.projectOverview.setLayout(projectOverviewLayout)
         self.views.addWidget(self.projectOverview)
 
         # Build the vendor overview widget
@@ -264,6 +241,8 @@ class Window(QMainWindow):
             if self.detailViewSelected:
                 if self.detailViewSelected == "Proposals":
                     self.views.setCurrentIndex(PROPOSAL_OVERVIEW_INDEX)
+                if self.detailViewSelected == "Projects":
+                    self.views.setCurrentIndex(PROJECT_OVERVIEW_INDEX)
                 elif self.detailViewSelected == "A/P":
                     self.views.setCurrentIndex(AP_OVERVIEW_INDEX)
             else:

@@ -5,6 +5,173 @@ from gui_dialogs import *
 import re
 from classes import *
 
+class AssetProjSelector(QGroupBox):
+    changed = pyqtSignal()
+    
+    def __init__(self, company):
+        super().__init__()
+        self.company = company
+
+        self.buttonGroup = QButtonGroup()
+        
+        self.assetRdoBtn = QRadioButton("Asset")
+        self.assetRdoBtn.clicked.connect(self.showAssetDict)
+        self.assetRdoBtn.setEnabled(False)
+        self.buttonGroup.addButton(self.assetRdoBtn)
+        
+        self.projRdoBtn = QRadioButton("Project")
+        self.projRdoBtn.clicked.connect(self.showProjectDict)
+        self.buttonGroup.addButton(self.projRdoBtn)
+        
+        self.selector = QComboBox()
+        self.selector.currentIndexChanged.connect(self.emitChange)
+        self.selector.hide()
+        
+        layout = QGridLayout()
+        layout.addWidget(self.assetRdoBtn, 0, 0)
+        layout.addWidget(self.projRdoBtn, 0, 1)
+        layout.addWidget(self.selector, 1, 0, 1, 2)
+
+        self.setLayout(layout)
+
+    def showAssetDict(self):
+        self.selector.clear()
+        newList = []
+        for assetKey, asset in self.company.assets:
+            newList.append(str("%4s" % assetKey) + " - " + asset.description)
+        
+        self.selector.addItems(newList)
+        self.selector.show()
+        self.emitChange()
+
+    def showProjectDict(self):
+        self.selector.clear()
+        newList = []
+        for projectKey, project in self.company.projects:
+            newList.append(str("%4s" % projectKey) + " - " + project.description)
+        self.selector.addItems(newList)
+        self.selector.show()
+        self.emitChange()
+
+    def updateCompany(self, company):
+        self.company = company
+
+        self.buttonGroup.setExclusive(False)
+        self.assetRdoBtn.setChecked(False)
+        self.projRdoBtn.setChecked(False)
+        self.buttonGroup.setExclusive(True)
+
+    def emitChange(self):
+        self.changed.emit()
+
+    def assetSelected(self):
+        if self.assetRdoBtn.isChecked() == True:
+            return True
+        else:
+            return False
+
+    def projectSelected(self):
+        if self.projRdoBtn.isChecked() == True:
+            return True
+        else:
+            return False
+
+class InvoiceDetailWidget(QWidget):
+    detailsHaveChanged = pyqtSignal()
+    
+    def __init__(self, detailsDict=None):
+        super().__init__()
+        self.details = {}
+        
+        self.layout = QVBoxLayout()
+        self.gridLayout = QGridLayout()
+        detailLine = QLabel("Detail")
+        costLine = QLabel("Cost")
+
+        self.gridLayout.addWidget(detailLine, 0, 0)
+        self.gridLayout.addWidget(costLine, 0, 1, 1, 2)
+        
+        if detailsDict == None:
+            self.addNewLine()
+        else:
+            for detail in detailsDict.keys():
+                self.addLine(detailsDict[detail].description, detailsDict[detail].cost, False, False, detailsDict[detail].idNum)
+
+        self.layout.addLayout(self.gridLayout)
+        self.layout.addStretch(1)
+        
+        self.setLayout(self.layout)
+
+    def addLine(self, detail, cost, showDelBtn=False, editable=True, detailIdNum=0):
+        rowToUse = self.gridLayout.rowCount()
+
+        if editable == True:
+            detailLine = QLineEdit(detail)
+            costLine = QLineEdit(str(cost))
+            costLine.editingFinished.connect(lambda: self.validateInput(rowToUse))
+            costLine.textEdited.connect(self.emitChange)
+        else:
+            detailLine = QLabel(detail)
+            costLine = QLabel(str(cost))
+
+        deleteButton = QPushButton("-")
+        deleteButton.clicked.connect(lambda: self.deleteLine(rowToUse))
+        if showDelBtn == False:
+            deleteButton.hide()
+        else:
+            deleteButton.show()
+
+        self.gridLayout.addWidget(detailLine, rowToUse, 0)
+        self.gridLayout.addWidget(costLine, rowToUse, 1)
+        self.gridLayout.addWidget(deleteButton, rowToUse, 2)
+
+        self.details[rowToUse] = (detailIdNum, detailLine, costLine)
+
+    def addNewLine(self):
+        self.addLine("", "")
+
+    def deleteLine(self, row):
+        self.details.pop(row)
+        
+        for n in range(3):
+            widget = self.gridLayout.itemAtPosition(row, n).widget()
+            self.gridLayout.removeWidget(widget)
+            widget.deleteLater()
+
+        self.emitChange()
+
+    def validateInput(self, row):
+        if self.gridLayout.itemAtPosition(row, 0).widget().text() != "" and \
+           self.gridLayout.itemAtPosition(row, 1).widget().text() != "":
+            if row == self.gridLayout.rowCount() - 1:
+                self.addNewLine()
+                self.gridLayout.itemAtPosition(row + 1, 0).widget().setFocus()
+                self.gridLayout.itemAtPosition(row, 2).widget().show()
+
+    def makeEditable(self):
+        for key in self.details.keys():
+            detailLine_edit = QLineEdit(self.details[key][1].text())
+            detailLine_edit.textEdited.connect(self.emitChange)
+            costLine_edit = QLineEdit(self.details[key][2].text())
+            costLine_edit.textEdited.connect(self.emitChange)
+
+            for n in range(2):
+                oldWidget = self.gridLayout.itemAtPosition(key, n).widget()
+                self.gridLayout.removeWidget(oldWidget)
+                oldWidget.deleteLater()
+            
+            self.gridLayout.addWidget(detailLine_edit, key, 0)
+            self.gridLayout.addWidget(costLine_edit, key, 1)
+            
+            self.gridLayout.itemAtPosition(key, 2).widget().show()
+
+            self.details[key] = (self.details[key][0], detailLine_edit, costLine_edit)
+
+        self.addNewLine()
+
+    def emitChange(self):
+        self.detailsHaveChanged.emit()
+        
 class ProposalDetailWidget(QWidget):
     detailsHaveChanged = pyqtSignal()
     
@@ -60,14 +227,14 @@ class ProposalDetailWidget(QWidget):
         self.addLine("", "")
 
     def deleteLine(self, row):
-        print(row)
-        print(self.gridLayout.itemAtPosition(row, 1))
-        print(self.details.pop(row))
-
+        self.details.pop(row)
+        
         for n in range(3):
-            item = self.gridLayout.itemAtPosition(row, n).widget()
-            self.gridLayout.removeWidget(self.gridLayout.itemAtPosition(row, n).widget())
-            item.deleteLater()
+            widget = self.gridLayout.itemAtPosition(row, n).widget()
+            self.gridLayout.removeWidget(widget)
+            widget.deleteLater()
+
+        self.emitChange()
 
     def validateInput(self, row):
         if self.gridLayout.itemAtPosition(row, 0).widget().text() != "" and \
@@ -84,6 +251,11 @@ class ProposalDetailWidget(QWidget):
             costLine_edit = QLineEdit(self.details[key][2].text())
             costLine_edit.textEdited.connect(self.emitChange)
 
+            for n in range(2):
+                oldWidget = self.gridLayout.itemAtPosition(key, n).widget()
+                self.gridLayout.removeWidget(oldWidget)
+                oldWidget.deleteLater()
+            
             self.gridLayout.addWidget(detailLine_edit, key, 0)
             self.gridLayout.addWidget(costLine_edit, key, 1)
             
@@ -578,6 +750,27 @@ class InvoiceWidget(QWidget):
                           "' WHERE idNum = " + str(item.invoice.idNum))
                     self.parent.parent.dbCursor.execute(sql)
 
+                    if dialog.companyChanged == True:
+                        newCompanyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+                        print(newCompanyId)
+                        # Change company<->invoice links in Xref tabel
+                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newCompanyId) +
+                               " WHERE ObjectToAddLinkTo = 'invoices' AND" +
+                               " ObjectIdToAddLinkTo = " + str(item.invoice.idNum) + " AND" +
+                               " ObjectBeingLinked = 'companies'")
+                        self.parent.parent.dbCursor.execute(sql)
+
+                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(newCompanyId) +
+                               " WHERE ObjectToAddLinkTo = 'companies' AND" +
+                               " ObjectIdBeingLinked = " + str(item.invoice.idNum) + " AND" +
+                               " ObjectBeingLinked = 'invoices'")
+                        self.parent.parent.dbCursor.execute(sql)
+
+                        # Change company<->invoice links in dataConnection
+                        self.parent.dataConnection.companies[item.invoice.company.idNum].removeInvoice(item.invoice)
+                        item.invoice.addCompany(self.parent.dataConnection.companies[newCompanyId])
+                        self.parent.dataConnection.companies[newCompanyId].addInvoice(item.invoice)
+
                     if dialog.vendorChanged == True:
                         newVendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
 
@@ -598,6 +791,13 @@ class InvoiceWidget(QWidget):
                         self.parent.dataConnection.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
                         self.invoicesDict[item.invoice.idNum].addVendor(self.parent.dataConnection.vendors[newVendorId])
                         self.parent.dataConnection.vendors[newVendorId].addInvoice(item.invoice)
+
+                    if dialog.projectAssetChanged == True:
+                        newId = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
+                        if dialog.assetProjSelector.assetSelected() == True:
+                            pass
+                        else:
+                            pass
 
                     self.parent.parent.dbConnection.commit()
 
@@ -927,6 +1127,8 @@ class ProposalWidget(QWidget):
             dialog.setWindowTitle("View Proposal")
             if dialog.exec_():
                 if dialog.hasChanges == True:
+                    listOfKeysFromItem = list(item.proposal.details.keys())
+                    
                     # Commit changes to database and to vendor entry
                     sql = ("UPDATE Proposals SET ProposalDate = '" + dialog.dateText_edit.text() +
                            "', Status = '" + dialog.statusBox.currentText() + 
@@ -964,10 +1166,29 @@ class ProposalWidget(QWidget):
 
                                 self.parent.dataConnection.proposalsDetails[newProposalDetail.idNum] = newProposalDetail
 
+                    # Compare entries in original details dictionary
+                    # (item.proposals.details) to what is in the
+                    # details widget of the dialog.  Delete any items
+                    # that are in the former but not the latter.
+                    listOfPropDetailsFromDialog = []
+                    
+                    for dialogKey in dialog.detailsWidget.details.keys():
+                        listOfPropDetailsFromDialog.append(dialog.detailsWidget.details[dialogKey][0])
+
+                    for key in listOfKeysFromItem:
+                        if key not in listOfPropDetailsFromDialog:
+                            self.parent.parent.dbCursor.execute("DELETE FROM ProposalsDetails WHERE idNum=?", (item.proposal.details[key].idNum,))
+                            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposalsDetails' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposals' AND ObjectIdBeingLinked=?)",
+                                                                (key, item.proposal.idNum))
+                            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposals' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposalsDetails' AND ObjectIdBeingLinked=?)",
+                                                                (item.proposal.idNum, key))
+                            item.proposal.details.pop(key)
+                            self.parent.dataConnection.proposalsDetails.pop(key)
+
                     if dialog.vendorChanged == True:
                         newVendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
 
-                        # Change vendor<->invoice links in Xref table
+                        # Change vendor<->proposal links in Xref table
                         sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newVendorId) +
                                " WHERE ObjectToAddLinkTo = 'proposals' AND" + 
                                " ObjectIdToAddLinkTo = " + str(item.proposal.idNum) + " AND" +
@@ -980,7 +1201,7 @@ class ProposalWidget(QWidget):
                                " ObjectIdBeingLinked = " + str(item.proposal.idNum))
                         self.parent.parent.dbCursor.execute(sql)
 
-                        # Change vendor<->invoice links in dataConnection
+                        # Change vendor<->proposal links in dataConnection
                         self.parent.dataConnection.vendors[item.proposal.vendor.idNum].removeProposal(item.proposal)
                         self.proposalsDict[item.proposal.idNum].addVendor(self.parent.dataConnection.vendors[newVendorId])
                         self.parent.dataConnection.vendors[newVendorId].addProposal(item.proposal)
@@ -1066,6 +1287,258 @@ class ProposalView(QWidget):
         self.proposalWidget.updateVendorWidgetTree.connect(self.emitVendorWidgetUpdate)
         layout = QVBoxLayout()
         layout.addWidget(self.proposalWidget)
+
+        self.setLayout(layout)
+
+    def emitVendorWidgetUpdate(self):
+        self.updateVendorWidgetTree.emit()
+
+class ProjectTreeWidgetItem(QTreeWidgetItem):
+    def __init__(self, projectItem, parent):
+        super().__init__(parent)
+        self.project = projectItem
+        self.main = QWidget()
+        
+        idLabel = QLabel(str(self.project.idNum))
+        self.descLabel = QLabel(self.project.description)
+        self.startDateLabel = QLabel(self.project.dateStart)
+        self.endDateLabel = QLabel(self.project.dateEnd)
+        self.durationLabel = QLabel("<Duration>")
+        self.CIPLabel = QLabel("CIP: %.02f" % self.project.calculateCIP())
+        
+        layout = QHBoxLayout()
+        layout.addWidget(idLabel)
+        layout.addWidget(self.descLabel)
+        layout.addWidget(self.startDateLabel)
+        layout.addWidget(self.endDateLabel)
+        layout.addWidget(self.durationLabel)
+        layout.addWidget(self.CIPLabel)
+        
+        self.main.setLayout(layout)
+
+    def refreshData(self):
+        self.descLabel.setText(self.project.description)
+        self.startDateLabel.setText(self.project.dateStart)
+        self.endDateLabel.setText(self.project.dateEnd)
+        self.durationLabel.setText("<Duration>")
+        self.CIPLabel.setText("CIP: %2f" % self.project.calculateCIP())
+
+class ProjectTreeWidget(QTreeWidget):
+    def __init__(self, projectsDict):
+        super().__init__()
+        self.buildItems(self, projectsDict)
+
+    def buildItems(self, parent, projectsDict):
+        for projectKey in projectsDict:
+            item = ProjectTreeWidgetItem(projectsDict[projectKey], parent)
+            self.addItem(item)
+
+    def addItem(self, widgetItem):
+        self.setItemWidget(widgetItem, 0, widgetItem.main)
+
+    def refreshData(self):
+        for idx in range(self.topLevelItemCount()):
+            self.topLevelItem(idx).refreshData()
+
+class ProjectWidget(QWidget):
+    updateVendorWidgetTree = pyqtSignal()
+    
+    def __init__(self, projectsDict, parent):
+        super().__init__()
+        self.projectsDict = projectsDict
+        self.parent = parent
+
+        mainLayout = QVBoxLayout()
+
+        self.openProjectsLabel = QLabel("Open: %d" % len(self.projectsDict.projectsByStatus("Open")))
+        mainLayout.addWidget(self.openProjectsLabel)
+
+        # Piece together the projects layout
+        subLayout = QHBoxLayout()
+        treeWidgetsLayout = QVBoxLayout()
+
+        self.openProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus("Open"))
+        self.openProjectsTreeWidget.setIndentation(0)
+        self.openProjectsTreeWidget.setHeaderHidden(True)
+        self.openProjectsTreeWidget.setMinimumWidth(500)
+        self.openProjectsTreeWidget.setMaximumHeight(100)
+        #self.openProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
+
+        self.closedProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus("Closed"))
+        self.closedProjectsTreeWidget.setIndentation(0)
+        self.closedProjectsTreeWidget.setHeaderHidden(True)
+        self.closedProjectsTreeWidget.setMinimumWidth(500)
+        self.closedProjectsTreeWidget.setMaximumHeight(100)
+        #self.closedProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
+
+        self.closedProjectsLabel = QLabel("Closed: %d" % len(self.projectsDict.projectsByStatus("Closed")))
+
+        treeWidgetsLayout.addWidget(self.openProjectsTreeWidget)
+        treeWidgetsLayout.addWidget(self.closedProjectsLabel)
+        treeWidgetsLayout.addWidget(self.closedProjectsTreeWidget)
+
+        buttonLayout = QVBoxLayout()
+        newButton = QPushButton("New")
+        newButton.clicked.connect(self.showNewProjectDialog)
+        viewButton = QPushButton("View")
+        viewButton.clicked.connect(self.showViewProjectDialog)
+        deleteButton = QPushButton("Delete")
+        deleteButton.clicked.connect(self.deleteSelectedProjectFromList)
+        buttonLayout.addWidget(newButton)
+        buttonLayout.addWidget(viewButton)
+        buttonLayout.addWidget(deleteButton)
+        buttonLayout.addStretch(1)
+        
+        subLayout.addLayout(treeWidgetsLayout)
+        subLayout.addLayout(buttonLayout)
+        mainLayout.addLayout(subLayout)
+        
+        self.setLayout(mainLayout)
+
+    def nextIdNum(self, name):
+        self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
+        largestId = self.parent.parent.dbCursor.fetchone()
+        if largestId != None:
+            return largestId[0] + 1
+        else:
+            return 1
+
+    def stripAllButNumbers(self, string):
+        regex = re.match(r"\s*([0-9]+).*", string)
+        return int(regex.groups()[0])
+
+    def insertIntoDatabase(self, tblName, columns, values):
+        sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
+        self.parent.parent.dbCursor.execute(sql)
+
+    def showNewProjectDialog(self):
+        dialog = ProjectDialog("New", self)
+        if dialog.exec_():
+            # Find current largest id and increment by one
+            nextId = self.nextIdNum("Projects")
+            
+            # Create proposal and add to database
+            newProject = Project(dialog.descriptionText.text(),
+                                 dialog.startDateText.text(),
+                                 nextId)
+            companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+            newProject.addCompany(self.parent.dataConnection.companies[companyId])
+            self.parent.dataConnection.companies[companyId].addProject(newProject)
+            self.projectsDict[newProject.idNum] = newProject
+
+            self.insertIntoDatabase("Projects", "(Description, DateStart)", "('" + newProject.description + "', '" + newProject.dateStart + "')")
+            self.insertIntoDatabase("Xref", "", "('projects', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
+            self.insertIntoDatabase("Xref", "", "('companies', " + str(companyId) + ", 'addProject', 'projects', " + str(nextId) + ")")            
+            
+            self.parent.parent.dbConnection.commit()
+            
+            # Make project into a ProjectTreeWidgetItem and add it to ProjectTree
+            item = ProjectTreeWidgetItem(newProject, self.openProjectsTreeWidget)
+            self.openProjectsTreeWidget.addItem(item)
+            self.updateProjectsCount()
+
+    def showViewProjectDialog(self):
+        # Determine which tree the proposal is in--if any.  If none, don't
+        # display dialog
+        idxToShow = self.openProjectsTreeWidget.indexFromItem(self.openProjectsTreeWidget.currentItem())
+        item = self.openProjectsTreeWidget.itemFromIndex(idxToShow)
+
+        if item == None:
+            idxToShow = self.closedProjectsTreeWidget.indexFromItem(self.closedProjectsTreeWidget.currentItem())
+            item = self.closedProjectsTreeWidget.itemFromIndex(idxToShow)
+
+        if item:
+            print(item.project.description)
+            dialog = ProjectDialog("View", self, item.project)
+            print("made dialog")
+            dialog.setWindowTitle("View Project")
+            if dialog.exec_():
+                if dialog.hasChanges == True:
+                    # Commit changes to database and to vendor entry
+                    sql = ("UPDATE Projects SET Description = '" + dialog.descriptionText_edit.text() +
+                           "', DateStart = '" + dialog.startDateText_edit.text() +
+                           "', DateEnd = '" + dialog.endDateText.text() + 
+                           "' WHERE idNum = " + str(item.project.idNum))
+                    self.parent.parent.dbCursor.execute(sql)
+
+                    if dialog.companyChanged == True:
+                        newCompanyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+
+                        # Change company<->project links in Xref table
+                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newCompanyId) +
+                               " WHERE ObjectToAddLinkTo = 'projects' AND" + 
+                               " ObjectIdToAddLinkTo = " + str(item.project.idNum) + " AND" +
+                               " ObjectBeingLinked = 'companies'")
+                        self.parent.parent.dbCursor.execute(sql)
+
+                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(newCompanyId) +
+                               " WHERE ObjectToAddLinkTo = 'companies' AND" +
+                               " ObjectBeingLinked = 'projects' AND" +
+                               " ObjectIdBeingLinked = " + str(item.project.idNum))
+                        self.parent.parent.dbCursor.execute(sql)
+
+                        # Change company<->project links in dataConnection
+                        self.parent.dataConnection.companies[item.project.company.idNum].removeProject(item.project)
+                        item.project.addCompany(self.parent.dataConnection.companies[newCompanyId])
+                        self.parent.dataConnection.companies[newCompanyId].addProject(item.project)
+
+                    self.parent.parent.dbConnection.commit()
+
+                    item.project.description = dialog.descriptionText_edit.text()
+                    item.project.dateStart = dialog.startDateText_edit.text()
+                    item.project.dateEnd = dialog.endDateText.text()
+
+                    self.openProjectsTreeWidget.refreshData()
+                    self.closedProjectsTreeWidget.refreshData()
+
+    def deleteSelectedProjectFromList(self):
+        # Check to see if the item to delete is in the open project tree widget
+        idxToDelete = self.openProjectsTreeWidget.indexOfTopLevelItem(self.openProjectsTreeWidget.currentItem())
+
+        if idxToDelete >= 0:
+            item = self.openProjectsTreeWidget.takeTopLevelItem(idxToDelete)
+        else:
+            idxToDelete = self.closedProjectsTreeWidget.indexOfTopLevelItem(self.closedProjectsTreeWidget.currentItem())
+            item = None
+            
+            if idxToDelete >= 0:
+                # Selected item not in open project tree widget--cannot delete
+                # because it could be converted to an asset.
+                deleteError = QMessageBox()
+                deleteError.setWindowTitle("Can't Delete")
+                deleteError.setText("Cannot delete a closed project")
+                deleteError.exec_()
+        
+        if item:
+            self.parent.parent.dbCursor.execute("DELETE FROM Projects WHERE idNum=?", (item.project.idNum,))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='projects' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='companies' AND ObjectIdBeingLinked=?)",
+                                                (item.project.idNum, item.project.company.idNum))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='companies' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='projects' AND ObjectIdBeingLinked=?)",
+                                                (item.project.company.idNum, item.project.idNum))
+
+            self.parent.dataConnection.companies[item.project.company.idNum].removeProject(item.project)
+            self.projectsDict.pop(item.project.idNum)
+
+            self.parent.parent.dbConnection.commit()
+                
+            self.updateProjectsCount()
+            
+    def updateProjectsCount(self):
+        self.openProjectsLabel.setText("Open: %d" % len(self.projectsDict.projectsByStatus("Open")))
+        self.closedProjectsLabel.setText("Closed: %d" % len(self.projectsDict.projectsByStatus("Closed")))
+        
+class ProjectView(QWidget):
+    updateVendorWidgetTree = pyqtSignal()
+    
+    def __init__(self, dataConnection, parent):
+        super().__init__(parent)
+        self.dataConnection = dataConnection
+        self.parent = parent
+
+        self.projectWidget = ProjectWidget(self.dataConnection.projects, self)
+        self.projectWidget.updateVendorWidgetTree.connect(self.emitVendorWidgetUpdate)
+        layout = QVBoxLayout()
+        layout.addWidget(self.projectWidget)
 
         self.setLayout(layout)
 
