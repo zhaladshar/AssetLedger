@@ -100,6 +100,9 @@ class Project:
     def addInvoice(self, invoice):
         self.invoices[invoice.idNum] = invoice
 
+    def removeInvoice(self, invoice):
+        self.invoices.pop(invoice.idNum)
+
     def addAsset(self, asset):
         self.becameAsset = asset
 
@@ -158,10 +161,10 @@ class Invoice:
         self.company = company
 
     def addProject(self, project):
-        self.assetProj = ("Project", project)
+        self.assetProj = ("projects", project)
 
     def addAsset(self, asset):
-        self.assetProj = ("Asset", asset)
+        self.assetProj = ("assets", asset)
 
 class Vendor:
     def __init__(self, name, address, city, state, zipcode, phone, idNum):

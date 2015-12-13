@@ -15,12 +15,12 @@ class AssetProjSelector(QGroupBox):
         self.buttonGroup = QButtonGroup()
         
         self.assetRdoBtn = QRadioButton("Asset")
-        self.assetRdoBtn.clicked.connect(self.showAssetDict)
+        self.assetRdoBtn.toggled.connect(self.showAssetDict)
         self.assetRdoBtn.setEnabled(False)
         self.buttonGroup.addButton(self.assetRdoBtn)
         
         self.projRdoBtn = QRadioButton("Project")
-        self.projRdoBtn.clicked.connect(self.showProjectDict)
+        self.projRdoBtn.toggled.connect(self.showProjectDict)
         self.buttonGroup.addButton(self.projRdoBtn)
         
         self.selector = QComboBox()
@@ -35,20 +35,20 @@ class AssetProjSelector(QGroupBox):
         self.setLayout(layout)
 
     def showAssetDict(self):
-        self.selector.clear()
+        self.clear()
         newList = []
-        for assetKey, asset in self.company.assets:
-            newList.append(str("%4s" % assetKey) + " - " + asset.description)
+        for assetKey in self.company.assets.keys():
+            newList.append(str("%4s" % assetKey) + " - " + self.company.assets[assetKey].description)
         
         self.selector.addItems(newList)
         self.selector.show()
         self.emitChange()
 
     def showProjectDict(self):
-        self.selector.clear()
+        self.clear()
         newList = []
-        for projectKey, project in self.company.projects:
-            newList.append(str("%4s" % projectKey) + " - " + project.description)
+        for projectKey in self.company.projects.keys():
+            newList.append(str("%4s" % projectKey) + " - " + self.company.projects[projectKey].description)
         self.selector.addItems(newList)
         self.selector.show()
         self.emitChange()
@@ -75,6 +75,9 @@ class AssetProjSelector(QGroupBox):
             return True
         else:
             return False
+
+    def clear(self):
+        self.selector.clear()
 
 class InvoiceDetailWidget(QWidget):
     detailsHaveChanged = pyqtSignal()
@@ -636,6 +639,9 @@ class InvoiceTreeWidget(QTreeWidget):
                 self.balanceNotZero.emit(idx)
 
 class InvoiceWidget(QWidget):
+    updateVendorTree = pyqtSignal()
+    updateProjectTree = pyqtSignal()
+    
     def __init__(self, invoicesDict, parent):
         super().__init__()
         self.invoicesDict = invoicesDict
@@ -704,21 +710,45 @@ class InvoiceWidget(QWidget):
             else:
                 nextId = 1
 
-            # Create new invoice and add invoice<-->vendor links
-            # Then add the invoice to the corporate data structure and
-            # update the invoice and the link information to the database
+            # Create new invoice
             newInvoice = Invoice(dialog.invoiceDateText.text(),
                                  dialog.dueDateText.text(),
                                  float(dialog.amountText.text()),
                                  nextId)
+            # Add invoice<->vendor links
             vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
             newInvoice.addVendor(self.parent.dataConnection.vendors[vendorId])
             self.parent.dataConnection.vendors[vendorId].addInvoice(newInvoice)
+
+            # Add invoice<->project/asset links
+            if dialog.assetProjSelector.assetSelected() == True:
+                type_ = "assets"
+                type_action = "addAsset"
+            else:
+                type_ = "projects"
+                type_action = "addProject"
+                type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
+                newInvoice.addProject(self.parent.dataConnection.projects[type_Id])
+                self.parent.dataConnection.projects[type_Id].addInvoice(newInvoice)
+
+            # Add invoice<->company links
+            companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+            newInvoice.addCompany(self.parent.dataConnection.companies[companyId])
+            self.parent.dataConnection.companies[companyId].addInvoice(newInvoice)
+
+            # Add the invoice to the corporate data structure and update the
+            # invoice and the link information to the database
             self.invoicesDict[newInvoice.idNum] = newInvoice
             self.parent.parent.dbCursor.execute("INSERT INTO Invoices (InvoiceDate, DueDate, Amount) VALUES (?, ?, ?)",
                                   (newInvoice.invoiceDate, newInvoice.dueDate, newInvoice.amount))
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, 'addVendor', 'vendors', ?)", (nextId, vendorId))
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('vendors', ?, 'addInvoice', 'invoices', ?)", (vendorId, nextId))
+            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, ?, ?, ?)", (nextId, type_action, type_, type_Id))
+            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, 'addInvoice', 'invoices', ?)", (type_, type_Id, nextId))
+            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, 'addCompany', 'companies', ?)", (nextId, companyId))
+            
+            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('companies', ?, 'addInvoice', 'invoices', ?)", (companyId, nextId))
+
             self.parent.parent.dbConnection.commit()
 
             # Make invoice into an InvoiceTreeWidgetItem and add it to VendorTree
@@ -728,7 +758,8 @@ class InvoiceWidget(QWidget):
 
             # Update vendor tree widget to display new information based on
             # invoice just created
-            self.parent.vendorWidget.refreshVendorTree()
+            self.updateVendorTree.emit()
+            self.updateProjectTree.emit()
 
     def showViewInvoiceDialog(self):
         # Determine which invoice tree (if any) has been selected
@@ -752,7 +783,7 @@ class InvoiceWidget(QWidget):
 
                     if dialog.companyChanged == True:
                         newCompanyId = self.stripAllButNumbers(dialog.companyBox.currentText())
-                        print(newCompanyId)
+                        
                         # Change company<->invoice links in Xref tabel
                         sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newCompanyId) +
                                " WHERE ObjectToAddLinkTo = 'invoices' AND" +
@@ -807,7 +838,9 @@ class InvoiceWidget(QWidget):
 
                     self.openInvoicesTreeWidget.refreshData()
                     self.paidInvoicesTreeWidget.refreshData()
-                    self.parent.vendorWidget.refreshVendorTree()
+
+                    self.updateVendorTree.emit()
+                    self.updateProjectTree.emit()
                     
     def deleteSelectedInvoiceFromList(self):
         # Check to see if the item to delete is in the open invoices tree widget
@@ -827,11 +860,27 @@ class InvoiceWidget(QWidget):
                                                 (item.invoice.idNum, item.invoice.vendor.idNum))
             self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
                                                 (item.invoice.vendor.idNum, item.invoice.idNum))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked=? AND ObjectIdBeingLinked=?)",
+                                                (item.invoice.idNum, item.invoice.assetProj[0], item.invoice.assetProj[1].idNum))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo=? AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
+                                                (item.invoice.assetProj[0], item.invoice.assetProj[1].idNum, item.invoice.idNum))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='companies' AND ObjectIdBeingLinked=?)",
+                                                (item.invoice.idNum, item.invoice.company.idNum))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='companies' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
+                                                (item.invoice.company.idNum, item.invoice.idNum))
+            
             self.parent.parent.dbConnection.commit()
             self.parent.dataConnection.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
+            if item.invoice.assetProj[0] == "assets":
+                self.parent.dataConnection.assets[item.invoice.assetProj[1].idNum].removeInvoice(item.invoice)
+            else:
+                self.parent.dataConnection.projects[item.invoice.assetProj[1].idNum].removeInvoice(item.invoice)
+                
             self.invoicesDict.pop(item.invoice.idNum)
             self.updateInvoicesCount()
-            self.parent.vendorWidget.refreshVendorTree()
+
+            self.updateVendorTree.emit()
+            self.updateProjectTree.emit()
         
     def updateInvoicesCount(self):
         self.openInvoicesLabel.setText("Open Invoices: %d" % len(self.invoicesDict.openInvoices()))
@@ -848,19 +897,31 @@ class InvoiceWidget(QWidget):
         self.openInvoicesTreeWidget.addItem(newItem)
 
 class APView(QWidget):
+    updateProjectTree = pyqtSignal()
+    
     def __init__(self, dataConnection, parent):
         super().__init__(parent)
         self.dataConnection = dataConnection
         self.parent = parent
 
         layout = QVBoxLayout()
+        
         self.vendorWidget = VendorWidget(self.dataConnection.vendors, self)
         self.invoiceWidget = InvoiceWidget(self.dataConnection.invoices, self)
+        self.invoiceWidget.updateVendorTree.connect(self.updateVendorWidget)
+        self.invoiceWidget.updateProjectTree.connect(self.emitUpdateProjectTree)
+        
         layout.addWidget(self.vendorWidget)
         layout.addWidget(self.invoiceWidget)
         layout.addStretch(1)
 
         self.setLayout(layout)
+
+    def updateVendorWidget(self):
+        self.vendorWidget.refreshVendorTree()
+
+    def emitUpdateProjectTree(self):
+        self.updateProjectTree.emit()
 
 class ProposalTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, proposalItem, parent, suppressClickableLabels):
@@ -1321,7 +1382,7 @@ class ProjectTreeWidgetItem(QTreeWidgetItem):
         self.startDateLabel.setText(self.project.dateStart)
         self.endDateLabel.setText(self.project.dateEnd)
         self.durationLabel.setText("<Duration>")
-        self.CIPLabel.setText("CIP: %2f" % self.project.calculateCIP())
+        self.CIPLabel.setText("CIP: %.02f" % self.project.calculateCIP())
 
 class ProjectTreeWidget(QTreeWidget):
     def __init__(self, projectsDict):
@@ -1526,21 +1587,19 @@ class ProjectWidget(QWidget):
     def updateProjectsCount(self):
         self.openProjectsLabel.setText("Open: %d" % len(self.projectsDict.projectsByStatus("Open")))
         self.closedProjectsLabel.setText("Closed: %d" % len(self.projectsDict.projectsByStatus("Closed")))
+
+    def refreshProjectTree(self):
+        self.openProjectsTreeWidget.refreshData()
         
 class ProjectView(QWidget):
-    updateVendorWidgetTree = pyqtSignal()
-    
     def __init__(self, dataConnection, parent):
         super().__init__(parent)
         self.dataConnection = dataConnection
         self.parent = parent
 
         self.projectWidget = ProjectWidget(self.dataConnection.projects, self)
-        self.projectWidget.updateVendorWidgetTree.connect(self.emitVendorWidgetUpdate)
         layout = QVBoxLayout()
         layout.addWidget(self.projectWidget)
 
         self.setLayout(layout)
-
-    def emitVendorWidgetUpdate(self):
-        self.updateVendorWidgetTree.emit()
+        

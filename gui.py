@@ -32,6 +32,7 @@ class Window(QMainWindow):
 
         # Make signal-slot connections
         self.proposalOverview.updateVendorWidgetTree.connect(self.APOverview.vendorWidget.refreshVendorTree)
+        self.APOverview.updateProjectTree.connect(self.projectOverview.projectWidget.refreshProjectTree)
 
         # Build menus
         self.buildMenus()

@@ -120,7 +120,7 @@ class InvoiceDialog(QDialog):
         self.vendorChanged = False
         self.projectAssetChanged = False
         self.mode = mode
-
+        
         self.layout = QGridLayout()
 
         companyLbl = QLabel("Company:")
@@ -128,20 +128,20 @@ class InvoiceDialog(QDialog):
         invoiceDateLbl = QLabel("Invoice Date:")
         dueDateLabel = QLabel("Due Date:")
         amountLabel = QLabel("Amount:")
-
+        
         self.companyBox = QComboBox()
         companyList = []
         for company in parent.parent.dataConnection.companies.values():
             companyList.append(str("%4s" % company.idNum) + " - " + company.shortName)
         self.companyBox.addItems(companyList)
         self.companyBox.currentIndexChanged.connect(self.updateAssetProjSelector)
-
+        
         self.vendorBox = QComboBox()
         vendorList = []
         for vendor in parent.parent.dataConnection.vendors.values():
             vendorList.append(str("%4s" % vendor.idNum) + " - " + vendor.name)
         self.vendorBox.addItems(vendorList)
-
+        
         companyId = parent.stripAllButNumbers(self.companyBox.currentText())
         self.assetProjSelector = gui_elements.AssetProjSelector(parent.parent.dataConnection.companies[companyId])
         
@@ -154,15 +154,15 @@ class InvoiceDialog(QDialog):
             
             companyId = parent.stripAllButNumbers(self.companyBox.currentText())
             self.assetProjSelector.updateCompany(parent.parent.dataConnection.companies[companyId])
-            ######
-            ## When invoice gets project hooked up, replace the if with:
-            ## if invoice.assetProj[0] == "Asset":
-            ######
-            if invoice.assetProj:
+
+            if invoice.assetProj[0] == "assets":
                 self.assetProjSelector.assetRdoBtn.setChecked(True)
+                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
             else:
                 self.assetProjSelector.projRdoBtn.setChecked(True)
+                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
             self.assetProjSelector.setEnabled(False)
+            self.assetProjSelector.show()
             
             self.invoiceDateText = QLabel(invoice.invoiceDate)
             self.dueDateText = QLabel(invoice.dueDate)
@@ -227,6 +227,7 @@ class InvoiceDialog(QDialog):
     def updateAssetProjSelector(self):
         companyId = self.parent.stripAllButNumbers(self.companyBox.currentText())
         self.assetProjSelector.updateCompany(self.parent.parent.dataConnection.companies[companyId])
+        self.assetProjSelector.clear()
 
     def changed(self):
         self.hasChanges = True
