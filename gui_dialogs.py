@@ -252,16 +252,27 @@ class InvoiceDialog(QDialog):
 class ProposalDialog(QDialog):
     def __init__(self, mode, parent=None, proposal=None):
         super().__init__(parent)
+        self.parent = parent
         self.hasChanges = False
         self.vendorChanged = False
+        self.companyChanged = False
+        self.projectAssetChanged = False
         self.mode = mode
 
         self.layout = QGridLayout()
 
+        companyLbl = QLabel("Company:")
         vendorLbl = QLabel("Vendor:")
         statusLbl = QLabel("Status:")
         dateLbl = QLabel("Date:")
-
+        
+        self.companyBox = QComboBox()
+        companyList = []
+        for company in parent.parent.dataConnection.companies.values():
+            companyList.append(str("%4s" % company.idNum) + " - " + company.shortName)
+        self.companyBox.addItems(companyList)
+        self.companyBox.currentIndexChanged.connect(self.updateAssetProjSelector)
+        
         self.vendorBox = QComboBox()
         vendorList = []
         for vendor in parent.parent.dataConnection.vendors.values():
@@ -271,18 +282,41 @@ class ProposalDialog(QDialog):
         self.statusBox = QComboBox()
         self.statusBox.addItems(PROPOSAL_STATUSES)
         
+        companyId = parent.stripAllButNumbers(self.companyBox.currentText())
+        self.assetProjSelector = gui_elements.AssetProjSelector(parent.parent.dataConnection.companies[companyId])
+        
         if self.mode == "View":
+            self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % proposal.company.idNum) + " - " + proposal.company.shortName))
+            self.companyBox.setEnabled(False)
+            
             self.vendorBox.setCurrentIndex(self.vendorBox.findText(str("%4s" % proposal.vendor.idNum) + " - " + proposal.vendor.name))
             self.vendorBox.setEnabled(False)
+            
             self.statusBox.setCurrentIndex(self.statusBox.findText(proposal.status))
             self.statusBox.setEnabled(False)
+
+            companyId = parent.stripAllButNumbers(self.companyBox.currentText())
+            self.assetProjSelector.updateCompany(parent.parent.dataConnection.companies[companyId])
+
+            if invoice.assetProj[0] == "assets":
+                self.assetProjSelector.assetRdoBtn.setChecked(True)
+                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
+            else:
+                self.assetProjSelector.projRdoBtn.setChecked(True)
+                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
+            self.assetProjSelector.setEnabled(False)
+            self.assetProjSelector.show()
+            
             self.dateText = QLabel(proposal.date)
         else:
             self.dateText = QLineEdit()
 
-        self.layout.addWidget(vendorLbl, 0, 0)
-        self.layout.addWidget(self.vendorBox, 0, 1)
-        nextRow = 1
+        self.layout.addWidget(companyLbl, 0, 0)
+        self.layout.addWidget(self.companyBox, 0, 1)
+        self.layout.addWidget(self.assetProjSelector, 1, 0, 1, 2)
+        self.layout.addWidget(vendorLbl, 2, 0)
+        self.layout.addWidget(self.vendorBox, 2, 1)
+        nextRow = 3
 
         if self.mode == "View":
             self.layout.addWidget(statusLbl, nextRow, 0)
@@ -327,10 +361,24 @@ class ProposalDialog(QDialog):
     def vendorChange(self):
         self.vendorChanged = True
         self.hasChanges = True
+
+    def companyChange(self):
+        self.companyChanged = True
+        self.hasChanges = True
+
+    def projectAssetChange(self):
+        self.projectAssetChanged = True
+        self.hasChanges = True
         
     def makeLabelsEditable(self):
+        self.companyBox.setEnabled(True)
+        self.companyBox.currentIndexChanged.connect(self.companyChange)
+        
         self.vendorBox.setEnabled(True)
         self.vendorBox.currentIndexChanged.connect(self.vendorChange)
+
+        self.assetProjSelector.setEnabled(True)
+        self.assetProjSelector.changed.connect(self.projectAssetChange)
         
         self.statusBox.setEnabled(True)
         self.statusBox.currentIndexChanged.connect(self.changed)
@@ -342,6 +390,11 @@ class ProposalDialog(QDialog):
         self.detailsWidget.makeEditable()
         self.detailsWidget.detailsHaveChanged.connect(self.changed)
 
+    def updateAssetProjSelector(self):
+        companyId = self.parent.stripAllButNumbers(self.companyBox.currentText())
+        self.assetProjSelector.updateCompany(self.parent.parent.dataConnection.companies[companyId])
+        self.assetProjSelector.clear()
+        
 class ProjectDialog(QDialog):
     def __init__(self, mode, parent=None, project=None):
         super().__init__(parent)

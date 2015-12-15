@@ -746,7 +746,6 @@ class InvoiceWidget(QWidget):
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, ?, ?, ?)", (nextId, type_action, type_, type_Id))
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, 'addInvoice', 'invoices', ?)", (type_, type_Id, nextId))
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, 'addCompany', 'companies', ?)", (nextId, companyId))
-            
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('companies', ?, 'addInvoice', 'invoices', ?)", (companyId, nextId))
 
             self.parent.parent.dbConnection.commit()
@@ -871,6 +870,8 @@ class InvoiceWidget(QWidget):
             
             self.parent.parent.dbConnection.commit()
             self.parent.dataConnection.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
+            self.parent.dataConnection.companies[item.invoice.company.idNum].removeInvoice(item.invoice)
+            
             if item.invoice.assetProj[0] == "assets":
                 self.parent.dataConnection.assets[item.invoice.assetProj[1].idNum].removeInvoice(item.invoice)
             else:
@@ -1130,15 +1131,38 @@ class ProposalWidget(QWidget):
             newProposal = Proposal(dialog.dateText.text(),
                                    "Open",
                                    nextId)
+            self.proposalsDict[newProposal.idNum] = newProposal
+            
+            # Add company<->proposal link
+            companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+            newProposal.addCompany(self.parent.dataConnection.companies[companyId])
+            self.parent.dataConnection.companies[companyId].addProposal(newProposal)
+            
+            # Add vendor<->proposal link
             vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
             newProposal.addVendor(self.parent.dataConnection.vendors[vendorId])
             self.parent.dataConnection.vendors[vendorId].addProposal(newProposal)
-            self.proposalsDict[newProposal.idNum] = newProposal
-
+            
+            # Add invoice<->project/asset links
+            if dialog.assetProjSelector.assetSelected() == True:
+                type_ = "assets"
+                type_action = "addAsset"
+            else:
+                type_ = "projects"
+                type_action = "addProject"
+                type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
+                newProposal.addProject(self.parent.dataConnection.projects[type_Id])
+                self.parent.dataConnection.projects[type_Id].addProposal(newProposal)
+            
+            # Add to database
             self.insertIntoDatabase("Proposals", "(ProposalDate, Status)", "('" + newProposal.date + "', '" + newProposal.status + "')")
+            self.insertIntoDatabase("Xref", "", "('proposals', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
+            self.insertIntoDatabase("Xref", "", "('companies', " + str(companyId) + ", 'addProposal', 'proposals', " + str(nextId) + ")")
             self.insertIntoDatabase("Xref", "", "('proposals', " + str(nextId) + ", 'addVendor', 'vendors', " + str(vendorId) + ")")
             self.insertIntoDatabase("Xref", "", "('vendors', " + str(vendorId) + ", 'addProposal', 'proposals', " + str(nextId) + ")")
-
+            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('proposals', ?, ?, ?, ?)", (nextId, type_action, type_, type_Id))
+            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, 'addProposal', 'proposals', ?)", (type_, type_Id, nextId))
+            
             # Create proposal details and add to database
             nextProposalDetId = self.nextIdNum("ProposalsDetails")
                 
@@ -1304,22 +1328,21 @@ class ProposalWidget(QWidget):
 
         if item:
             self.parent.parent.dbCursor.execute("DELETE FROM Proposals WHERE idNum=?", (item.proposal.idNum,))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposals' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='vendors' AND ObjectIdBeingLinked=?)",
-                                                (item.proposal.idNum, item.proposal.vendor.idNum))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposals' AND ObjectIdBeingLinked=?)",
-                                                (item.proposal.vendor.idNum, item.proposal.idNum))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposals' AND ObjectIdToAddLinkTo=?)", (item.proposal.idNum,))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectBeingLinked='proposals' AND ObjectIdBeingLinked=?)", (item.proposal.idNum,))
 
             self.parent.dataConnection.vendors[item.proposal.vendor.idNum].removeProposal(item.proposal)
+            self.parent.dataConnection.companies[item.proposal.company.idNum].removeProposal(item.proposal)
+            
+            if item.proposal.proposalFor[0] == "assets":
+                self.parent.dataConnection.assets[item.proposal.proposalFor[1].idNum].removeProposal(item.proposal)
+            else:
+                self.parent.dataConnection.projects[item.proposal.proposalFor[1].idNum].removeProposal(item.proposal)
+            
             proposal = self.proposalsDict.pop(item.proposal.idNum)
-
             for key in proposal.details.keys():
                 proposalDet = proposal.details[key]
-
                 self.parent.parent.dbCursor.execute("DELETE FROM ProposalsDetails WHERE idNum=?", (proposalDet.idNum,))
-                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposalsDetails' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposals' AND ObjectIdBeingLinked=?)",
-                                                    (proposalDet.idNum, proposal.idNum))
-                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposals' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposalsDetails' AND ObjectIdBeingLinked=?)",
-                                                    (proposal.idNum, proposalDet.idNum))
                 self.parent.dataConnection.proposalsDetails.pop(proposalDet.idNum)
 
             self.parent.parent.dbConnection.commit()

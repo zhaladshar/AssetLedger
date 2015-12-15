@@ -64,18 +64,22 @@ class Proposal:
         self.idNum = idNum
         self.date = date
         self.status = status
+        self.company = None
         self.vendor = None
         self.proposalFor = None
         self.details = {}
 
+    def addCompany(self, company):
+        self.company = company
+        
     def addVendor(self, vendor):
         self.vendor = vendor
 
     def addProject(self, project):
-        self.proposalFor = ("Project", project)
+        self.proposalFor = ("projects", project)
 
     def addAsset(self, asset):
-        self.proposalFor = ("Asset", asset)
+        self.proposalFor = ("assets", asset)
 
     def addDetail(self, detail):
         self.details[detail.idNum] = detail
@@ -93,9 +97,9 @@ class Project:
         self.dateStart = dateStart
         self.dateEnd = dateEnd
         self.invoices = {}
+        self.proposals = {}
         self.company = None
         self.becameAsset = None
-        self.fromProposal = None
 
     def addInvoice(self, invoice):
         self.invoices[invoice.idNum] = invoice
@@ -106,8 +110,11 @@ class Project:
     def addAsset(self, asset):
         self.becameAsset = asset
 
-    def appProposal(self, proposal):
-        self.fromProposal = proposal
+    def addProposal(self, proposal):
+        self.proposals[proposal.idNum] = proposal
+
+    def removeProposal(self, proposal):
+        self.proposals.pop(proposal.idNum)
 
     def addCompany(self, company):
         self.company = company
