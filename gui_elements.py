@@ -85,37 +85,80 @@ class InvoiceDetailWidget(QWidget):
     def __init__(self, detailsDict=None):
         super().__init__()
         self.details = {}
+        self.proposal = None
         
         self.layout = QVBoxLayout()
         self.gridLayout = QGridLayout()
-        detailLine = QLabel("Detail")
+        descLine = QLabel("Description")
         costLine = QLabel("Cost")
+        propLine = QLabel("Proposal Element")
 
-        self.gridLayout.addWidget(detailLine, 0, 0)
-        self.gridLayout.addWidget(costLine, 0, 1, 1, 2)
+        self.gridLayout.addWidget(descLine, 0, 0)
+        self.gridLayout.addWidget(costLine, 0, 1)
+        self.gridLayout.addWidget(propLine, 0, 2, 1, 2)
         
         if detailsDict == None:
             self.addNewLine()
         else:
-            for detail in detailsDict.keys():
-                self.addLine(detailsDict[detail].description, detailsDict[detail].cost, False, False, detailsDict[detail].idNum)
-
+            for detailKey in detailsDict:
+                proposalDet = str("%4s - " % detailsDict[detail].proposalDetail.idNum) + detailsDict[detail].proposalDetail.description
+                self.addLine(detailsDict[detailKey].description, detailsDict[detailKey].cost, proposalDet, False, False, detailsDict[detailKey].idNum)
+        
         self.layout.addLayout(self.gridLayout)
         self.layout.addStretch(1)
         
         self.setLayout(self.layout)
 
-    def addLine(self, detail, cost, showDelBtn=False, editable=True, detailIdNum=0):
-        rowToUse = self.gridLayout.rowCount()
+    def resetProposalBoxes(self):
+        for detailKey in self.details:
+            print(detailKey)
+            rowToUse = self.details[detailKey][4]
+            print("rowToUse", rowToUse)
+            print("NEED TO FIGURE OUT HOW TO CREATE PROPOSALDET FOR FUNCTION BELOW")
+            newProposalBox = self.makeProposalDetComboBox(proposalDet)
+            print("did")
+            newDetail = (self.details[detailKey][0], self.details[detailKey][1],
+                         self.details[detailKey][2], newProposalBox,
+                         rowToUse)
+            print(newDetail)
+            self.details[detailKey] = newDetail
+            print("did this")
 
+            oldWidget = self.gridLayout.itemAtPosition(rowToUse, 2).widget()
+            self.gridLayout.removeWidget(oldWidget)
+            self.gridLayout.addWidget(newProposalBox, rowToUse, 2)
+            oldWidget.deleteLater()
+        
+    def addProposal(self, proposal):
+        self.proposal = proposal
+        self.resetProposalBoxes()
+
+    def makeProposalDetComboBox(self, proposalDet):
+        proposalDetList = [""]
+        if self.proposal:
+            for detailKey in self.proposal.details:
+                proposalDetList.append(str("%4s - " % detailKey) + self.proposal.details[detailKey].description)
+        proposalBox = QComboBox()
+        proposalBox.addItems(proposalDetList)
+        proposalBox.setCurrentIndex(proposalBox.findText(proposalDet))
+
+        return proposalBox
+        
+    def addLine(self, desc, cost, proposalDet, showDelBtn=False, editable=True, detailIdNum=0):
+        rowToUse = self.gridLayout.rowCount()
+        
+        proposalBox = self.makeProposalDetComboBox(proposalDet)
+        
         if editable == True:
-            detailLine = QLineEdit(detail)
+            descLine = QLineEdit(desc)
+            descLine.textEdited.connect(self.emitChange)
             costLine = QLineEdit(str(cost))
-            costLine.editingFinished.connect(lambda: self.validateInput(rowToUse))
             costLine.textEdited.connect(self.emitChange)
+            proposalBox.currentIndexChanged.connect(lambda: self.validateInput(rowToUse))
         else:
-            detailLine = QLabel(detail)
+            descLine = QLabel(desc)
             costLine = QLabel(str(cost))
+            proposalBox.setEnabled(False)
 
         deleteButton = QPushButton("-")
         deleteButton.clicked.connect(lambda: self.deleteLine(rowToUse))
@@ -123,20 +166,21 @@ class InvoiceDetailWidget(QWidget):
             deleteButton.hide()
         else:
             deleteButton.show()
-
-        self.gridLayout.addWidget(detailLine, rowToUse, 0)
+        
+        self.gridLayout.addWidget(descLine, rowToUse, 0)
         self.gridLayout.addWidget(costLine, rowToUse, 1)
-        self.gridLayout.addWidget(deleteButton, rowToUse, 2)
-
-        self.details[rowToUse] = (detailIdNum, detailLine, costLine)
-
+        self.gridLayout.addWidget(proposalBox, rowToUse, 2)
+        self.gridLayout.addWidget(deleteButton, rowToUse, 3)
+        
+        self.details[rowToUse] = (detailIdNum, descLine, costLine, proposalBox, rowToUse)
+        
     def addNewLine(self):
-        self.addLine("", "")
-
+        self.addLine("", "", "")
+        
     def deleteLine(self, row):
         self.details.pop(row)
         
-        for n in range(3):
+        for n in range(4):
             widget = self.gridLayout.itemAtPosition(row, n).widget()
             self.gridLayout.removeWidget(widget)
             widget.deleteLater()
@@ -152,7 +196,7 @@ class InvoiceDetailWidget(QWidget):
                 self.gridLayout.itemAtPosition(row, 2).widget().show()
 
     def makeEditable(self):
-        for key in self.details.keys():
+        for key in self.details:
             detailLine_edit = QLineEdit(self.details[key][1].text())
             detailLine_edit.textEdited.connect(self.emitChange)
             costLine_edit = QLineEdit(self.details[key][2].text())
@@ -165,10 +209,11 @@ class InvoiceDetailWidget(QWidget):
             
             self.gridLayout.addWidget(detailLine_edit, key, 0)
             self.gridLayout.addWidget(costLine_edit, key, 1)
-            
-            self.gridLayout.itemAtPosition(key, 2).widget().show()
 
-            self.details[key] = (self.details[key][0], detailLine_edit, costLine_edit)
+            self.gridLayout.itemAtPosition(key, 2).widget().setEnabled(True)
+            self.gridLayout.itemAtPosition(key, 3).widget().show()
+
+            self.details[key] = (self.details[key][0], detailLine_edit, costLine_edit, self.gridLayout.itemAtPosition(key, 2).widget())
 
         self.addNewLine()
 
@@ -1144,13 +1189,13 @@ class ProposalWidget(QWidget):
             self.parent.dataConnection.vendors[vendorId].addProposal(newProposal)
             
             # Add invoice<->project/asset links
+            type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
             if dialog.assetProjSelector.assetSelected() == True:
                 type_ = "assets"
                 type_action = "addAsset"
             else:
                 type_ = "projects"
                 type_action = "addProject"
-                type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
                 newProposal.addProject(self.parent.dataConnection.projects[type_Id])
                 self.parent.dataConnection.projects[type_Id].addProposal(newProposal)
             
@@ -1214,7 +1259,7 @@ class ProposalWidget(QWidget):
                 if dialog.hasChanges == True:
                     listOfKeysFromItem = list(item.proposal.details.keys())
                     
-                    # Commit changes to database and to vendor entry
+                    # Commit changes to database
                     sql = ("UPDATE Proposals SET ProposalDate = '" + dialog.dateText_edit.text() +
                            "', Status = '" + dialog.statusBox.currentText() + 
                            "' WHERE idNum = " + str(item.proposal.idNum))
@@ -1288,13 +1333,57 @@ class ProposalWidget(QWidget):
 
                         # Change vendor<->proposal links in dataConnection
                         self.parent.dataConnection.vendors[item.proposal.vendor.idNum].removeProposal(item.proposal)
-                        self.proposalsDict[item.proposal.idNum].addVendor(self.parent.dataConnection.vendors[newVendorId])
+                        item.proposal.addVendor(self.parent.dataConnection.vendors[newVendorId])
                         self.parent.dataConnection.vendors[newVendorId].addProposal(item.proposal)
+
+                    if dialog.companyChanged == True:
+                        newCompanyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+
+                        # Change company<->proposal links in Xref table
+                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newCompanyId) +
+                               " WHERE ObjectToAddLinkTo = 'proposals' AND" +
+                               " ObjectIdToAddLinkTo = " + str(item.proposal.idNum) + " AND" +
+                               " ObjectBeingLinked = 'companies'")
+                        self.parent.parent.dbCursor.execute(sql)
+
+                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(newCompanyId) +
+                               " WHERE ObjectToAddLinkTo = 'companies' AND" +
+                               " ObjectBeingLinked = 'proposals' AND" +
+                               " ObjectIdBeingLinked = " + str(item.proposal.idNum))
+                        self.parent.parent.dbCursor.execute(sql)
+
+                        # Change company<->proposal links in dataConnection
+                        self.parent.dataConnection.companies[item.proposal.company.idNum].removeProposal(item.proposal)
+                        item.proposal.addCompany(self.parent.dataConnection.companies[newCompanyId])
+                        self.parent.dataConnection.companies[newCompanyId].addProposal(item.proposal)
+
+                    if dialog.projectAssetChanged == True:
+                        # Change project/asset<->proposal links in database
+                        type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
+                        if dialog.assetProjSelector.assetSelected() == True:
+                            pass
+                        else:
+                            type_ = "projects"
+                            self.parent.dataConnection.projects[item.proposal.proposalFor[1].idNum].removeProposal(item.proposal)
+                            item.proposal.addProject(self.parent.dataConnection.projects[type_Id])
+                            self.parent.dataConnection.projects[type_Id].addProposal(item.proposal)
+                        
+                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(type_Id) +
+                               " WHERE ObjectToAddLinkTo = 'proposals' AND" +
+                               " ObjectIdToAddLinkTo = " + str(item.proposal.idNum) + " AND" +
+                               " ObjectBeingLinked = '" + type_ + "'")
+                        self.parent.parent.dbCursor.execute(sql)
+                        
+                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(type_Id) +
+                               " WHERE ObjectToAddLinkTo = '" + type_ + "' AND" +
+                               " ObjectBeingLinked = 'proposals' AND" +
+                               " ObjectIdBeingLinked = " + str(item.proposal.idNum))
+                        self.parent.parent.dbCursor.execute(sql)
 
                     self.parent.parent.dbConnection.commit()
 
-                    self.proposalsDict[item.proposal.idNum].date = dialog.dateText_edit.text()
-                    self.proposalsDict[item.proposal.idNum].status = dialog.statusBox.currentText()
+                    item.proposal.date = dialog.dateText_edit.text()
+                    item.proposal.status = dialog.statusBox.currentText()
 
                     self.openProposalsTreeWidget.refreshData()
                     self.rejectedProposalsTreeWidget.refreshData()

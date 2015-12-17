@@ -97,7 +97,7 @@ class Project:
         self.dateStart = dateStart
         self.dateEnd = dateEnd
         self.invoices = {}
-        self.proposals = {}
+        self.proposals = ProposalsDict()
         self.company = None
         self.becameAsset = None
 
@@ -141,24 +141,38 @@ class Payment:
     def addInvoice(self, invoice):
         self.invoicePaid = invoice
 
+class InvoiceDetail:
+    def __init__(self, description, amount, capitalizable):
+        self.description = description
+        self.cost = amount
+        self.capitalizable = capitalizable
+        self.invoice = None
+        self.proposalDetail = None
+
+    def addInvoice(self, invoice):
+        self.invoice = invoice
+
+    def addProposalDetail(self, propDet):
+        self.proposalDetail = propDet
+
 class Invoice:
-    def __init__(self, date, dueDate, amount, idNum):
+    def __init__(self, date, dueDate, idNum):
         self.idNum = idNum
         self.invoiceDate = date
         self.dueDate = dueDate
-        self.amount = amount
         self.vendor = None
         self.company = None
         self.assetProj = None
-        self.payments = []
+        self.payments = {}
+        self.details = {}
 
     def balance(self):
         return self.amount - self.paid()
 
     def paid(self):
         amtPaid = 0.0
-        for payment in self.payments:
-            amtPaid += payment.amountPaid
+        for paymentKey in self.payments:
+            amtPaid += payments[paymentKey].amountPaid
         return amtPaid
 
     def addVendor(self, vendor):
@@ -172,6 +186,12 @@ class Invoice:
 
     def addAsset(self, asset):
         self.assetProj = ("assets", asset)
+
+    def addDetail(self, detail):
+        self.details[detail.idNum] = detail
+
+    def removeDetail(self, detail):
+        self.details.pop(detail.idNum)
 
 class Vendor:
     def __init__(self, name, address, city, state, zipcode, phone, idNum):

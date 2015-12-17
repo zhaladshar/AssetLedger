@@ -127,7 +127,6 @@ class InvoiceDialog(QDialog):
         vendorLbl = QLabel("Vendor:")
         invoiceDateLbl = QLabel("Invoice Date:")
         dueDateLabel = QLabel("Due Date:")
-        amountLabel = QLabel("Amount:")
         
         self.companyBox = QComboBox()
         companyList = []
@@ -144,6 +143,7 @@ class InvoiceDialog(QDialog):
         
         companyId = parent.stripAllButNumbers(self.companyBox.currentText())
         self.assetProjSelector = gui_elements.AssetProjSelector(parent.parent.dataConnection.companies[companyId])
+        self.assetProjSelector.changed.connect(self.updateDetailInvoiceWidget)
         
         if self.mode == "View":
             self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % invoice.company.idNum) + " - " + invoice.company.shortName))
@@ -166,11 +166,9 @@ class InvoiceDialog(QDialog):
             
             self.invoiceDateText = QLabel(invoice.invoiceDate)
             self.dueDateText = QLabel(invoice.dueDate)
-            self.amountText = QLabel(str(invoice.amount))
         else:
             self.invoiceDateText = QLineEdit()
             self.dueDateText = QLineEdit()
-            self.amountText = QLineEdit()
 
         self.layout.addWidget(companyLbl, 0, 0)
         self.layout.addWidget(self.companyBox, 0, 1)
@@ -181,9 +179,13 @@ class InvoiceDialog(QDialog):
         self.layout.addWidget(self.invoiceDateText, 3, 1)
         self.layout.addWidget(dueDateLabel, 4, 0)
         self.layout.addWidget(self.dueDateText, 4, 1)
-        self.layout.addWidget(amountLabel, 5, 0)
-        self.layout.addWidget(self.amountText, 5, 1)
-
+        
+        if self.mode == "View":
+            self.detailsWidget = gui_elements.InvoiceDetailWidget(proposal.details)
+        else:
+            self.detailsWidget = gui_elements.InvoiceDetailWidget()
+        self.layout.addWidget(self.detailsWidget, 5, 0, 1, 2)
+        
         buttonLayout = QHBoxLayout()
 
         saveButton = QPushButton("Save")
@@ -206,6 +208,24 @@ class InvoiceDialog(QDialog):
         self.layout.addLayout(buttonLayout, 6, 0, 1, 2)
         self.setLayout(self.layout)
 
+    def updateDetailInvoiceWidget(self):
+        selection = self.assetProjSelector.selector.currentText()
+        selectionId = self.parent.stripAllButNumbers(selection)
+        
+        if self.assetProjSelector.assetSelected() == True:
+            pass
+        else:
+            acceptedProposal = self.parent.parent.dataConnection.projects[selectionId].proposals.proposalsByStatus("Accepted")
+
+            if acceptedProposal:
+                proposal = list(acceptedProposal.values())[0]
+            else:
+                proposal = None
+            
+        print("here")
+        self.detailsWidget.addProposal(proposal)
+        print("and here")
+
     def makeLabelsEditable(self):
         self.companyBox.setEnabled(True)
         self.companyBox.currentIndexChanged.connect(self.companyChange)
@@ -217,12 +237,9 @@ class InvoiceDialog(QDialog):
         self.invoiceDateText_edit.textEdited.connect(self.changed)
         self.dueDateText_edit = QLineEdit(self.dueDateText.text())
         self.dueDateText_edit.textEdited.connect(self.changed)
-        self.amountText_edit = QLineEdit(self.amountText.text())
-        self.amountText_edit.textEdited.connect(self.changed)
 
         self.layout.addWidget(self.invoiceDateText_edit, 3, 1)
         self.layout.addWidget(self.dueDateText_edit, 4, 1)
-        self.layout.addWidget(self.amountText_edit, 5, 1)
 
     def updateAssetProjSelector(self):
         companyId = self.parent.stripAllButNumbers(self.companyBox.currentText())
@@ -297,13 +314,13 @@ class ProposalDialog(QDialog):
 
             companyId = parent.stripAllButNumbers(self.companyBox.currentText())
             self.assetProjSelector.updateCompany(parent.parent.dataConnection.companies[companyId])
-
-            if invoice.assetProj[0] == "assets":
+            
+            if proposal.proposalFor[0] == "assets":
                 self.assetProjSelector.assetRdoBtn.setChecked(True)
-                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
+                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % proposal.proposalFor[1].idNum) + " - " + proposal.proposalFor[1].description))
             else:
                 self.assetProjSelector.projRdoBtn.setChecked(True)
-                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
+                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % proposal.proposalFor[1].idNum) + " - " + proposal.proposalFor[1].description))
             self.assetProjSelector.setEnabled(False)
             self.assetProjSelector.show()
             
@@ -385,7 +402,7 @@ class ProposalDialog(QDialog):
         
         self.dateText_edit = QLineEdit(self.dateText.text())
         self.dateText_edit.textEdited.connect(self.changed)
-        self.layout.addWidget(self.dateText_edit, 2, 1)
+        self.layout.addWidget(self.dateText_edit, 4, 1)
 
         self.detailsWidget.makeEditable()
         self.detailsWidget.detailsHaveChanged.connect(self.changed)
