@@ -6,7 +6,8 @@ import re
 from classes import *
 
 class AssetProjSelector(QGroupBox):
-    changed = pyqtSignal()
+    rdoBtnChanged = pyqtSignal()
+    selectorChanged = pyqtSignal()
     
     def __init__(self, company):
         super().__init__()
@@ -24,7 +25,7 @@ class AssetProjSelector(QGroupBox):
         self.buttonGroup.addButton(self.projRdoBtn)
         
         self.selector = QComboBox()
-        self.selector.currentIndexChanged.connect(self.emitChange)
+        self.selector.currentIndexChanged.connect(self.emitSelectorChange)
         self.selector.hide()
         
         layout = QGridLayout()
@@ -42,7 +43,7 @@ class AssetProjSelector(QGroupBox):
         
         self.selector.addItems(newList)
         self.selector.show()
-        self.emitChange()
+        self.emitRdoBtnChange()
 
     def showProjectDict(self):
         self.clear()
@@ -51,7 +52,7 @@ class AssetProjSelector(QGroupBox):
             newList.append(str("%4s" % projectKey) + " - " + self.company.projects[projectKey].description)
         self.selector.addItems(newList)
         self.selector.show()
-        self.emitChange()
+        self.emitRdoBtnChange()
 
     def updateCompany(self, company):
         self.company = company
@@ -61,8 +62,11 @@ class AssetProjSelector(QGroupBox):
         self.projRdoBtn.setChecked(False)
         self.buttonGroup.setExclusive(True)
 
-    def emitChange(self):
-        self.changed.emit()
+    def emitSelectorChange(self):
+        self.selectorChanged.emit()
+        
+    def emitRdoBtnChange(self):
+        self.rdoBtnChanged.emit()
 
     def assetSelected(self):
         if self.assetRdoBtn.isChecked() == True:
@@ -111,18 +115,16 @@ class InvoiceDetailWidget(QWidget):
 
     def resetProposalBoxes(self):
         for detailKey in self.details:
-            print(detailKey)
             rowToUse = self.details[detailKey][4]
-            print("rowToUse", rowToUse)
-            print("NEED TO FIGURE OUT HOW TO CREATE PROPOSALDET FOR FUNCTION BELOW")
-            newProposalBox = self.makeProposalDetComboBox(proposalDet)
-            print("did")
+            
+            newProposalBox = self.makeProposalDetComboBox("")
+            newProposalBox.currentIndexChanged.connect(lambda: self.validateInput(rowToUse))
+            
             newDetail = (self.details[detailKey][0], self.details[detailKey][1],
                          self.details[detailKey][2], newProposalBox,
                          rowToUse)
-            print(newDetail)
+            
             self.details[detailKey] = newDetail
-            print("did this")
 
             oldWidget = self.gridLayout.itemAtPosition(rowToUse, 2).widget()
             self.gridLayout.removeWidget(oldWidget)
@@ -135,6 +137,7 @@ class InvoiceDetailWidget(QWidget):
 
     def makeProposalDetComboBox(self, proposalDet):
         proposalDetList = [""]
+        
         if self.proposal:
             for detailKey in self.proposal.details:
                 proposalDetList.append(str("%4s - " % detailKey) + self.proposal.details[detailKey].description)

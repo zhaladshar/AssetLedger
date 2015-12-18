@@ -143,7 +143,8 @@ class InvoiceDialog(QDialog):
         
         companyId = parent.stripAllButNumbers(self.companyBox.currentText())
         self.assetProjSelector = gui_elements.AssetProjSelector(parent.parent.dataConnection.companies[companyId])
-        self.assetProjSelector.changed.connect(self.updateDetailInvoiceWidget)
+        self.assetProjSelector.rdoBtnChanged.connect(self.updateDetailInvoiceWidget)
+        self.assetProjSelector.selectorChanged.connect(self.updateDetailInvoiceWidget)
         
         if self.mode == "View":
             self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % invoice.company.idNum) + " - " + invoice.company.shortName))
@@ -215,7 +216,7 @@ class InvoiceDialog(QDialog):
         if self.assetProjSelector.assetSelected() == True:
             pass
         else:
-            acceptedProposal = self.parent.parent.dataConnection.projects[selectionId].proposals.proposalsByStatus("Accepted")
+            acceptedProposal = self.parent.parent.dataConnection.projects[selectionId].proposals.proposalsByStatus("Open")
 
             if acceptedProposal:
                 proposal = list(acceptedProposal.values())[0]
