@@ -119,6 +119,7 @@ class InvoiceDialog(QDialog):
         self.companyChanged = False
         self.vendorChanged = False
         self.projectAssetChanged = False
+        self.invoicePropDetailsChanged = False
         self.mode = mode
         
         self.layout = QGridLayout()
@@ -185,6 +186,7 @@ class InvoiceDialog(QDialog):
             self.detailsWidget = gui_elements.InvoiceDetailWidget(proposal.details)
         else:
             self.detailsWidget = gui_elements.InvoiceDetailWidget()
+        self.detailsWidget.detailsHaveChanged.connect(self.invoicePropDetailsChange)
         self.layout.addWidget(self.detailsWidget, 5, 0, 1, 2)
         
         buttonLayout = QHBoxLayout()
@@ -262,7 +264,11 @@ class InvoiceDialog(QDialog):
 
     def projectAssetChange(self):
         self.projectAssetChanged = True
-        self.hasChanged = True
+        self.hasChanges = True
+
+    def invoicePropDetailsChange(self):
+        self.invoicePropDetailsChanged = True
+        self.hasChanges = True
 
     def accept(self):
         QDialog.accept(self)

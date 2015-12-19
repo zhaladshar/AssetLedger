@@ -55,9 +55,16 @@ class ProposalDetail:
         self.description = description
         self.cost = cost
         self.detailOf = None
+        self.invoiceDetails = {}
 
     def addDetailOf(self, proposal):
         self.detailOf = proposal
+
+    def addInvoiceDetail(self, invoiceDetail):
+        self.invoiceDetails[invoiceDetail.idNum] = invoiceDetail
+
+    def removeInvoiceDetail(self, invoiceDetail):
+        self.invoiceDetails.pop(invoiceDetail.idNum)
 
 class Proposal:
     def __init__(self, date, status, idNum):
@@ -128,7 +135,7 @@ class Project:
     def calculateCIP(self):
         CIP = 0
         for invoiceKey in self.invoices:
-            CIP += self.invoices[invoiceKey].amount
+            CIP += self.invoices[invoiceKey].amount()
         return CIP
 
 class Payment:
@@ -142,15 +149,15 @@ class Payment:
         self.invoicePaid = invoice
 
 class InvoiceDetail:
-    def __init__(self, description, amount, capitalizable):
+    def __init__(self, description, amount, idNum):
+        self.idNum = idNum
         self.description = description
         self.cost = amount
-        self.capitalizable = capitalizable
-        self.invoice = None
+        self.detailOf = None
         self.proposalDetail = None
 
-    def addInvoice(self, invoice):
-        self.invoice = invoice
+    def addDetailOf(self, invoice):
+        self.detailOf = invoice
 
     def addProposalDetail(self, propDet):
         self.proposalDetail = propDet
@@ -166,8 +173,14 @@ class Invoice:
         self.payments = {}
         self.details = {}
 
+    def amount(self):
+        amount = 0
+        for detailKey in self.details:
+            amount += self.details[detailKey].cost
+        return amount
+
     def balance(self):
-        return self.amount - self.paid()
+        return self.amount() - self.paid()
 
     def paid(self):
         amtPaid = 0.0
@@ -265,6 +278,7 @@ class CorporateStructure:
         self.companies = CompanyDict()
         self.vendors = {}
         self.invoices = InvoicesDict()
+        self.invoicesDetails = {}
         self.proposals = ProposalsDict()
         self.proposalsDetails = {}
         self.assets = {}

@@ -119,6 +119,7 @@ class InvoiceDetailWidget(QWidget):
             
             newProposalBox = self.makeProposalDetComboBox("")
             newProposalBox.currentIndexChanged.connect(lambda: self.validateInput(rowToUse))
+            newProposalBox.currentIndexChanged.connect(self.emitChange)
             
             newDetail = (self.details[detailKey][0], self.details[detailKey][1],
                          self.details[detailKey][2], newProposalBox,
@@ -158,6 +159,7 @@ class InvoiceDetailWidget(QWidget):
             costLine = QLineEdit(str(cost))
             costLine.textEdited.connect(self.emitChange)
             proposalBox.currentIndexChanged.connect(lambda: self.validateInput(rowToUse))
+            proposalBox.currentIndexChanged.connect(self.emitChange)
         else:
             descLine = QLabel(desc)
             costLine = QLabel(str(cost))
@@ -632,7 +634,7 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
         self.vendorLabel = QLabel(self.invoice.vendor.name)
         self.invoiceDateLabel = QLabel(self.invoice.invoiceDate)
         self.dueDateLabel = QLabel(self.invoice.dueDate)
-        self.invoiceAmountLabel = QLabel(str(self.invoice.amount))
+        self.invoiceAmountLabel = QLabel(str(self.invoice.amount()))
         self.invoicePaidLabel = QLabel(str(self.invoice.paid()))
         self.invoiceBalanceLabel = QLabel(str(self.invoice.balance()))
         self.payInvoiceLabel = ClickableLabel("$")
@@ -657,7 +659,7 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
         self.vendorLabel.setText(self.invoice.vendor.name)
         self.invoiceDateLabel.setText(self.invoice.invoiceDate)
         self.dueDateLabel.setText(self.invoice.dueDate)
-        self.invoiceAmountLabel.setText(str(self.invoice.amount))
+        self.invoiceAmountLabel.setText(str(self.invoice.amount()))
         self.invoicePaidLabel.setText(str(self.invoice.paid()))
         self.invoiceBalanceLabel.setText(str(self.invoice.balance()))
 
@@ -743,25 +745,30 @@ class InvoiceWidget(QWidget):
 
         self.setLayout(mainLayout)
 
+    def nextIdNum(self, name):
+        self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
+        largestId = self.parent.parent.dbCursor.fetchone()
+        if largestId != None:
+            return largestId[0] + 1
+        else:
+            return 1
+
     def stripAllButNumbers(self, string):
         regex = re.match(r"\s*([0-9]+).*", string)
         return int(regex.groups()[0])
 
+    def insertIntoDatabase(self, tblName, columns, values):
+        sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
+        self.parent.parent.dbCursor.execute(sql)
+
     def showNewInvoiceDialog(self):
         dialog = InvoiceDialog("New", self)
         if dialog.exec_():
-            # Find current largest id and increment by one
-            self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'Invoices'")
-            largestId = self.parent.parent.dbCursor.fetchone()
-            if largestId != None:
-                nextId = largestId[0] + 1
-            else:
-                nextId = 1
+            nextId = self.nextIdNum("Invoices")
 
             # Create new invoice
             newInvoice = Invoice(dialog.invoiceDateText.text(),
                                  dialog.dueDateText.text(),
-                                 float(dialog.amountText.text()),
                                  nextId)
             # Add invoice<->vendor links
             vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
@@ -784,11 +791,39 @@ class InvoiceWidget(QWidget):
             newInvoice.addCompany(self.parent.dataConnection.companies[companyId])
             self.parent.dataConnection.companies[companyId].addInvoice(newInvoice)
 
+            # Create invoice detail items
+            nextInvoiceDetId = self.nextIdNum("InvoicesDetails")
+            
+            for key in dialog.detailsWidget.details:
+                if dialog.detailsWidget.details[key][2].text() == "":
+                    invoiceDetail = None
+                else:
+                    invoiceDetail = InvoiceDetail(dialog.detailsWidget.details[key][1].text(), float(dialog.detailsWidget.details[key][2].text()), nextInvoiceDetId)
+                    proposalDetId = self.stripAllButNumbers(dialog.detailsWidget.details[key][3].currentText())
+
+                # Last item in the dialog is a blank line, so a blank invoice
+                # detail will be created.  Ignore it.
+                if invoiceDetail:
+                    self.insertIntoDatabase("InvoicesDetails", "(Description, Cost)", "('" + invoiceDetail.description + "', '" + str(invoiceDetail.cost) + "')")
+                    self.insertIntoDatabase("Xref", "", "('invoicesDetails', " + str(nextInvoiceDetId) + ", 'addDetailOf', 'invoices', " + str(nextId) + ")")
+                    self.insertIntoDatabase("Xref", "", "('invoices', " + str(nextId) + ", 'addDetail', 'invoicesDetails', " + str(nextInvoiceDetId) + ")")
+                    self.insertIntoDatabase("Xref", "", "('invoicesDetails', " + str(nextInvoiceDetId) + ", 'addProposalDetail', 'proposalsDetails', " + str(proposalDetId) + ")")
+                    self.insertIntoDatabase("Xref", "", "('proposalsDetails', " + str(proposalDetId) + ", 'addInvoiceDetail', 'invoicesDetails', " + str(nextInvoiceDetId) +")")
+                    
+                    newInvoice.addDetail(invoiceDetail)
+                    invoiceDetail.addDetailOf(newInvoice)
+                    invoiceDetail.addProposalDetail(self.parent.dataConnection.proposalsDetails[proposalDetId])
+                    self.parent.dataConnection.proposalsDetails[proposalDetId].addInvoiceDetail(invoiceDetail)
+                    self.parent.dataConnection.invoicesDetails[invoiceDetail.idNum] = invoiceDetail
+
+                    nextInvoiceDetId += 1
+
             # Add the invoice to the corporate data structure and update the
             # invoice and the link information to the database
             self.invoicesDict[newInvoice.idNum] = newInvoice
-            self.parent.parent.dbCursor.execute("INSERT INTO Invoices (InvoiceDate, DueDate, Amount) VALUES (?, ?, ?)",
-                                  (newInvoice.invoiceDate, newInvoice.dueDate, newInvoice.amount))
+            
+            self.parent.parent.dbCursor.execute("INSERT INTO Invoices (InvoiceDate, DueDate) VALUES (?, ?)",
+                                  (newInvoice.invoiceDate, newInvoice.dueDate))
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, 'addVendor', 'vendors', ?)", (nextId, vendorId))
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('vendors', ?, 'addInvoice', 'invoices', ?)", (vendorId, nextId))
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, ?, ?, ?)", (nextId, type_action, type_, type_Id))
@@ -877,11 +912,14 @@ class InvoiceWidget(QWidget):
                         else:
                             pass
 
+                    if dialog.invoicePropDetailsChanged == True:
+                        pass
+
                     self.parent.parent.dbConnection.commit()
 
-                    self.invoicesDict[item.invoice.idNum].invoiceDate = dialog.invoiceDateText_edit.text()
-                    self.invoicesDict[item.invoice.idNum].dueDate = dialog.dueDateText_edit.text()
-                    self.invoicesDict[item.invoice.idNum].amount = float(dialog.amountText_edit.text())
+                    item.invoice.invoiceDate = dialog.invoiceDateText_edit.text()
+                    item.invoice.dueDate = dialog.dueDateText_edit.text()
+                    item.invoice.amount = float(dialog.amountText_edit.text())
 
                     self.openInvoicesTreeWidget.refreshData()
                     self.paidInvoicesTreeWidget.refreshData()
@@ -915,6 +953,17 @@ class InvoiceWidget(QWidget):
                                                 (item.invoice.idNum, item.invoice.company.idNum))
             self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='companies' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
                                                 (item.invoice.company.idNum, item.invoice.idNum))
+
+            # Delete invoice details and detail/proposal connections
+            for detailKey in item.invoice.details:
+                invoiceDetId = item.invoice.details[detailKey].idNum
+
+                self.parent.parent.dbCursor.execute("DELETE FROM InvoicesDetails WHERE idNum=?", (invoiceDetId,))
+                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='invoicesDetails' AND ObjectIdToAddLinkTo=?)", (invoiceDetId,))
+                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectBeingLinked='invoicesDetails' AND ObjectIdBeingLinked=?)", (invoiceDetId,))
+
+                invoiceDetail = self.parent.dataConnection.invoicesDetails.pop(invoiceDetId)
+                self.parent.dataConnection.proposalsDetails[invoiceDetail.proposalDetail.idNum].removeInvoiceDetail(invoiceDetail)
             
             self.parent.parent.dbConnection.commit()
             self.parent.dataConnection.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
