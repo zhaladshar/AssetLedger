@@ -219,15 +219,13 @@ class InvoiceDialog(QDialog):
             pass
         else:
             acceptedProposal = self.parent.parent.dataConnection.projects[selectionId].proposals.proposalsByStatus("Open")
-
+            
             if acceptedProposal:
                 proposal = list(acceptedProposal.values())[0]
             else:
                 proposal = None
             
-        print("here")
         self.detailsWidget.addProposal(proposal)
-        print("and here")
 
     def makeLabelsEditable(self):
         self.companyBox.setEnabled(True)

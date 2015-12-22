@@ -62,8 +62,15 @@ class AssetProjSelector(QGroupBox):
         self.projRdoBtn.setChecked(False)
         self.buttonGroup.setExclusive(True)
 
-    def emitSelectorChange(self):
-        self.selectorChanged.emit()
+    def emitSelectorChange(self, index):
+        # Check for index > -1, because if index == -1, this means that the
+        # selector was cleared and no signal should be emitted.  Otherwise,
+        # this will cause the invoice dialog to try to use the currentText()
+        # of the assetProjSelector to find a new proposal whose details will be
+        # put in the detail/proposal crossreference section of the invoice
+        # dialog.
+        if index > -1:
+            self.selectorChanged.emit()
         
     def emitRdoBtnChange(self):
         self.rdoBtnChanged.emit()
