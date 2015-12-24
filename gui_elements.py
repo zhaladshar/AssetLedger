@@ -12,6 +12,7 @@ class AssetProjSelector(QGroupBox):
     def __init__(self, company):
         super().__init__()
         self.company = company
+        self.dontEmit = False
 
         self.buttonGroup = QButtonGroup()
         
@@ -47,13 +48,18 @@ class AssetProjSelector(QGroupBox):
 
     def showProjectDict(self):
         self.clear()
+        
         newList = []
         for projectKey in self.company.projects.keys():
             newList.append(str("%4s" % projectKey) + " - " + self.company.projects[projectKey].description)
+
         self.selector.addItems(newList)
         self.selector.show()
         self.emitRdoBtnChange()
 
+    def dontEmitSignals(self, tf):
+        self.dontEmit = tf
+        
     def updateCompany(self, company):
         self.company = company
 
@@ -70,10 +76,12 @@ class AssetProjSelector(QGroupBox):
         # put in the detail/proposal crossreference section of the invoice
         # dialog.
         if index > -1:
-            self.selectorChanged.emit()
+            if self.dontEmit == False:
+                self.selectorChanged.emit()
         
     def emitRdoBtnChange(self):
-        self.rdoBtnChanged.emit()
+        if self.dontEmit == False:
+            self.rdoBtnChanged.emit()
 
     def assetSelected(self):
         if self.assetRdoBtn.isChecked() == True:
@@ -93,10 +101,10 @@ class AssetProjSelector(QGroupBox):
 class InvoiceDetailWidget(QWidget):
     detailsHaveChanged = pyqtSignal()
     
-    def __init__(self, detailsDict=None):
+    def __init__(self, detailsDict=None, proposal=None):
         super().__init__()
         self.details = {}
-        self.proposal = None
+        self.proposal = proposal
         
         self.layout = QVBoxLayout()
         self.gridLayout = QGridLayout()
@@ -112,7 +120,7 @@ class InvoiceDetailWidget(QWidget):
             self.addNewLine()
         else:
             for detailKey in detailsDict:
-                proposalDet = str("%4s - " % detailsDict[detail].proposalDetail.idNum) + detailsDict[detail].proposalDetail.description
+                proposalDet = str("%4s - " % detailsDict[detailKey].proposalDetail.idNum) + detailsDict[detailKey].proposalDetail.description
                 self.addLine(detailsDict[detailKey].description, detailsDict[detailKey].cost, proposalDet, False, False, detailsDict[detailKey].idNum)
         
         self.layout.addLayout(self.gridLayout)
@@ -145,7 +153,7 @@ class InvoiceDetailWidget(QWidget):
 
     def makeProposalDetComboBox(self, proposalDet):
         proposalDetList = [""]
-        
+
         if self.proposal:
             for detailKey in self.proposal.details:
                 proposalDetList.append(str("%4s - " % detailKey) + self.proposal.details[detailKey].description)
@@ -756,7 +764,7 @@ class InvoiceWidget(QWidget):
         self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
         largestId = self.parent.parent.dbCursor.fetchone()
         if largestId != None:
-            return largestId[0] + 1
+            return int(largestId[0]) + 1
         else:
             return 1
 
@@ -777,11 +785,12 @@ class InvoiceWidget(QWidget):
             newInvoice = Invoice(dialog.invoiceDateText.text(),
                                  dialog.dueDateText.text(),
                                  nextId)
+            
             # Add invoice<->vendor links
             vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
             newInvoice.addVendor(self.parent.dataConnection.vendors[vendorId])
             self.parent.dataConnection.vendors[vendorId].addInvoice(newInvoice)
-
+            
             # Add invoice<->project/asset links
             if dialog.assetProjSelector.assetSelected() == True:
                 type_ = "assets"
@@ -824,7 +833,7 @@ class InvoiceWidget(QWidget):
                     self.parent.dataConnection.invoicesDetails[invoiceDetail.idNum] = invoiceDetail
 
                     nextInvoiceDetId += 1
-
+            
             # Add the invoice to the corporate data structure and update the
             # invoice and the link information to the database
             self.invoicesDict[newInvoice.idNum] = newInvoice

@@ -156,13 +156,18 @@ class InvoiceDialog(QDialog):
             
             companyId = parent.stripAllButNumbers(self.companyBox.currentText())
             self.assetProjSelector.updateCompany(parent.parent.dataConnection.companies[companyId])
-
+            
             if invoice.assetProj[0] == "assets":
+                # Need to disable signals, otherwise checking the radio button
+                self.assetProjSelector.dontEmitSignals(True)
                 self.assetProjSelector.assetRdoBtn.setChecked(True)
                 self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
+                self.assetProjSelector.dontEmitSignals(False)
             else:
+                self.assetProjSelector.dontEmitSignals(True)
                 self.assetProjSelector.projRdoBtn.setChecked(True)
                 self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
+                self.assetProjSelector.dontEmitSignals(False)
             self.assetProjSelector.setEnabled(False)
             self.assetProjSelector.show()
             
@@ -183,7 +188,8 @@ class InvoiceDialog(QDialog):
         self.layout.addWidget(self.dueDateText, 4, 1)
         
         if self.mode == "View":
-            self.detailsWidget = gui_elements.InvoiceDetailWidget(proposal.details)
+            proposal = self.getAcceptedProposalOfAssetProject()
+            self.detailsWidget = gui_elements.InvoiceDetailWidget(invoice.details, proposal)
         else:
             self.detailsWidget = gui_elements.InvoiceDetailWidget()
         self.detailsWidget.detailsHaveChanged.connect(self.invoicePropDetailsChange)
@@ -211,7 +217,7 @@ class InvoiceDialog(QDialog):
         self.layout.addLayout(buttonLayout, 6, 0, 1, 2)
         self.setLayout(self.layout)
 
-    def updateDetailInvoiceWidget(self):
+    def getAcceptedProposalOfAssetProject(self):
         selection = self.assetProjSelector.selector.currentText()
         selectionId = self.parent.stripAllButNumbers(selection)
         
@@ -221,9 +227,12 @@ class InvoiceDialog(QDialog):
             acceptedProposal = self.parent.parent.dataConnection.projects[selectionId].proposals.proposalsByStatus("Open")
             
             if acceptedProposal:
-                proposal = list(acceptedProposal.values())[0]
+                return list(acceptedProposal.values())[0]
             else:
-                proposal = None
+                return None
+
+    def updateDetailInvoiceWidget(self):
+        proposal = self.getAcceptedProposalOfAssetProject()
             
         self.detailsWidget.addProposal(proposal)
 
@@ -233,12 +242,15 @@ class InvoiceDialog(QDialog):
         self.vendorBox.setEnabled(True)
         self.vendorBox.currentIndexChanged.connect(self.vendorChange)
         self.assetProjSelector.setEnabled(True)
-        self.assetProjSelector.changed.connect(self.projectAssetChange)
+        self.assetProjSelector.rdoBtnChanged.connect(self.projectAssetChange)
+        self.assetProjSelector.selectorChanged.connect(self.projectAssetChange)
         self.invoiceDateText_edit = QLineEdit(self.invoiceDateText.text())
         self.invoiceDateText_edit.textEdited.connect(self.changed)
         self.dueDateText_edit = QLineEdit(self.dueDateText.text())
         self.dueDateText_edit.textEdited.connect(self.changed)
-
+        self.detailsWidget.makeEditable()
+        self.detailsWidget.detailsHaveChanged.connect(self.invoicePropDetailsChange)
+        
         self.layout.addWidget(self.invoiceDateText_edit, 3, 1)
         self.layout.addWidget(self.dueDateText_edit, 4, 1)
 
