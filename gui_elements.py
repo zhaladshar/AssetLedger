@@ -4,7 +4,19 @@ from PyQt5.QtWidgets import *
 from gui_dialogs import *
 import re
 from classes import *
+import sys
 
+class NewLineEdit(QLineEdit):
+    lostFocus = pyqtSignal()
+    
+    def __init__(self, text=None):
+        super().__init__(text)
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        if event.lostFocus() == True:
+            self.lostFocus.emit()
+    
 class AssetProjSelector(QGroupBox):
     rdoBtnChanged = pyqtSignal()
     selectorChanged = pyqtSignal()
@@ -120,7 +132,13 @@ class InvoiceDetailWidget(QWidget):
             self.addNewLine()
         else:
             for detailKey in detailsDict:
-                proposalDet = str("%4s - " % detailsDict[detailKey].proposalDetail.idNum) + detailsDict[detailKey].proposalDetail.description
+                # Need to check if detailsDict[detailKey].proposalDetail is
+                # None. If so, that means invoice was attached to an asset or
+                # project with no proposal.  Thus, a blank line should be used
+                if detailsDict[detailKey].proposalDetail:
+                    proposalDet = str("%4s - " % detailsDict[detailKey].proposalDetail.idNum) + detailsDict[detailKey].proposalDetail.description
+                else:
+                    proposalDet = ""
                 self.addLine(detailsDict[detailKey].description, detailsDict[detailKey].cost, proposalDet, False, False, detailsDict[detailKey].idNum)
         
         self.layout.addLayout(self.gridLayout)
@@ -169,10 +187,12 @@ class InvoiceDetailWidget(QWidget):
         proposalBox = self.makeProposalDetComboBox(proposalDet)
         
         if editable == True:
-            descLine = QLineEdit(desc)
+            descLine = NewLineEdit(desc)
             descLine.textEdited.connect(self.emitChange)
-            costLine = QLineEdit(str(cost))
+            descLine.lostFocus.connect(lambda: self.validateInput(rowToUse))
+            costLine = NewLineEdit(str(cost))
             costLine.textEdited.connect(self.emitChange)
+            costLine.lostFocus.connect(lambda: self.validateInput(rowToUse))
             proposalBox.currentIndexChanged.connect(lambda: self.validateInput(rowToUse))
             proposalBox.currentIndexChanged.connect(self.emitChange)
         else:
@@ -210,10 +230,17 @@ class InvoiceDetailWidget(QWidget):
     def validateInput(self, row):
         if self.gridLayout.itemAtPosition(row, 0).widget().text() != "" and \
            self.gridLayout.itemAtPosition(row, 1).widget().text() != "":
-            if row == self.gridLayout.rowCount() - 1:
-                self.addNewLine()
-                self.gridLayout.itemAtPosition(row + 1, 0).widget().setFocus()
-                self.gridLayout.itemAtPosition(row, 2).widget().show()
+            if self.proposal:
+                if self.gridLayout.itemAtPosition(row, 2).widget().currentText() != "":
+                    if row == self.gridLayout.rowCount() - 1:
+                        self.addNewLine()
+                        self.gridLayout.itemAtPosition(row + 1, 0).widget().setFocus()
+                        self.gridLayout.itemAtPosition(row, 3).widget().show()
+            else:
+                if row == self.gridLayout.rowCount() - 1:
+                    self.addNewLine()
+                    self.gridLayout.itemAtPosition(row + 1, 0).widget().setFocus()
+                    self.gridLayout.itemAtPosition(row, 3).widget().show()
 
     def makeEditable(self):
         for key in self.details:
@@ -233,7 +260,7 @@ class InvoiceDetailWidget(QWidget):
             self.gridLayout.itemAtPosition(key, 2).widget().setEnabled(True)
             self.gridLayout.itemAtPosition(key, 3).widget().show()
 
-            self.details[key] = (self.details[key][0], detailLine_edit, costLine_edit, self.gridLayout.itemAtPosition(key, 2).widget())
+            self.details[key] = (self.details[key][0], detailLine_edit, costLine_edit, self.gridLayout.itemAtPosition(key, 2).widget(), self.details[key][4])
 
         self.addNewLine()
 
@@ -726,6 +753,7 @@ class InvoiceWidget(QWidget):
         self.openInvoicesTreeWidget.setHeaderHidden(True)
         self.openInvoicesTreeWidget.setMinimumWidth(500)
         self.openInvoicesTreeWidget.setMaximumHeight(100)
+        self.openInvoicesTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
         self.openInvoicesTreeWidget.balanceZero.connect(self.moveOpenInvoiceToPaid)
 
         self.paidInvoicesTreeWidget = InvoiceTreeWidget(self.invoicesDict.paidInvoices())
@@ -734,7 +762,8 @@ class InvoiceWidget(QWidget):
         self.paidInvoicesTreeWidget.setMinimumWidth(500)
         self.paidInvoicesTreeWidget.setMaximumHeight(200)
         self.paidInvoicesTreeWidget.balanceNotZero.connect(self.movePaidInvoiceToOpen)
-
+        self.paidInvoicesTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
+        
         self.paidInvoicesLabel = QLabel("Paid Invoices: %d" % len(self.invoicesDict.paidInvoices()))
 
         treeWidgetsLayout.addWidget(self.openInvoicesTreeWidget)
@@ -760,6 +789,12 @@ class InvoiceWidget(QWidget):
 
         self.setLayout(mainLayout)
 
+    def removeSelectionsFromAllBut(self, but):
+        if but == 1:
+            self.paidInvoicesTreeWidget.setCurrentItem(self.paidInvoicesTreeWidget.invisibleRootItem())
+        else:
+            self.openInvoicesTreeWidget.setCurrentItem(self.openInvoicesTreeWidget.invisibleRootItem())
+
     def nextIdNum(self, name):
         self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
         largestId = self.parent.parent.dbCursor.fetchone()
@@ -769,8 +804,11 @@ class InvoiceWidget(QWidget):
             return 1
 
     def stripAllButNumbers(self, string):
-        regex = re.match(r"\s*([0-9]+).*", string)
-        return int(regex.groups()[0])
+        if string == "":
+            return None
+        else:
+            regex = re.match(r"\s*([0-9]+).*", string)
+            return int(regex.groups()[0])
 
     def insertIntoDatabase(self, tblName, columns, values):
         sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
@@ -823,14 +861,16 @@ class InvoiceWidget(QWidget):
                     self.insertIntoDatabase("InvoicesDetails", "(Description, Cost)", "('" + invoiceDetail.description + "', '" + str(invoiceDetail.cost) + "')")
                     self.insertIntoDatabase("Xref", "", "('invoicesDetails', " + str(nextInvoiceDetId) + ", 'addDetailOf', 'invoices', " + str(nextId) + ")")
                     self.insertIntoDatabase("Xref", "", "('invoices', " + str(nextId) + ", 'addDetail', 'invoicesDetails', " + str(nextInvoiceDetId) + ")")
-                    self.insertIntoDatabase("Xref", "", "('invoicesDetails', " + str(nextInvoiceDetId) + ", 'addProposalDetail', 'proposalsDetails', " + str(proposalDetId) + ")")
-                    self.insertIntoDatabase("Xref", "", "('proposalsDetails', " + str(proposalDetId) + ", 'addInvoiceDetail', 'invoicesDetails', " + str(nextInvoiceDetId) +")")
-                    
+
                     newInvoice.addDetail(invoiceDetail)
                     invoiceDetail.addDetailOf(newInvoice)
-                    invoiceDetail.addProposalDetail(self.parent.dataConnection.proposalsDetails[proposalDetId])
-                    self.parent.dataConnection.proposalsDetails[proposalDetId].addInvoiceDetail(invoiceDetail)
                     self.parent.dataConnection.invoicesDetails[invoiceDetail.idNum] = invoiceDetail
+
+                    if proposalDetId:
+                        self.insertIntoDatabase("Xref", "", "('invoicesDetails', " + str(nextInvoiceDetId) + ", 'addProposalDetail', 'proposalsDetails', " + str(proposalDetId) + ")")
+                        self.insertIntoDatabase("Xref", "", "('proposalsDetails', " + str(proposalDetId) + ", 'addInvoiceDetail', 'invoicesDetails', " + str(nextInvoiceDetId) +")")
+                        invoiceDetail.addProposalDetail(self.parent.dataConnection.proposalsDetails[proposalDetId])
+                        self.parent.dataConnection.proposalsDetails[proposalDetId].addInvoiceDetail(invoiceDetail)
 
                     nextInvoiceDetId += 1
             
@@ -872,10 +912,11 @@ class InvoiceWidget(QWidget):
             dialog = InvoiceDialog("View", self, item.invoice)
             if dialog.exec_():
                 if dialog.hasChanges == True:
+                    listOfInvPropDetailKeysFromItem = list(item.invoice.details.keys())
+
                     # Commit changes to database and to vendor entry
                     sql = ("UPDATE Invoices SET InvoiceDate = '" + dialog.invoiceDateText_edit.text() +
                           "', DueDate = '" + dialog.dueDateText_edit.text() +
-                          "', Amount = '" + dialog.amountText_edit.text() +
                           "' WHERE idNum = " + str(item.invoice.idNum))
                     self.parent.parent.dbCursor.execute(sql)
 
@@ -929,13 +970,36 @@ class InvoiceWidget(QWidget):
                             pass
 
                     if dialog.invoicePropDetailsChanged == True:
-                        pass
+                        # Generate list of invoice/proposal detail entries to
+                        # compare with original.  Delete from database any
+                        # entries in original that aren't in the new list
+                        # generated.
+                        listOfInvPropDetailKeysFromDialog = []
+                        
+                        for key in dialog.detailsWidget.details:
+                            listOfInvPropDetailKeysFromDialog.append(dialog.detailsWidget.details[key][0])
 
+                        for oldKey in listOfInvPropDetailKeysFromItem:
+                            if oldKey not in listOfInvPropDetailKeysFromDialog:
+                                invoiceDetail = self.parent.dataConnection.invoicesDetails.pop(oldKey)
+                                invoiceDetail.detailOf.removeDetail(invoiceDetail)
+                                
+                                self.parent.parent.dbCursor.execute("DELETE FROM InvoicesDetails WHERE idNum=?", (invoiceDetail.idNum,))
+                                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo = 'invoicesDetails' AND ObjectIdToAddLinkTo=?", (invoiceDetail.idNum,))
+                                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked = 'invoicesDetails' AND ObjectIdBeingLinked=?", (invoiceDetail.idNum,))
+                                
+                                if invoiceDetail.proposalDetail:
+                                    proposalDetail = invoiceDetail.proposalDetail
+                                    proposalDetail.removeInvoiceDetail(invoiceDetail)
+
+                        ###
+                        # Add saving of new entries to database
+                        ###
+                        
                     self.parent.parent.dbConnection.commit()
 
                     item.invoice.invoiceDate = dialog.invoiceDateText_edit.text()
                     item.invoice.dueDate = dialog.dueDateText_edit.text()
-                    item.invoice.amount = float(dialog.amountText_edit.text())
 
                     self.openInvoicesTreeWidget.refreshData()
                     self.paidInvoicesTreeWidget.refreshData()
@@ -1370,7 +1434,7 @@ class ProposalWidget(QWidget):
                     # that are in the former but not the latter.
                     listOfPropDetailsFromDialog = []
                     
-                    for dialogKey in dialog.detailsWidget.details.keys():
+                    for dialogKey in dialog.detailsWidget.details:
                         listOfPropDetailsFromDialog.append(dialog.detailsWidget.details[dialogKey][0])
 
                     for key in listOfKeysFromItem:
@@ -1689,9 +1753,8 @@ class ProjectWidget(QWidget):
             item = self.closedProjectsTreeWidget.itemFromIndex(idxToShow)
 
         if item:
-            print(item.project.description)
             dialog = ProjectDialog("View", self, item.project)
-            print("made dialog")
+            
             dialog.setWindowTitle("View Project")
             if dialog.exec_():
                 if dialog.hasChanges == True:
