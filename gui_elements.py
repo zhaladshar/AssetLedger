@@ -199,6 +199,7 @@ class InvoiceDetailWidget(QWidget):
             descLine = QLabel(desc)
             costLine = QLabel(str(cost))
             proposalBox.setEnabled(False)
+            proposalBox.currentIndexChanged.connect(self.emitChange)
 
         deleteButton = QPushButton("-")
         deleteButton.clicked.connect(lambda: self.deleteLine(rowToUse))
@@ -248,7 +249,7 @@ class InvoiceDetailWidget(QWidget):
             detailLine_edit.textEdited.connect(self.emitChange)
             costLine_edit = QLineEdit(self.details[key][2].text())
             costLine_edit.textEdited.connect(self.emitChange)
-
+            
             for n in range(2):
                 oldWidget = self.gridLayout.itemAtPosition(key, n).widget()
                 self.gridLayout.removeWidget(oldWidget)
@@ -978,7 +979,7 @@ class InvoiceWidget(QWidget):
                         
                         for key in dialog.detailsWidget.details:
                             listOfInvPropDetailKeysFromDialog.append(dialog.detailsWidget.details[key][0])
-
+                        
                         for oldKey in listOfInvPropDetailKeysFromItem:
                             if oldKey not in listOfInvPropDetailKeysFromDialog:
                                 invoiceDetail = self.parent.dataConnection.invoicesDetails.pop(oldKey)
@@ -987,14 +988,63 @@ class InvoiceWidget(QWidget):
                                 self.parent.parent.dbCursor.execute("DELETE FROM InvoicesDetails WHERE idNum=?", (invoiceDetail.idNum,))
                                 self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo = 'invoicesDetails' AND ObjectIdToAddLinkTo=?", (invoiceDetail.idNum,))
                                 self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked = 'invoicesDetails' AND ObjectIdBeingLinked=?", (invoiceDetail.idNum,))
-                                
+
                                 if invoiceDetail.proposalDetail:
                                     proposalDetail = invoiceDetail.proposalDetail
                                     proposalDetail.removeInvoiceDetail(invoiceDetail)
 
-                        ###
-                        # Add saving of new entries to database
-                        ###
+                        # If the details of the proposal have changed, update as well
+                        # If dialog.detailsWidget.details[key][0] > 0 then that means
+                        # we changed a currently existing detail.  If it equals 0, this
+                        # is a newly added detail and so it must be created and added
+                        # to database.
+                        for key in dialog.detailsWidget.details:
+                            if dialog.detailsWidget.details[key][0] > 0:
+                                proposalDetId = self.stripAllButNumbers(dialog.detailsWidget.details[key][3].currentText())
+                                
+                                sql = ("UPDATE InvoicesDetails SET Description = '" + dialog.detailsWidget.details[key][1].text() +
+                                       "', Cost = " + dialog.detailsWidget.details[key][2].text() +
+                                       " WHERE idNum = " + str(dialog.detailsWidget.details[key][0]))
+                                self.parent.parent.dbCursor.execute(sql)
+                                
+                                self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='invoicesDetails' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposalsDetails'",
+                                                                    (proposalDetId, dialog.detailsWidget.details[key][0]))
+                                self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo='proposalsDetails' AND ObjectBeingLinked='invoicesDetails' AND ObjectIdBeingLinked=?",
+                                                                    (proposalDetId, dialog.detailsWidget.details[key][0]))
+                                
+                                item.invoice.details[dialog.detailsWidget.details[key][0]].description = dialog.detailsWidget.details[key][1].text()
+                                item.invoice.details[dialog.detailsWidget.details[key][0]].cost = float(dialog.detailsWidget.details[key][2].text())
+                                
+                                if item.invoice.details[dialog.detailsWidget.details[key][0]].proposalDetail:
+                                    oldProposalDetail = item.invoice.details[dialog.detailsWidget.details[key][0]].proposalDetail
+                                    oldProposalDetail.removeInvoiceDetail(item.invoice.details[dialog.detailsWidget.details[key][0]])
+                                    newProposalDetail = self.parent.dataConnection.proposalsDetails[proposalDetId]
+                                    
+                                    item.invoice.details[dialog.detailsWidget.details[key][0]].addProposalDetail(newProposalDetail)
+                                    newProposalDetail.addInvoiceDetail(item.invoice.details[dialog.detailsWidget.details[key][0]])
+                            else:
+                                # Make sure description is not blank - if so, this
+                                # is the usual blank line at the end of the widget
+                                if dialog.detailsWidget.details[key][1].text() != "":
+                                    nextInvoiceDetId = self.nextIdNum("InvoicesDetails")
+                                    proposalDetId = self.stripAllButNumbers(dialog.detailsWidget.details[key][3].currentText())
+                                    
+                                    self.parent.parent.dbCursor.execute("INSERT INTO InvoicesDetails (Description, Cost) VALUES (?, ?)",
+                                                                        (dialog.detailsWidget.details[key][1].text(), dialog.detailsWidget.details[key][2].text()))
+                                    self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoicesDetails', ?, 'addDetailOf', 'invoices', ?)", (nextInvoiceDetId, item.invoice.idNum))
+                                    self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, 'addDetail', 'invoicesDetails', ?)", (item.invoice.idNum, nextInvoiceDetId))
+                                    
+                                    newInvoiceDetail = InvoiceDetail(dialog.detailsWidget.details[key][1].text(), float(dialog.detailsWidget.details[key][2].text()), nextInvoiceDetId)
+                                    newInvoiceDetail.addDetailOf(item.invoice)
+                                    item.invoice.addDetail(newInvoiceDetail)
+                                    
+                                    if proposalDetId:
+                                        self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoicesDetails', ?, 'addProposalDetail', 'proposalsDetails', ?)", (nextInvoiceDetId, proposalDetId))
+                                        self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('proposalsDetails', ?, 'addInvoiceDetail', 'invoicesDetails', ?)", (proposalDetId, nextInvoiceDetId))
+                                        newInvoiceDetail.addProposalDetail(self.parent.dataConnection.proposalsDetails[proposalDetId])
+                                        self.parent.dataConnection.proposalsDetails[proposalDetId].addInvoiceDetail(newInvoiceDetail)
+                                    
+                                    self.parent.dataConnection.invoicesDetails[newInvoiceDetail.idNum] = newInvoiceDetail
                         
                     self.parent.parent.dbConnection.commit()
 
@@ -1402,7 +1452,7 @@ class ProposalWidget(QWidget):
                     # we changed a currently existing detail.  If it equals 0, this
                     # is a newly added detail and so it must be created and added
                     # to database.
-                    for key in dialog.detailsWidget.details.keys():
+                    for key in dialog.detailsWidget.details:
                         if dialog.detailsWidget.details[key][0] > 0:
                             sql = ("UPDATE ProposalsDetails SET Description = '" + dialog.detailsWidget.details[key][1].text() +
                                    "', Cost = " + dialog.detailsWidget.details[key][2].text() +
