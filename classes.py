@@ -246,10 +246,11 @@ class Vendor:
         self.proposals.pop(proposal.idNum)
 
 class Company:
-    def __init__(self, name, shortName, idNum):
+    def __init__(self, name, shortName, active, idNum):
         self.idNum = idNum
         self.name = name
         self.shortName = shortName
+        self.active = active
         self.proposals = {}
         self.projects = {}
         self.assets = {}

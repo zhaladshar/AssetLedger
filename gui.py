@@ -43,7 +43,11 @@ class Window(QMainWindow):
     def importData(self):
         self.dbCursor.execute("SELECT * FROM Companies")
         for each in self.dbCursor:
-            self.data.companies[each[0]] = Company(each[1], each[2], each[0])
+            if each[3] == "Y":
+                active = True
+            else:
+                active = False
+            self.data.companies[each[0]] = Company(each[1], each[2], active, each[0])
 
         self.dbCursor.execute("SELECT * FROM Vendors")
         for each in self.dbCursor:
