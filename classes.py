@@ -255,6 +255,20 @@ class Company:
         self.assets = {}
         self.invoices = {}
 
+    def assetsAmount(self):
+        amount = 0
+        for key in self.assets:
+            pass
+
+        return amount
+
+    def CIPAmount(self):
+        CIP = 0
+        for key in self.projects:
+            CIP += self.projects[key].calculateCIP()
+
+        return CIP
+
     def addInvoice(self, invoice):
         self.invoices[invoice.idNum] = invoice
 

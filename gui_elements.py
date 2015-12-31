@@ -964,12 +964,26 @@ class InvoiceWidget(QWidget):
                         self.parent.dataConnection.vendors[newVendorId].addInvoice(item.invoice)
 
                     if dialog.projectAssetChanged == True:
-                        newId = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
+                        newTypeId = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
+                        
                         if dialog.assetProjSelector.assetSelected() == True:
                             pass
                         else:
-                            pass
-
+                            type_ = "projects"
+                            oldType = item.invoice.assetProj[1]
+                            
+                            oldType.removeInvoice(item.invoice)
+                            item.invoice.addProject(self.parent.dataConnection.projects[newTypeId])
+                            self.parent.dataConnection.projects[newTypeId].addInvoice(item.invoice)
+                        
+                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo=? " +
+                               "AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?",
+                               (newTypeId, type_, item.invoice.idNum))
+                        
+                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectBeingLinked=? "
+                               "AND ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=?",
+                               (newTypeId, type_, item.invoice.idNum))
+                        
                     if dialog.invoicePropDetailsChanged == True:
                         # Generate list of invoice/proposal detail entries to
                         # compare with original.  Delete from database any
@@ -1895,4 +1909,102 @@ class ProjectView(QWidget):
         layout.addWidget(self.projectWidget)
 
         self.setLayout(layout)
+
+class CompanyTreeWidgetItem(QTreeWidgetItem):
+    def __init__(self, companyItem, parent):
+        super().__init__(parent)
+        self.company = companyItem
+        self.main = QWidget()
         
+        idLabel = QLabel(str(self.company.idNum))
+        self.nameLabel = QLabel(self.company.name)
+        self.shortNameLabel = QLabel(self.company.shortName)
+        self.assetsAmountLabel = QLabel("Assets: %.02f" %self.company.assetsAmount())
+        self.CIPLabel = QLabel("CIP: %.02f" % self.company.CIPAmount())
+        
+        layout = QHBoxLayout()
+        layout.addWidget(idLabel)
+        layout.addWidget(self.nameLabel)
+        layout.addWidget(self.shortNameLabel)
+        layout.addWidget(self.assetsAmountLabel)
+        layout.addWidget(self.CIPLabel)
+        
+        self.main.setLayout(layout)
+
+    def refreshData(self):
+        self.nameLabel.setText(self.company.name)
+        self.shortNameLabel.setText(self.company.shortName)
+        self.assetsAmountLabel.setText("Assets: %.02f" %self.company.assetsAmount())
+        self.CIPLabel.setText("CIP: %.02f" % self.project.calculateCIP())
+
+class CompanyTreeWidget(QTreeWidget):
+    def __init__(self, companiesDict):
+        super().__init__()
+        self.buildItems(self, companiesDict)
+
+    def buildItems(self, parent, companiesDict):
+        for companyKey in companiesDict:
+            item = CompanyTreeWidgetItem(companiesDict[companyKey], parent)
+            self.addItem(item)
+
+    def addItem(self, widgetItem):
+        self.setItemWidget(widgetItem, 0, widgetItem.main)
+
+    def refreshData(self):
+        for idx in range(self.topLevelItemCount()):
+            self.topLevelItem(idx).refreshData()
+            
+class CompanyWidget(QWidget):
+    def __init__(self, companiesDict, parent):
+        super().__init__()
+        self.companiesDict = companiesDict
+        self.parent = parent
+
+        mainLayout = QVBoxLayout()
+
+        self.companiesLabel = QLabel("Companies: %d" % len(self.companiesDict))
+        mainLayout.addWidget(self.companiesLabel)
+
+        # Piece together the companies layout
+        subLayout = QHBoxLayout()
+        treeWidgetsLayout = QVBoxLayout()
+
+        self.companiesTreeWidget = CompanyTreeWidget(self.companiesDict)
+        self.companiesTreeWidget.setIndentation(0)
+        self.companiesTreeWidget.setHeaderHidden(True)
+        self.companiesTreeWidget.setMinimumWidth(500)
+        self.companiesTreeWidget.setMaximumHeight(100)
+
+        treeWidgetsLayout.addWidget(self.companiesTreeWidget)
+        treeWidgetsLayout.addStretch(1)
+
+        buttonLayout = QVBoxLayout()
+        newButton = QPushButton("New")
+        #newButton.clicked.connect(self.showNewProjectDialog)
+        viewButton = QPushButton("View")
+        #viewButton.clicked.connect(self.showViewProjectDialog)
+        deleteButton = QPushButton("Delete")
+        #deleteButton.clicked.connect(self.deleteSelectedProjectFromList)
+        buttonLayout.addWidget(newButton)
+        buttonLayout.addWidget(viewButton)
+        buttonLayout.addWidget(deleteButton)
+        buttonLayout.addStretch(1)
+        
+        subLayout.addLayout(treeWidgetsLayout)
+        subLayout.addLayout(buttonLayout)
+        mainLayout.addLayout(subLayout)
+        
+        self.setLayout(mainLayout)
+
+class CompanyView(QWidget):
+    def __init__(self, dataConnection, parent):
+        super().__init__(parent)
+        self.dataConnection = dataConnection
+        self.parent = parent
+
+        self.companyWidget = CompanyWidget(self.dataConnection.companies, self)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.companyWidget)
+
+        self.setLayout(layout)

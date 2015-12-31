@@ -23,7 +23,7 @@ class Window(QMainWindow):
         # Provide layout for views
         self.views = QStackedWidget()
         self.generalView = QWidget()
-        self.companyOverview = QWidget()
+        self.companyOverview = CompanyView(self.data, self)
         self.proposalOverview = ProposalView(self.data, self)
         self.projectOverview = ProjectView(self.data, self)
         self.APOverview = APView(self.data, self)
@@ -166,37 +166,6 @@ class Window(QMainWindow):
         self.views.addWidget(self.generalView)
 
         # Build the company overview widget
-        companyOverviewLayout = QVBoxLayout()
-        self.companyOverviewProjects = CollapsableFrame("Projects")
-        self.companyOverviewProjects.addEntry("Ongoing: # / #")
-        self.companyOverviewProjects.addEntry("CIP: $#")
-        self.companyOverviewProjects.addEntry("Budget vs. Actual (excl. ongoing): #â†‘")
-        self.companyOverviewProjects.addEntry("Longest ongoing project: # months")
-        self.companyOverviewProjects.addEntry("Unpaid invoices: # / $#")
-        companyOverviewLayout.addWidget(self.companyOverviewProjects)
-
-        self.companyOverviewAssets = CollapsableFrame("Assets")
-        self.companyOverviewAssets.addEntry("Owned: # / #")
-        self.companyOverviewAssets.addEntry("Cost: $#")
-        self.companyOverviewAssets.addEntry("Accum. dep.: $#")
-        self.companyOverviewAssets.addEntry("Avg. life: #")
-        self.companyOverviewAssets.addEntry("Unpaid invoices: # / $#")
-        companyOverviewLayout.addWidget(self.companyOverviewAssets)
-
-        self.companyOverviewGL = CollapsableFrame("G/L")
-        self.companyOverviewGL.addEntry("CIP: $#")
-        self.companyOverviewGL.addEntry("Assets: # / $#")
-        self.companyOverviewGL.addEntry("YTD deprectiation: $#")
-        companyOverviewLayout.addWidget(self.companyOverviewGL)
-
-        self.companyOverviewVendors = CollapsableFrame("Vendors")
-        self.companyOverviewVendors.addEntry("Number: #")
-        self.companyOverviewVendors.addEntry("Unpaid: # / $#")
-        self.companyOverviewVendors.addEntry("Past due: # / $#")
-        companyOverviewLayout.addWidget(self.companyOverviewVendors)
-        companyOverviewLayout.addStretch(1)
-
-        self.companyOverview.setLayout(companyOverviewLayout)
         self.views.addWidget(self.companyOverview)
 
         # Build the proposal overview widget
@@ -244,6 +213,8 @@ class Window(QMainWindow):
                 self.views.setCurrentIndex(COMPANY_OVERVIEW_INDEX)
         else:
             if self.detailViewSelected:
+                if self.detailViewSelected == "Companies":
+                    self.views.setCurrentIndex(COMPANY_OVERVIEW_INDEX)
                 if self.detailViewSelected == "Proposals":
                     self.views.setCurrentIndex(PROPOSAL_OVERVIEW_INDEX)
                 if self.detailViewSelected == "Projects":
