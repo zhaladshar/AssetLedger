@@ -440,55 +440,72 @@ class ButtonToggleBoxItem(QPushButton):
                 event.accept()
 
 class ButtonToggleBox(QWidget):
-        selectionChanged = pyqtSignal(str)
+    selectionChanged = pyqtSignal(str)
 
-        def __init__(self, layoutStyle):
-                super().__init__()
-                self.btnList = []
-                if layoutStyle == "Vertical":
-                    self.layout = QVBoxLayout()
+    def __init__(self, layoutStyle):
+        super().__init__()
+        self.btnList = []
+        if layoutStyle == "Vertical":
+            self.layout = QVBoxLayout()
+        else:
+            self.layout = QHBoxLayout()
+        self.layout.setSpacing(0)
+        self.layout.addStretch(1)
+
+    def addButton(self, button):
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.buttonPressed.connect(self.changeSelection)
+
+        self.btnList.append(button)
+
+        self.layout.takeAt(self.layout.count() - 1)
+        self.layout.addWidget(button)
+        self.layout.addStretch(1)
+
+        newWidth = self.determineMinButtonWidth()
+        for each in self.btnList:
+            each.setMaximumWidth(newWidth + 20)
+
+    def addButtons(self, listToAdd):
+        for item in listToAdd:
+            button = ButtonToggleBoxItem(item)
+            self.addButton(button)
+
+    def deleteButton(self, name):
+        # Have to use a try statement because of spacer items in layout.
+        # Trying to call widget() on a spacer item is killing the program.
+        for idx in range(self.layout.count()):
+            try:
+                item = self.layout.itemAt(idx).widget()
+                
+                if item.text() == name:
+                    self.layout.removeWidget(item)
+                    item.deleteLater()
+            except:
+                pass
+
+    def deleteButtons(self, listToDelete):
+        for item in listToDelete:
+            self.deleteButton(item)
+
+    def determineMinButtonWidth(self):
+        widths = []
+        for each in self.btnList:
+            test = each.fontMetrics().boundingRect(each.text()).width()
+            widths.append(test)
+        return max(widths)
+
+    def changeSelection(self, btnText):
+        for each in self.btnList:
+            if each.text() != btnText:
+                each.setChecked(False)
+            else:
+                if each.isChecked() == True:
+                    each.setChecked(False)
                 else:
-                    self.layout = QHBoxLayout()
-                self.layout.setSpacing(0)
-                self.layout.addStretch(1)
-
-        def addButton(self, button):
-                button.setCheckable(True)
-                button.setChecked(False)
-                button.buttonPressed.connect(self.changeSelection)
-
-                self.btnList.append(button)
-
-                self.layout.takeAt(self.layout.count() - 1)
-                self.layout.addWidget(button)
-                self.layout.addStretch(1)
-
-                newWidth = self.determineMinButtonWidth()
-                for each in self.btnList:
-                        each.setMaximumWidth(newWidth + 20)
-
-        def addButtons(self, listToAdd):
-            for item in listToAdd:
-                button = ButtonToggleBoxItem(item)
-                self.addButton(button)
-
-        def determineMinButtonWidth(self):
-                widths = []
-                for each in self.btnList:
-                        test = each.fontMetrics().boundingRect(each.text()).width()
-                        widths.append(test)
-                return max(widths)
-
-        def changeSelection(self, btnText):
-                for each in self.btnList:
-                        if each.text() != btnText:
-                                each.setChecked(False)
-                        else:
-                            if each.isChecked() == True:
-                                each.setChecked(False)
-                            else:
-                                each.setChecked(True)
-                self.selectionChanged.emit(btnText)
+                    each.setChecked(True)
+        self.selectionChanged.emit(btnText)
 
 class VendorTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, vendorItem, parent):
@@ -1955,6 +1972,9 @@ class CompanyTreeWidget(QTreeWidget):
             self.topLevelItem(idx).refreshData()
             
 class CompanyWidget(QWidget):
+    addNewCompany = pyqtSignal(str)
+    deleteCompany = pyqtSignal(str)
+    
     def __init__(self, companiesDict, parent):
         super().__init__()
         self.companiesDict = companiesDict
@@ -2032,6 +2052,8 @@ class CompanyWidget(QWidget):
             item = CompanyTreeWidgetItem(newCompany, self.companiesTreeWidget)
             self.companiesTreeWidget.addItem(item)
             self.updateCompaniesCount()
+
+            self.addNewCompany.emit(newCompany.shortName)
             
     def showViewCompanyDialog(self):
         # Determine which tree the proposal is in--if any.  If none, don't
@@ -2080,15 +2102,28 @@ class CompanyWidget(QWidget):
             self.parent.parent.dbConnection.commit()
             self.updateCompaniesCount()
 
+        self.deleteCompany.emit(item.company.shortName)
+
 class CompanyView(QWidget):
+    addNewCompany = pyqtSignal(str)
+    deleteCompany = pyqtSignal(str)
+    
     def __init__(self, dataConnection, parent):
         super().__init__(parent)
         self.dataConnection = dataConnection
         self.parent = parent
 
         self.companyWidget = CompanyWidget(self.dataConnection.companies, self)
+        self.companyWidget.addNewCompany.connect(self.emitAddNewCompany)
+        self.companyWidget.deleteCompany.connect(self.emitDeleteCompany)
 
         layout = QVBoxLayout()
         layout.addWidget(self.companyWidget)
 
         self.setLayout(layout)
+
+    def emitAddNewCompany(self, shortName):
+        self.addNewCompany.emit(shortName)
+
+    def emitDeleteCompany(self, shortName):
+        self.deleteCompany.emit(shortName)

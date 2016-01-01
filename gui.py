@@ -31,6 +31,8 @@ class Window(QMainWindow):
         self.detailViewSelected = None
 
         # Make signal-slot connections
+        self.companyOverview.addNewCompany.connect(self.addNewCompanyButton)
+        self.companyOverview.deleteCompany.connect(self.deleteCompanyButton)
         self.proposalOverview.updateVendorWidgetTree.connect(self.APOverview.vendorWidget.refreshVendorTree)
         self.APOverview.updateProjectTree.connect(self.projectOverview.projectWidget.refreshProjectTree)
 
@@ -135,13 +137,13 @@ class Window(QMainWindow):
         lbl.setFixedSize(100, 100)
         lbl.setStyleSheet("QLabel { background-color: black }")
 
-        companyLayout = ButtonToggleBox("Vertical")
-        companyLayout.addButtons(self.data.companies.dictToList())
-        companyLayout.setLayout(companyLayout.layout)
-        companyLayout.selectionChanged.connect(self.changeCompanySelection)
+        self.companyLayout = ButtonToggleBox("Vertical")
+        self.companyLayout.addButtons(self.data.companies.dictToList())
+        self.companyLayout.setLayout(self.companyLayout.layout)
+        self.companyLayout.selectionChanged.connect(self.changeCompanySelection)
 
         leftLayout.addWidget(lbl)
-        leftLayout.addWidget(companyLayout)
+        leftLayout.addWidget(self.companyLayout)
 
         # Build the right vertical layout
         viewsLayout = ButtonToggleBox("Horizontal")
@@ -194,6 +196,14 @@ class Window(QMainWindow):
 
         self.mainWidget.setLayout(mainLayout)
         self.setCentralWidget(self.mainWidget)
+
+    def addNewCompanyButton(self, shortName):
+        newButton = [shortName]
+        self.companyLayout.addButtons(newButton)
+
+    def deleteCompanyButton(self, shortName):
+        button = [shortName]
+        self.companyLayout.deleteButtons(button)
 
     def changeCompanySelection(self, companyChanged):
         if self.companyViewSelected == companyChanged:
