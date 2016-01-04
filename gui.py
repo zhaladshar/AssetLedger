@@ -26,6 +26,7 @@ class Window(QMainWindow):
         self.companyOverview = CompanyView(self.data, self)
         self.proposalOverview = ProposalView(self.data, self)
         self.projectOverview = ProjectView(self.data, self)
+        self.assetOverview = AssetView(self.data, self)
         self.APOverview = APView(self.data, self)
         self.companyViewSelected = None
         self.detailViewSelected = None
@@ -180,12 +181,13 @@ class Window(QMainWindow):
         # Build the project overview widget
         self.views.addWidget(self.projectOverview)
 
-        # Build the vendor overview widget
+        # Build the asset overview widget
+        self.views.addWidget(self.assetOverview)
+
+        # Build the A/P overview widget
         self.views.addWidget(self.APOverview)
 
-        # Build the asset overview widget
         # Build the ledger overview widget
-        # Build the A/P overview widget
 
         rightLayout.addWidget(viewsLayout)
         rightLayout.addWidget(self.views)
@@ -229,10 +231,12 @@ class Window(QMainWindow):
             if self.detailViewSelected:
                 if self.detailViewSelected == "Companies":
                     self.views.setCurrentIndex(COMPANY_OVERVIEW_INDEX)
-                if self.detailViewSelected == "Proposals":
+                elif self.detailViewSelected == "Proposals":
                     self.views.setCurrentIndex(PROPOSAL_OVERVIEW_INDEX)
-                if self.detailViewSelected == "Projects":
+                elif self.detailViewSelected == "Projects":
                     self.views.setCurrentIndex(PROJECT_OVERVIEW_INDEX)
+                if self.detailViewSelected == "Assets":
+                    self.views.setCurrentIndex(ASSET_OVERVIEW_INDEX)
                 elif self.detailViewSelected == "A/P":
                     self.views.setCurrentIndex(AP_OVERVIEW_INDEX)
             else:

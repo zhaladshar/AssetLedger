@@ -1936,7 +1936,7 @@ class CompanyTreeWidgetItem(QTreeWidgetItem):
         idLabel = QLabel(str(self.company.idNum))
         self.nameLabel = QLabel(self.company.name)
         self.shortNameLabel = QLabel(self.company.shortName)
-        self.assetsAmountLabel = QLabel("Assets: %.02f" %self.company.assetsAmount())
+        self.assetsAmountLabel = QLabel("Assets: %.02f" % self.company.assetsAmount())
         self.CIPLabel = QLabel("CIP: %.02f" % self.company.CIPAmount())
         
         layout = QHBoxLayout()
@@ -2119,6 +2119,209 @@ class CompanyView(QWidget):
 
         layout = QVBoxLayout()
         layout.addWidget(self.companyWidget)
+
+        self.setLayout(layout)
+
+    def emitAddNewCompany(self, shortName):
+        self.addNewCompany.emit(shortName)
+
+    def emitDeleteCompany(self, shortName):
+        self.deleteCompany.emit(shortName)
+
+class AssetTreeWidgetItem(QTreeWidgetItem):
+    def __init__(self, assetItem, parent):
+        super().__init__(parent)
+        self.asset = assetItem
+        self.main = QWidget()
+        
+        idLabel = QLabel(str(self.assetItem.idNum))
+        self.descLabel = QLabel(self.asset.description)
+        self.costLabel = QLabel(self.asset.cost())
+        self.depAmtLabel = QLabel(self.asset.depreciatedAmount())
+        self.botDateLabel = QLabel(self.asset.acquireDate)
+        self.inSvcDateLabel = QLabel(self.asset.inSvcDate)
+        
+        layout = QHBoxLayout()
+        layout.addWidget(idLabel)
+        layout.addWidget(self.descLabel)
+        layout.addWidget(self.costLabel)
+        layout.addWidget(self.depAmtLabel)
+        layout.addWidget(self.botDateLabel)
+        layout.addWidget(self.inSvcDateLabel)
+        
+        self.main.setLayout(layout)
+
+    def refreshData(self):
+        self.descLabel.setText(self.asset.description)
+        self.costLabel.setText(self.asset.cost())
+        self.depAmtLabel.setText(self.asset.depreciatedAmount())
+        self.botDateLabel.setText(self.asset.acquireDate)
+        self.inSvcDateLabel.setText(self.asset.inSvcDate)
+        
+class AssetTreeWidget(QTreeWidget):
+    def __init__(self, assetsDict):
+        super().__init__()
+        self.buildItems(self, assetsDict)
+
+    def buildItems(self, parent, assetsDict):
+        for assetKey in assetsDict:
+            item = AssetTreeWidgetItem(assetsDict[assetKey], parent)
+            self.addItem(item)
+
+    def addItem(self, widgetItem):
+        self.setItemWidget(widgetItem, 0, widgetItem.main)
+
+    def refreshData(self):
+        for idx in range(self.topLevelItemCount()):
+            self.topLevelItem(idx).refreshData()
+            
+class AssetWidget(QWidget):
+    def __init__(self, assetsDict, parent):
+        super().__init__()
+        self.assetsDict = assetsDict
+        self.parent = parent
+
+        mainLayout = QVBoxLayout()
+
+        self.currentAssetsLabel = QLabel("Assets: %d / %.02f" % (len(self.assetsDict.currentAssets()), self.assetsDict.currentCost()))
+        mainLayout.addWidget(self.currentAssetsLabel)
+
+        # Piece together the companies layout
+        subLayout = QHBoxLayout()
+        assetWidgetsLayout = QVBoxLayout()
+
+        self.currentAssetsTreeWidget = AssetTreeWidget(self.assetsDict.currentAssets())
+        self.currentAssetsTreeWidget.setIndentation(0)
+        self.currentAssetsTreeWidget.setHeaderHidden(True)
+        self.currentAssetsTreeWidget.setMinimumWidth(500)
+        self.currentAssetsTreeWidget.setMaximumHeight(100)
+
+        self.disposedAssetsTreeWidget = AssetTreeWidget(self.assetsDict.disposedAssets())
+        self.disposedAssetsTreeWidget.setIndentation(0)
+        self.disposedAssetsTreeWidget.setHeaderHidden(True)
+        self.disposedAssetsTreeWidget.setMinimumWidth(500)
+        self.disposedAssetsTreeWidget.setMaximumHeight(100)
+
+        self.disposedAssetsLabel = QLabel("Assets: %d / %.02f" % (len(self.assetsDict.disposedAssets()), self.assetsDict.disposedCost()))
+        
+        assetWidgetsLayout.addWidget(self.currentAssetsTreeWidget)
+        assetWidgetsLayout.addWidget(self.disposedAssetsLabel)
+        assetWidgetsLayout.addWidget(self.disposedAssetsTreeWidget)
+        assetWidgetsLayout.addStretch(1)
+
+        buttonLayout = QVBoxLayout()
+        newButton = QPushButton("New")
+        #newButton.clicked.connect(self.showNewAssetDialog)
+        viewButton = QPushButton("View")
+        #viewButton.clicked.connect(self.showViewAssetDialog)
+        deleteButton = QPushButton("Delete")
+        #deleteButton.clicked.connect(self.deleteSelectedAssetFromList)
+        buttonLayout.addWidget(newButton)
+        buttonLayout.addWidget(viewButton)
+        buttonLayout.addWidget(deleteButton)
+        buttonLayout.addStretch(1)
+        
+        subLayout.addLayout(assetWidgetsLayout)
+        subLayout.addLayout(buttonLayout)
+        mainLayout.addLayout(subLayout)
+        
+        self.setLayout(mainLayout)
+
+    def nextIdNum(self, name):
+        self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
+        largestId = self.parent.parent.dbCursor.fetchone()
+        if largestId != None:
+            return largestId[0] + 1
+        else:
+            return 1
+        
+    def insertIntoDatabase(self, tblName, columns, values):
+        sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
+        self.parent.parent.dbCursor.execute(sql)
+
+    def showNewCompanyDialog(self):
+        dialog = CompanyDialog("New", self)
+        if dialog.exec_():
+            # Find current largest id and increment by one
+            nextId = self.nextIdNum("Companies")
+            
+            # Create proposal and add to database
+            newCompany = Company(dialog.nameText.text(),
+                                 dialog.shortNameText.text(),
+                                 True,
+                                 nextId)
+            self.companiesDict[newCompany.idNum] = newCompany
+
+            self.insertIntoDatabase("Companies", "(Name, ShortName, Active)", "('" + newCompany.name + "', '" + newCompany.shortName + "', 'Y')")
+            
+            self.parent.parent.dbConnection.commit()
+            
+            # Make project into a ProjectTreeWidgetItem and add it to ProjectTree
+            item = CompanyTreeWidgetItem(newCompany, self.companiesTreeWidget)
+            self.companiesTreeWidget.addItem(item)
+            self.updateCompaniesCount()
+
+            self.addNewCompany.emit(newCompany.shortName)
+            
+    def showViewCompanyDialog(self):
+        # Determine which tree the proposal is in--if any.  If none, don't
+        # display dialog
+        idxToShow = self.companiesTreeWidget.indexFromItem(self.companiesTreeWidget.currentItem())
+        item = self.companiesTreeWidget.itemFromIndex(idxToShow)
+
+        if item:
+            dialog = CompanyDialog("View", self, item.company)
+            dialog.setWindowTitle("View Company")
+            
+            if dialog.exec_():
+                if dialog.hasChanges == True:
+                    # Commit changes to database and to vendor entry
+                    if item.company.active == True:
+                        active = "Y"
+                    else:
+                        active = "N"
+                        
+                    sql = ("UPDATE Companies SET Name = '" + dialog.nameText_edit.text() +
+                           "', ShortName = '" + dialog.shortNameText_edit.text() +
+                           "', Active = '" + active + 
+                           "' WHERE idNum = " + str(item.company.idNum))
+                    self.parent.parent.dbCursor.execute(sql)
+
+                    self.parent.parent.dbConnection.commit()
+
+                    item.company.name = dialog.nameText_edit.text()
+                    item.company.shortName = dialog.shortNameText_edit.text()
+                    #item.company.active = dialog.endDateText.text()
+                    
+                    self.companiesTreeWidget.refreshData()
+
+    def deleteSelectedCompanyFromList(self):
+        # Get the index of the item in the company list to delete
+        idxToDelete = self.companiesTreeWidget.indexOfTopLevelItem(self.companiesTreeWidget.currentItem())
+
+        if idxToDelete >= 0:
+            item = self.companiesTreeWidget.takeTopLevelItem(idxToDelete)
+        else:
+            item = None
+        
+        if item:
+            self.parent.parent.dbCursor.execute("DELETE FROM Companies WHERE idNum=?", (item.company.idNum,))
+            self.companiesDict.pop(item.company.idNum)
+            self.parent.parent.dbConnection.commit()
+            self.updateCompaniesCount()
+
+        self.deleteCompany.emit(item.company.shortName)
+        
+class AssetView(QWidget):
+    def __init__(self, dataConnection, parent):
+        super().__init__(parent)
+        self.dataConnection = dataConnection
+        self.parent = parent
+
+        self.assetWidget = AssetWidget(self.dataConnection.assets, self)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.assetWidget)
 
         self.setLayout(layout)
 

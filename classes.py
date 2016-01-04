@@ -37,6 +37,40 @@ class ProjectsDict(dict):
             if self[projectKey].status() == status:
                 tempDict[projectKey] = self[projectKey]
         return tempDict
+
+class AssetsDict(dict):
+    def __init__(self):
+        super().__init__()
+
+    def currentCost(self):
+        amount = 0
+        assetsDict = self.currentAssets()
+        
+        for key in assetsDict:
+            amount += assetsDict[key].amount()
+        return amount
+
+    def disposedCost(self):
+        amount = 0
+        assetsDict = self.disposedAssets()
+
+        for key in assetsDict:
+            amount += assetsDict[key]
+        return amount
+
+    def currentAssets(self):
+        assetDict = {}
+        for assetKey in self:
+            if self[assetKey].disposeDate == "":
+                assetDict[assetKey] = self[assetKey]
+        return assetDict
+
+    def disposedAssets(self):
+        assetDict = {}
+        for assetKey in self:
+            if self[assetKey].disposeDate != "":
+                assetDict[assetKey] = self[assetKey]
+        return assetDict
             
 class CompanyDict(dict):
     def __init__(self):
@@ -206,6 +240,12 @@ class Invoice:
     def removeDetail(self, detail):
         self.details.pop(detail.idNum)
 
+    def addPayment(self, payment):
+        self.payments[payment.idNum] = payment
+
+    def removePayment(self, payment):
+        self.payments.pop(payment.idNum)
+
 class Vendor:
     def __init__(self, name, address, city, state, zipcode, phone, idNum):
         self.idNum = idNum
@@ -288,6 +328,44 @@ class Company:
     def removeProject(self, project):
         self.projects.pop(project.idNum)
 
+    def addAsset(self, asset):
+        self.assets[asset.idNum] = asset
+
+    def removeAsset(self, asset):
+        self.assets.pop(asset.idNum)
+
+class Assets:
+    def __init__(self, desc, acqDate, inSvDate, disposeDate, idNum):
+        self.idNum = idNum
+        self.description = desc
+        self.acquireDate = acqDate
+        self.inSvcDate = inSvcDate
+        self.disposeDate = disposeDate
+        self.company = None
+        self.fromProject = None
+        self.costs = {}
+        self.history = {}
+        self.proposals = {}
+
+    def addCompany(self, company):
+        self.company = company
+
+    def addProject(self, project):
+        self.fromProject = project
+
+    def addProposal(self, proposal):
+        self.proposals[proposal.idNum] = proposal
+
+    def cost(self):
+        amount = 0
+        for costKey in self.costs:
+            amount += self.costs[costKey].amount()
+
+        return amount
+
+    def depreciatedAmount(self):
+        pass
+        
 class CorporateStructure:
     def __init__(self):
         self.companies = CompanyDict()
@@ -296,5 +374,5 @@ class CorporateStructure:
         self.invoicesDetails = {}
         self.proposals = ProposalsDict()
         self.proposalsDetails = {}
-        self.assets = {}
+        self.assets = AssetsDict()
         self.projects = ProjectsDict()
