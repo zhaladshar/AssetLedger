@@ -335,18 +335,23 @@ class Company:
         self.assets.pop(asset.idNum)
 
 class Assets:
-    def __init__(self, desc, acqDate, inSvDate, disposeDate, idNum):
+    def __init__(self, desc, acqDate, inSvDate, disposeDate, usefulLife, idNum):
         self.idNum = idNum
         self.description = desc
         self.acquireDate = acqDate
         self.inSvcDate = inSvcDate
         self.disposeDate = disposeDate
+        self.usefulLife = usefulLife
+        self.assetType = None
         self.company = None
         self.fromProject = None
         self.costs = {}
         self.history = {}
         self.proposals = {}
 
+    def addAssetType(self, assetType):
+        self.assetType = assetType
+        
     def addCompany(self, company):
         self.company = company
 
@@ -357,7 +362,7 @@ class Assets:
         self.proposals[proposal.idNum] = proposal
 
     def cost(self):
-        amount = 0
+        amount = 0.0
         for costKey in self.costs:
             amount += self.costs[costKey].amount()
 
@@ -365,6 +370,11 @@ class Assets:
 
     def depreciatedAmount(self):
         pass
+
+class AssetType:
+    def __init__(self, description, idNum):
+        self.idNum = idNum
+        self.description = description
         
 class CorporateStructure:
     def __init__(self):
@@ -375,4 +385,5 @@ class CorporateStructure:
         self.proposals = ProposalsDict()
         self.proposalsDetails = {}
         self.assets = AssetsDict()
+        self.assetTypes = {}
         self.projects = ProjectsDict()
