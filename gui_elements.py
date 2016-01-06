@@ -2134,10 +2134,10 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
         self.asset = assetItem
         self.main = QWidget()
         
-        idLabel = QLabel(str(self.assetItem.idNum))
+        idLabel = QLabel(str(self.asset.idNum))
         self.descLabel = QLabel(self.asset.description)
-        self.costLabel = QLabel(self.asset.cost())
-        self.depAmtLabel = QLabel(self.asset.depreciatedAmount())
+        self.costLabel = QLabel(str(self.asset.cost()))
+        self.depAmtLabel = QLabel(str(self.asset.depreciatedAmount()))
         self.botDateLabel = QLabel(self.asset.acquireDate)
         self.inSvcDateLabel = QLabel(self.asset.inSvcDate)
         
@@ -2211,7 +2211,7 @@ class AssetWidget(QWidget):
 
         buttonLayout = QVBoxLayout()
         newButton = QPushButton("New")
-        #newButton.clicked.connect(self.showNewAssetDialog)
+        newButton.clicked.connect(self.showNewAssetDialog)
         viewButton = QPushButton("View")
         #viewButton.clicked.connect(self.showViewAssetDialog)
         deleteButton = QPushButton("Delete")
@@ -2239,29 +2239,44 @@ class AssetWidget(QWidget):
         sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
         self.parent.parent.dbCursor.execute(sql)
 
-    def showNewCompanyDialog(self):
-        dialog = CompanyDialog("New", self)
+    def stripAllButNumbers(self, string):
+        regex = re.match(r"\s*([0-9]+).*", string)
+        return int(regex.groups()[0])
+
+    def updateAssetsCount(self):
+        self.currentAssetsLabel.setText("Assets: %d / %.02f" % (len(self.assetsDict.currentAssets()), self.assetsDict.currentCost()))
+
+    def showNewAssetDialog(self):
+        dialog = AssetDialog("New", self)
         if dialog.exec_():
             # Find current largest id and increment by one
-            nextId = self.nextIdNum("Companies")
+            nextId = self.nextIdNum("Assets")
+            companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+            assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
             
             # Create proposal and add to database
-            newCompany = Company(dialog.nameText.text(),
-                                 dialog.shortNameText.text(),
-                                 True,
-                                 nextId)
-            self.companiesDict[newCompany.idNum] = newCompany
-
-            self.insertIntoDatabase("Companies", "(Name, ShortName, Active)", "('" + newCompany.name + "', '" + newCompany.shortName + "', 'Y')")
+            newAsset = Asset(dialog.descriptionText.text(),
+                             dialog.dateAcquiredText.text(),
+                             dialog.dateInSvcText.text(),
+                             "",
+                             dialog.usefulLifeText.text(),
+                             nextId)
+            self.assetsDict[newAsset.idNum] = newAsset
+            newAsset.addCompany(self.parent.dataConnection.companies[companyId])
+            newAsset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])
+            self.parent.dataConnection.companies[companyId].addAsset(newAsset)
+            
+            self.insertIntoDatabase("Assets", "(Description, AcquireDate, InSvcDate, DisposeDate, UsefulLife)", "('" + newAsset.description + "', '" + newAsset.acquireDate + "', '" + newAsset.inSvcDate + "', '" + newAsset.disposeDate + "', '" + newAsset.usefulLife + "')")
+            self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('companies', " + str(companyId) + ", 'addAsset', 'assets', " + str(nextId) + ")")
+            self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
+            self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addAssetType', 'assetTypes', " + str(assetTypeId) + ")")
             
             self.parent.parent.dbConnection.commit()
             
             # Make project into a ProjectTreeWidgetItem and add it to ProjectTree
-            item = CompanyTreeWidgetItem(newCompany, self.companiesTreeWidget)
-            self.companiesTreeWidget.addItem(item)
-            self.updateCompaniesCount()
-
-            self.addNewCompany.emit(newCompany.shortName)
+            item = AssetTreeWidgetItem(newAsset, self.currentAssetsTreeWidget)
+            self.currentAssetsTreeWidget.addItem(item)
+            self.updateAssetsCount()
             
     def showViewCompanyDialog(self):
         # Determine which tree the proposal is in--if any.  If none, don't
@@ -2324,9 +2339,3 @@ class AssetView(QWidget):
         layout.addWidget(self.assetWidget)
 
         self.setLayout(layout)
-
-    def emitAddNewCompany(self, shortName):
-        self.addNewCompany.emit(shortName)
-
-    def emitDeleteCompany(self, shortName):
-        self.deleteCompany.emit(shortName)

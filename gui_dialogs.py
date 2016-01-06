@@ -562,7 +562,7 @@ class CompanyDialog(QDialog):
         self.layout.addWidget(self.nameText_edit, 0, 1)
         self.layout.addWidget(self.shortNameText_edit, 1, 1)
 
-class CompanyDialog(QDialog):
+class AssetDialog(QDialog):
     def __init__(self, mode, parent=None, asset=None):
         super().__init__(parent)
         self.hasChanges = False
@@ -586,7 +586,7 @@ class CompanyDialog(QDialog):
         self.assetTypeBox = QComboBox()
         assetList = []
         for assetType in parent.parent.dataConnection.assetTypes.values():
-            companyList.append(str("%4s" % assetType.idNum) + " - " + assetType.description)
+            assetList.append(str("%4s" % assetType.idNum) + " - " + assetType.description)
         self.assetTypeBox.addItems(assetList)
         
         if mode == "View":
@@ -600,10 +600,10 @@ class CompanyDialog(QDialog):
             self.usefulLifeText = QLabel(asset.usefulLife)
             self.costText = QLabel(asset.cost())
         else:
-            self.descriptionText = QLineEdit(asset.description)
-            self.dateAcquiredText = QLineEdit(asset.acquireDate)
-            self.dateInSvcText = QLineEdit(asset.inSvcDate)
-            self.usefulLifeText = QLineEdit(asset.usefulLife)
+            self.descriptionText = QLineEdit()
+            self.dateAcquiredText = QLineEdit()
+            self.dateInSvcText = QLineEdit()
+            self.usefulLifeText = QLineEdit()
             self.costText = QLabel()
 
         #########
@@ -622,12 +622,12 @@ class CompanyDialog(QDialog):
         self.layout.addWidget(self.assetTypeBox, 2, 1)
         self.layout.addWidget(dateAcquiredLbl, 3, 0)
         self.layout.addWidget(self.dateAcquiredText, 3, 1)
-        self.layout.addWidget(dateInSvcText, 4, 0)
+        self.layout.addWidget(dateInSvcLbl, 4, 0)
         self.layout.addWidget(self.dateInSvcText, 4, 1)
         self.layout.addWidget(usefulLifeLbl, 5, 0)
         self.layout.addWidget(self.usefulLifeText, 5, 1)
         self.layout.addWidget(costLbl, 6, 0)
-        self.layout.addWidget(str("%.02f" % asset.cost()), 6, 1)
+        self.layout.addWidget(QLabel("0.00"), 6, 1)
 
         buttonLayout = QHBoxLayout()
         
@@ -644,7 +644,7 @@ class CompanyDialog(QDialog):
         cancelButton.clicked.connect(self.reject)
         buttonLayout.addWidget(cancelButton)
         
-        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        self.layout.addLayout(buttonLayout, 7, 0, 1, 2)
         self.setLayout(self.layout)
         
     def changed(self):

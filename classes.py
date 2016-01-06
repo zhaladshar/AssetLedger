@@ -47,7 +47,7 @@ class AssetsDict(dict):
         assetsDict = self.currentAssets()
         
         for key in assetsDict:
-            amount += assetsDict[key].amount()
+            amount += assetsDict[key].cost()
         return amount
 
     def disposedCost(self):
@@ -334,8 +334,8 @@ class Company:
     def removeAsset(self, asset):
         self.assets.pop(asset.idNum)
 
-class Assets:
-    def __init__(self, desc, acqDate, inSvDate, disposeDate, usefulLife, idNum):
+class Asset:
+    def __init__(self, desc, acqDate, inSvcDate, disposeDate, usefulLife, idNum):
         self.idNum = idNum
         self.description = desc
         self.acquireDate = acqDate
@@ -372,9 +372,13 @@ class Assets:
         pass
 
 class AssetType:
-    def __init__(self, description, idNum):
+    def __init__(self, description, depreciable, idNum):
         self.idNum = idNum
         self.description = description
+        if depreciable == 0:
+            self.depreciable = False
+        else:
+            self.depreciable = True
         
 class CorporateStructure:
     def __init__(self):
