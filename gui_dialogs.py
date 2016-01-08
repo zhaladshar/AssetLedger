@@ -678,3 +678,40 @@ class AssetDialog(QDialog):
         self.layout.addWidget(self.dateAcquiredText_edit, 3, 1)
         self.layout.addWidget(self.dateInSvcText_edit, 4, 1)
         self.layout.addWidget(self.usefulLifeText_edit, 5, 1)
+
+class InvoicePaymentDialog(QDialog):
+    def __init__(self, parent=None, invoice=None):
+        super().__init__(parent)
+
+        vendorLbl = QLabel("Vendor:")
+        invoiceLbl = QLabel("Invoice:")
+        datePaidLbl = QLabel("Date Paid:")
+        amountLbl = QLabel("Amount:")
+
+        self.vendorText = QLabel(invoice.vendor.name)
+        self.invoiceText = QLabel(str(invoice.idNum))
+        self.datePaidText = QLineEdit()
+        self.amountText = QLineEdit()
+        
+        self.layout = QGridLayout()
+        self.layout.addWidget(vendorLbl, 0, 0)
+        self.layout.addWidget(self.vendorText, 0, 1)
+        self.layout.addWidget(invoiceLbl, 1, 0)
+        self.layout.addWidget(self.invoiceText, 1, 1)
+        self.layout.addWidget(datePaidLbl, 2, 0)
+        self.layout.addWidget(self.datePaidText, 2, 1)
+        self.layout.addWidget(amountLbl, 3, 0)
+        self.layout.addWidget(self.amountText, 3, 1)
+
+        buttonLayout = QHBoxLayout()
+        
+        saveButton = QPushButton("Save")
+        saveButton.clicked.connect(self.accept)
+        buttonLayout.addWidget(saveButton)
+        
+        cancelButton = QPushButton("Cancel")
+        cancelButton.clicked.connect(self.reject)
+        buttonLayout.addWidget(cancelButton)
+
+        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        self.setLayout(self.layout)

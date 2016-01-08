@@ -172,7 +172,7 @@ class Project:
             CIP += self.invoices[invoiceKey].amount()
         return CIP
 
-class Payment:
+class InvoicePayment:
     def __init__(self, datePaid, amountPaid, idNum):
         self.idNum = idNum
         self.invoicePaid = None
@@ -219,7 +219,7 @@ class Invoice:
     def paid(self):
         amtPaid = 0.0
         for paymentKey in self.payments:
-            amtPaid += payments[paymentKey].amountPaid
+            amtPaid += self.payments[paymentKey].amountPaid
         return amtPaid
 
     def addVendor(self, vendor):
@@ -259,11 +259,11 @@ class Vendor:
         self.invoices = InvoicesDict()
 
     def balance(self):
-        amountPaid = 0
-        amountInvoiced = 0
-        for invoiceKey in self.invoices.keys():
+        amountPaid = 0.0
+        amountInvoiced = 0.0
+        for invoiceKey in self.invoices:
             amountPaid += self.invoices[invoiceKey].paid()
-            amountInvoiced += self.invoices[invoiceKey].balance()
+            amountInvoiced += self.invoices[invoiceKey].amount()
         return amountInvoiced - amountPaid
 
     def addInvoice(self, invoice):
@@ -274,8 +274,8 @@ class Vendor:
 
     def openInvoiceCount(self):
         count = 0
-        for invoiceKey in self.invoices.keys():
-            if self.invoices[invoiceKey].balance != 0:
+        for invoiceKey in self.invoices:
+            if self.invoices[invoiceKey].balance() != 0.0:
                 count += 1
         return count
 
@@ -386,6 +386,7 @@ class CorporateStructure:
         self.vendors = {}
         self.invoices = InvoicesDict()
         self.invoicesDetails = {}
+        self.invoicesPayments = {}
         self.proposals = ProposalsDict()
         self.proposalsDetails = {}
         self.assets = AssetsDict()

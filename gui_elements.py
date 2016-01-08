@@ -6,6 +6,37 @@ import re
 from classes import *
 import sys
 
+class StandardButtonWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.layout = QVBoxLayout()
+
+        self.newButton = QPushButton("New")
+        self.viewButton = QPushButton("View")
+        self.deleteButton = QPushButton("Delete")
+
+        self.layout.addWidget(self.newButton)
+        self.layout.addWidget(self.viewButton)
+        self.layout.addWidget(self.deleteButton)
+        self.layout.addStretch(1)
+
+        self.layout.setContentsMargins(0, 0, 0, 0)
+
+        self.setLayout(self.layout)
+
+    def addSpacer(self):
+        # Remove last element as it is a spacer.
+        self.layout.removeItem(self.layout.itemAt(self.layout.count() - 1))
+        self.layout.addSpacing(10)
+        self.layout.addStretch(1)
+
+    def addButton(self, button):
+        # Remove last element as it is a spacer.
+        self.layout.removeItem(self.layout.itemAt(self.layout.count() - 1))
+        self.layout.addWidget(button)
+        self.layout.addStretch(1)
+        
 class NewLineEdit(QLineEdit):
     lostFocus = pyqtSignal()
     
@@ -687,6 +718,7 @@ class VendorWidget(QWidget):
 class InvoiceTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, invoiceItem, parent):
         super().__init__(parent)
+        self.parent = parent
         self.invoice = invoiceItem
         self.main = QWidget()
 
@@ -788,24 +820,49 @@ class InvoiceWidget(QWidget):
         treeWidgetsLayout.addWidget(self.paidInvoicesLabel)
         treeWidgetsLayout.addWidget(self.paidInvoicesTreeWidget)
 
-        buttonLayout = QVBoxLayout()
-        newInvoiceButton = QPushButton("New")
-        newInvoiceButton.clicked.connect(self.showNewInvoiceDialog)
-        viewInvoiceButton = QPushButton("View")
-        viewInvoiceButton.clicked.connect(self.showViewInvoiceDialog)
-        deleteInvoiceButton = QPushButton("Delete")
-        deleteInvoiceButton.clicked.connect(self.deleteSelectedInvoiceFromList)
-
-        buttonLayout.addWidget(newInvoiceButton)
-        buttonLayout.addWidget(viewInvoiceButton)
-        buttonLayout.addWidget(deleteInvoiceButton)
-        buttonLayout.addStretch(1)
-
+        buttonLayout = StandardButtonWidget()
+        buttonLayout.newButton.clicked.connect(self.showNewInvoiceDialog)
+        buttonLayout.viewButton.clicked.connect(self.showViewInvoiceDialog)
+        buttonLayout.deleteButton.clicked.connect(self.deleteSelectedInvoiceFromList)
+        buttonLayout.addSpacer()
+        
+        payInvoiceButton = QPushButton("Pay...")
+        payInvoiceButton.clicked.connect(self.payInvoice)
+        buttonLayout.addButton(payInvoiceButton)
+        
         subLayout.addLayout(treeWidgetsLayout)
-        subLayout.addLayout(buttonLayout)
+        subLayout.addWidget(buttonLayout)
         mainLayout.addLayout(subLayout)
-
+        
         self.setLayout(mainLayout)
+
+    def refreshOpenInvoiceTree(self):
+        self.openInvoicesTreeWidget.refreshData()
+    
+    def payInvoice(self):
+        idxToShow = self.openInvoicesTreeWidget.indexFromItem(self.openInvoicesTreeWidget.currentItem())
+        item = self.openInvoicesTreeWidget.itemFromIndex(idxToShow)
+        
+        if item:
+            dialog = InvoicePaymentDialog(self, item.invoice)
+            if dialog.exec_():
+                nextId = self.nextIdNum("InvoicesPayments")
+                
+                # Create new payment
+                newPayment = InvoicePayment(dialog.datePaidText.text(),
+                                            float(dialog.amountText.text()),
+                                            nextId)
+                
+                # Add to database and to data structure
+                self.insertIntoDatabase("InvoicesPayments", "(DatePaid, AmountPaid)", "('" + newPayment.datePaid + "', " + str(newPayment.amountPaid) + ")")
+                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoices', " + str(item.invoice.idNum) + ", 'addPayment', 'invoicesPayments', " + str(nextId) + ")")
+                self.parent.parent.dbConnection.commit()
+                
+                newPayment.addInvoice(item.invoice)
+                item.invoice.addPayment(newPayment)
+                
+                self.updateVendorTree.emit()
+                self.refreshOpenInvoiceTree()
 
     def removeSelectionsFromAllBut(self, but):
         if but == 1:

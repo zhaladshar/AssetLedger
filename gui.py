@@ -64,6 +64,10 @@ class Window(QMainWindow):
         for each in self.dbCursor:
             self.data.invoicesDetails[each[0]] = InvoiceDetail(each[1], each[2], each[0])
 
+        self.dbCursor.execute("SELECT * FROM InvoicesPayments")
+        for each in self.dbCursor:
+            self.data.invoicesPayments[each[0]] = InvoicePayment(each[1], each[2], each[0])
+
         self.dbCursor.execute("SELECT * FROM Proposals")
         for each in self.dbCursor:
             self.data.proposals[each[0]] = Proposal(each[1], each[2], each[0])
