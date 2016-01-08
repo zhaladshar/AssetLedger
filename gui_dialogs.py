@@ -566,6 +566,8 @@ class AssetDialog(QDialog):
     def __init__(self, mode, parent=None, asset=None):
         super().__init__(parent)
         self.hasChanges = False
+        self.companyChanged = False
+        self.assetTypeChanged = False
 
         self.layout = QGridLayout()
         
@@ -590,15 +592,15 @@ class AssetDialog(QDialog):
         self.assetTypeBox.addItems(assetList)
         
         if mode == "View":
-            self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % asset.company.idNum) + " - " + asset.company.description))
+            self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % asset.company.idNum) + " - " + asset.company.shortName))
             self.companyBox.setEnabled(False)
             self.descriptionText = QLabel(asset.description)
-            self.assetTypeBox.setCurrentIndex(self.companyBox.findText(str("%4s" % asset.assetType.idNum) + " - " + asset.company.description))
+            self.assetTypeBox.setCurrentIndex(self.assetTypeBox.findText(str("%4s" % asset.assetType.idNum) + " - " + asset.assetType.description))
             self.assetTypeBox.setEnabled(False)
             self.dateAcquiredText = QLabel(asset.acquireDate)
             self.dateInSvcText = QLabel(asset.inSvcDate)
-            self.usefulLifeText = QLabel(asset.usefulLife)
-            self.costText = QLabel(asset.cost())
+            self.usefulLifeText = QLabel(str(asset.usefulLife))
+            self.costText = QLabel(str(asset.cost()))
         else:
             self.descriptionText = QLineEdit()
             self.dateAcquiredText = QLineEdit()
@@ -628,7 +630,7 @@ class AssetDialog(QDialog):
         self.layout.addWidget(self.usefulLifeText, 5, 1)
         self.layout.addWidget(costLbl, 6, 0)
         self.layout.addWidget(QLabel("0.00"), 6, 1)
-
+        
         buttonLayout = QHBoxLayout()
         
         saveButton = QPushButton("Save")
@@ -650,12 +652,29 @@ class AssetDialog(QDialog):
     def changed(self):
         self.hasChanges = True
 
+    def companyChange(self):
+        self.companyChanged = True
+        self.hasChanges = True
+
+    def assetTypeChange(self):
+        self.assetTypeChanged = True
+        self.hasChanges = True
+        
     def makeLabelsEditable(self):
-        self.nameText_edit = QLineEdit(self.nameText.text())
-        self.nameText_edit.textEdited.connect(self.changed)
+        self.companyBox.setEnabled(True)
+        self.companyBox.currentIndexChanged.connect(self.companyChange)
+        self.descriptionText_edit = QLineEdit(self.descriptionText.text())
+        self.descriptionText_edit.textEdited.connect(self.changed)
+        self.assetTypeBox.setEnabled(True)
+        self.assetTypeBox.currentIndexChanged.connect(self.assetTypeChange)
+        self.dateAcquiredText_edit = QLineEdit(self.dateAcquiredText.text())
+        self.dateAcquiredText_edit.textEdited.connect(self.changed)
+        self.dateInSvcText_edit = QLineEdit(self.dateInSvcText.text())
+        self.dateInSvcText_edit.textEdited.connect(self.changed)
+        self.usefulLifeText_edit = QLineEdit(self.usefulLifeText.text())
+        self.usefulLifeText_edit.textEdited.connect(self.changed)
         
-        self.shortNameText_edit = QLineEdit(self.shortNameText.text())
-        self.shortNameText_edit.textEdited.connect(self.changed)
-        
-        self.layout.addWidget(self.nameText_edit, 0, 1)
-        self.layout.addWidget(self.shortNameText_edit, 1, 1)
+        self.layout.addWidget(self.descriptionText_edit, 1, 1)
+        self.layout.addWidget(self.dateAcquiredText_edit, 3, 1)
+        self.layout.addWidget(self.dateInSvcText_edit, 4, 1)
+        self.layout.addWidget(self.usefulLifeText_edit, 5, 1)

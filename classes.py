@@ -369,7 +369,7 @@ class Asset:
         return amount
 
     def depreciatedAmount(self):
-        pass
+        return 0
 
 class AssetType:
     def __init__(self, description, depreciable, idNum):

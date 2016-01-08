@@ -1803,7 +1803,7 @@ class ProjectWidget(QWidget):
             # Find current largest id and increment by one
             nextId = self.nextIdNum("Projects")
             
-            # Create proposal and add to database
+            # Create project and add to database
             newProject = Project(dialog.descriptionText.text(),
                                  dialog.startDateText.text(),
                                  nextId)
@@ -1824,7 +1824,7 @@ class ProjectWidget(QWidget):
             self.updateProjectsCount()
 
     def showViewProjectDialog(self):
-        # Determine which tree the proposal is in--if any.  If none, don't
+        # Determine which tree the project is in--if any.  If none, don't
         # display dialog
         idxToShow = self.openProjectsTreeWidget.indexFromItem(self.openProjectsTreeWidget.currentItem())
         item = self.openProjectsTreeWidget.itemFromIndex(idxToShow)
@@ -2037,7 +2037,7 @@ class CompanyWidget(QWidget):
             # Find current largest id and increment by one
             nextId = self.nextIdNum("Companies")
             
-            # Create proposal and add to database
+            # Create company and add to database
             newCompany = Company(dialog.nameText.text(),
                                  dialog.shortNameText.text(),
                                  True,
@@ -2048,7 +2048,7 @@ class CompanyWidget(QWidget):
             
             self.parent.parent.dbConnection.commit()
             
-            # Make project into a ProjectTreeWidgetItem and add it to ProjectTree
+            # Make company into a CompanyTreeWidgetItem and add it to CompanyTree
             item = CompanyTreeWidgetItem(newCompany, self.companiesTreeWidget)
             self.companiesTreeWidget.addItem(item)
             self.updateCompaniesCount()
@@ -2056,7 +2056,7 @@ class CompanyWidget(QWidget):
             self.addNewCompany.emit(newCompany.shortName)
             
     def showViewCompanyDialog(self):
-        # Determine which tree the proposal is in--if any.  If none, don't
+        # Determine which tree the company is in--if any.  If none, don't
         # display dialog
         idxToShow = self.companiesTreeWidget.indexFromItem(self.companiesTreeWidget.currentItem())
         item = self.companiesTreeWidget.itemFromIndex(idxToShow)
@@ -2153,8 +2153,8 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
 
     def refreshData(self):
         self.descLabel.setText(self.asset.description)
-        self.costLabel.setText(self.asset.cost())
-        self.depAmtLabel.setText(self.asset.depreciatedAmount())
+        self.costLabel.setText(str(self.asset.cost()))
+        self.depAmtLabel.setText(str(self.asset.depreciatedAmount()))
         self.botDateLabel.setText(self.asset.acquireDate)
         self.inSvcDateLabel.setText(self.asset.inSvcDate)
         
@@ -2213,9 +2213,9 @@ class AssetWidget(QWidget):
         newButton = QPushButton("New")
         newButton.clicked.connect(self.showNewAssetDialog)
         viewButton = QPushButton("View")
-        #viewButton.clicked.connect(self.showViewAssetDialog)
+        viewButton.clicked.connect(self.showViewAssetDialog)
         deleteButton = QPushButton("Delete")
-        #deleteButton.clicked.connect(self.deleteSelectedAssetFromList)
+        deleteButton.clicked.connect(self.deleteSelectedAssetFromList)
         buttonLayout.addWidget(newButton)
         buttonLayout.addWidget(viewButton)
         buttonLayout.addWidget(deleteButton)
@@ -2278,54 +2278,70 @@ class AssetWidget(QWidget):
             self.currentAssetsTreeWidget.addItem(item)
             self.updateAssetsCount()
             
-    def showViewCompanyDialog(self):
-        # Determine which tree the proposal is in--if any.  If none, don't
+    def showViewAssetDialog(self):
+        # Determine which tree the asset is in--if any.  If none, don't
         # display dialog
-        idxToShow = self.companiesTreeWidget.indexFromItem(self.companiesTreeWidget.currentItem())
-        item = self.companiesTreeWidget.itemFromIndex(idxToShow)
+        idxToShow = self.currentAssetsTreeWidget.indexFromItem(self.currentAssetsTreeWidget.currentItem())
+        item = self.currentAssetsTreeWidget.itemFromIndex(idxToShow)
 
         if item:
-            dialog = CompanyDialog("View", self, item.company)
-            dialog.setWindowTitle("View Company")
+            dialog = AssetDialog("View", self, item.asset)
+            dialog.setWindowTitle("View Asset")
             
             if dialog.exec_():
                 if dialog.hasChanges == True:
                     # Commit changes to database and to vendor entry
-                    if item.company.active == True:
-                        active = "Y"
-                    else:
-                        active = "N"
-                        
-                    sql = ("UPDATE Companies SET Name = '" + dialog.nameText_edit.text() +
-                           "', ShortName = '" + dialog.shortNameText_edit.text() +
-                           "', Active = '" + active + 
-                           "' WHERE idNum = " + str(item.company.idNum))
+                    sql = ("UPDATE Assets SET Description = '" + dialog.descriptionText_edit.text() +
+                           "', AcquireDate = '" + dialog.dateAcquiredText_edit.text() +
+                           "', InSvcDate = '" + dialog.dateInSvcText_edit.text() + 
+                           "', UsefulLife = " + dialog.usefulLifeText_edit.text() +
+                           " WHERE idNum = " + str(item.asset.idNum))
                     self.parent.parent.dbCursor.execute(sql)
 
+                    item.asset.description = dialog.descriptionText_edit.text()
+                    item.asset.acquireDate = dialog.dateAcquiredText_edit.text()
+                    item.asset.inSvcDate = dialog.dateInSvcText_edit.text()
+                    item.asset.usefulLife = dialog.usefulLifeText_edit.text()
+
+                    if dialog.companyChanged == True:
+                        companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+                        
+                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo='companies' AND ObjectBeingLinked='assets' AND ObjectIdBeingLinked=?", (companyId, item.asset.idNum))
+                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectBeingLinked='companies' AND ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=?", (companyId, item.asset.idNum))
+                        
+                        item.asset.company.removeAsset(item.asset)
+                        item.asset.addCompany(self.parent.dataConnection.companies[companyId])
+                        item.asset.company.addAsset(item.asset)
+                        
+                    if dialog.assetTypeChanged == True:
+                        assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
+                        
+                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectBeingLinked='assetTypes' AND ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=?", (assetTypeId, item.asset.idNum))
+                        
+                        item.asset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])
+                        
                     self.parent.parent.dbConnection.commit()
+                    self.currentAssetsTreeWidget.refreshData()
 
-                    item.company.name = dialog.nameText_edit.text()
-                    item.company.shortName = dialog.shortNameText_edit.text()
-                    #item.company.active = dialog.endDateText.text()
-                    
-                    self.companiesTreeWidget.refreshData()
-
-    def deleteSelectedCompanyFromList(self):
+    def deleteSelectedAssetFromList(self):
         # Get the index of the item in the company list to delete
-        idxToDelete = self.companiesTreeWidget.indexOfTopLevelItem(self.companiesTreeWidget.currentItem())
+        idxToDelete = self.currentAssetsTreeWidget.indexOfTopLevelItem(self.currentAssetsTreeWidget.currentItem())
 
         if idxToDelete >= 0:
-            item = self.companiesTreeWidget.takeTopLevelItem(idxToDelete)
+            item = self.currentAssetsTreeWidget.takeTopLevelItem(idxToDelete)
         else:
             item = None
         
         if item:
-            self.parent.parent.dbCursor.execute("DELETE FROM Companies WHERE idNum=?", (item.company.idNum,))
-            self.companiesDict.pop(item.company.idNum)
+            self.parent.parent.dbCursor.execute("DELETE FROM Assets WHERE idNum=?", (item.asset.idNum,))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=?", (item.asset.idNum,))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='assets' AND ObjectIdBeingLinked=?", (item.asset.idNum,))
+            
+            self.assetsDict.pop(item.asset.idNum)
+            item.asset.company.removeAsset(item.asset)
             self.parent.parent.dbConnection.commit()
-            self.updateCompaniesCount()
-
-        self.deleteCompany.emit(item.company.shortName)
+            
+            self.updateAssetsCount()
         
 class AssetView(QWidget):
     def __init__(self, dataConnection, parent):
