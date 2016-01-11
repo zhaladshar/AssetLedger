@@ -208,7 +208,7 @@ class Invoice:
         self.details = {}
 
     def amount(self):
-        amount = 0
+        amount = 0.0
         for detailKey in self.details:
             amount += self.details[detailKey].cost
         return amount
@@ -345,7 +345,7 @@ class Asset:
         self.assetType = None
         self.company = None
         self.fromProject = None
-        self.costs = {}
+        self.invoices = {}
         self.history = {}
         self.proposals = {}
 
@@ -361,11 +361,16 @@ class Asset:
     def addProposal(self, proposal):
         self.proposals[proposal.idNum] = proposal
 
+    def addInvoice(self, invoice):
+        self.invoices[invoice.idNum] = invoice
+
+    def removeInvoice(self, invoice):
+        self.invoices.pop(invoice.idNum)
+
     def cost(self):
         amount = 0.0
-        for costKey in self.costs:
-            amount += self.costs[costKey].amount()
-
+        for invoiceKey in self.invoices:
+            amount += self.invoices[invoiceKey].amount()
         return amount
 
     def depreciatedAmount(self):

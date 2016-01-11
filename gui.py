@@ -36,6 +36,7 @@ class Window(QMainWindow):
         self.companyOverview.deleteCompany.connect(self.deleteCompanyButton)
         self.proposalOverview.updateVendorWidgetTree.connect(self.APOverview.vendorWidget.refreshVendorTree)
         self.APOverview.updateProjectTree.connect(self.projectOverview.projectWidget.refreshProjectTree)
+        self.APOverview.updateAssetTree.connect(self.assetOverview.assetWidget.refreshAssetTree)
 
         # Build menus
         self.buildMenus()

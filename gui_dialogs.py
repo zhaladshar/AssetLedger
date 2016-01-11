@@ -13,17 +13,11 @@ class VendorDialog(QDialog):
         self.layout = QGridLayout()
 
         nameLbl = QLabel("Name:")
-        nameLbl.setStyleSheet("QLabel { background-color: red }")
         addressLbl = QLabel("Address:")
-        addressLbl.setStyleSheet("QLabel { background-color: red }")
         cityLbl = QLabel("City:")
-        cityLbl.setStyleSheet("QLabel { background-color: red }")
         stateLbl = QLabel("State:")
-        stateLbl.setStyleSheet("QLabel { background-color: red }")
         zipLbl = QLabel("ZIP:")
-        zipLbl.setStyleSheet("QLabel { background-color: red }")
         phoneLbl = QLabel("Phone:")
-        phoneLbl.setStyleSheet("QLabel { background-color: red }")
 
         if mode == "View":
             self.nameText = QLabel(self.vendor.name)
@@ -210,11 +204,18 @@ class InvoiceDialog(QDialog):
         cancelButton.clicked.connect(self.reject)
         buttonLayout.addWidget(cancelButton)
 
-        ########################
-        #### Add payment history for View mode
-        ########################
-
-        self.layout.addLayout(buttonLayout, 6, 0, 1, 2)
+        nextRow = 6
+        if self.mode == "View":
+            self.paymentHistory = gui_elements.InvoicePaymentTreeWidget(invoice.payments)
+            self.paymentHistory.setIndentation(0)
+            self.paymentHistory.setHeaderHidden(True)
+            self.paymentHistory.setMinimumWidth(500)
+            self.paymentHistory.setMaximumHeight(200)
+        
+            self.layout.addWidget(self.paymentHistory, nextRow, 0, 1, 2)
+            nextRow += 1
+            
+        self.layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
 
     def getAcceptedProposalOfAssetProject(self):
@@ -629,7 +630,7 @@ class AssetDialog(QDialog):
         self.layout.addWidget(usefulLifeLbl, 5, 0)
         self.layout.addWidget(self.usefulLifeText, 5, 1)
         self.layout.addWidget(costLbl, 6, 0)
-        self.layout.addWidget(QLabel("0.00"), 6, 1)
+        self.layout.addWidget(self.costText, 6, 1)
         
         buttonLayout = QHBoxLayout()
         

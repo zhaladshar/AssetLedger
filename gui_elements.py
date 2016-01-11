@@ -6,6 +6,53 @@ import re
 from classes import *
 import sys
 
+class ClickableLabel(QLabel):
+    released = pyqtSignal()
+
+    def __init__(self, text):
+        super().__init__(text)
+
+    def mouseReleaseEvent(self, event):
+        self.released.emit()
+
+class InvoicePaymentTreeWidgetItem(QTreeWidgetItem):
+    def __init__(self, invoicePaymentItem, parent):
+        super().__init__(parent)
+        self.invoicePayment = invoicePaymentItem
+        self.main = QWidget()
+
+        idLabel = QLabel(str(self.invoicePayment.idNum))
+        self.datePaidLabel = QLabel(self.invoicePayment.datePaid)
+        self.amountLabel = QLabel(str(self.invoicePayment.amountPaid))
+
+        layout = QHBoxLayout()
+        layout.addWidget(idLabel)
+        layout.addWidget(self.datePaidLabel)
+        layout.addWidget(self.amountLabel)
+
+        self.main.setLayout(layout)
+
+    def refreshData(self):
+        self.datePaidLabel.setText(self.invoicePayment.datePaid)
+        self.amountLabel.setText(str(self.invoicePayment.amountPaid))
+
+class InvoicePaymentTreeWidget(QTreeWidget):
+    def __init__(self, invoicePaymentsDict):
+        super().__init__()
+        self.buildItems(self, invoicePaymentsDict)
+
+    def buildItems(self, parent, invoicePaymentsDict):
+        for invoicePaymentKey in invoicePaymentsDict:
+            item = InvoicePaymentTreeWidgetItem(invoicePaymentsDict[invoicePaymentKey], parent)
+            self.addItem(item)
+
+    def addItem(self, widgetItem):
+        self.setItemWidget(widgetItem, 0, widgetItem.main)
+
+    def refreshData(self):
+        for idx in range(self.topLevelItemCount()):
+            self.topLevelItem(idx).refreshData()
+            
 class StandardButtonWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -61,7 +108,6 @@ class AssetProjSelector(QGroupBox):
         
         self.assetRdoBtn = QRadioButton("Asset")
         self.assetRdoBtn.toggled.connect(self.showAssetDict)
-        self.assetRdoBtn.setEnabled(False)
         self.buttonGroup.addButton(self.assetRdoBtn)
         
         self.projRdoBtn = QRadioButton("Project")
@@ -394,68 +440,6 @@ class ProposalDetailWidget(QWidget):
 
     def emitChange(self):
         self.detailsHaveChanged.emit()
-    
-class ClickableLabel(QLabel):
-    released = pyqtSignal()
-
-    def __init__(self, text):
-        super().__init__(text)
-
-    def mouseReleaseEvent(self, event):
-        self.released.emit()
-
-class CollapsableFrame(QFrame):
-    def __init__(self, headerText):
-        super().__init__()
-        self.entries = []
-        self.setStyleSheet("QFrame { border: 1px solid red }")
-        self.setContentsMargins(-8,-8,-8,-8)
-
-        headerLayout = QHBoxLayout()
-        headerLayout.setSpacing(0)
-        self.bodyLayout = QVBoxLayout()
-        self.body = QWidget()
-
-        mainLayout = QVBoxLayout()
-
-        headerWidget = QWidget()
-        headerWidget.setStyleSheet("QWidget { background-color: red }")
-        headerLbl = QLabel(headerText)
-        headerLbl.setMaximumHeight(15)
-        headerLbl.setMargin(0)
-        self.caretLbl = ClickableLabel("ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â²")
-        self.caretLbl.setMaximumWidth(15)
-        self.caretLbl.setStyleSheet("QLabel:hover { color: yellow }")
-        self.caretLbl.released.connect(lambda: self.showHideBody())
-        headerLayout.addWidget(headerLbl)
-        headerLayout.addStretch(0)
-        headerLayout.addWidget(self.caretLbl)
-        headerWidget.setLayout(headerLayout)
-
-        self.body.setLayout(self.bodyLayout)
-
-        mainLayout.addWidget(headerWidget)
-        mainLayout.addWidget(self.body)
-
-        self.setLayout(mainLayout)
-
-    def addEntry(self, text):
-        lbl = QLabel(text)
-        lbl.setStyleSheet("QLabel { border: none }")
-
-        self.entries.append(lbl)
-        self.bodyLayout.addWidget(lbl)
-
-    def changeEntry(self, index, newText):
-        self.entries[index].setText(newText)
-
-    def showHideBody(self):
-        if self.body.isHidden() == True:
-            self.body.show()
-            self.caretLbl.setText("ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â²")
-        else:
-            self.body.hide()
-            self.caretLbl.setText("ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¼")
 
 class ButtonToggleBoxItem(QPushButton):
         buttonPressed = pyqtSignal(str)
@@ -606,21 +590,13 @@ class VendorWidget(QWidget):
         self.vendorTreeWidget.setMinimumWidth(500)
         self.vendorTreeWidget.setMaximumHeight(200)
 
-        newVendorButton = QPushButton("New")
-        newVendorButton.clicked.connect(self.showNewVendorDialog)
-        viewVendorButton = QPushButton("View")
-        viewVendorButton.clicked.connect(self.showViewVendorDialog)
-        deleteVendorButton = QPushButton("Delete")
-        deleteVendorButton.clicked.connect(self.deleteSelectedVendorFromList)
-
-        buttonLayout = QVBoxLayout()
-        buttonLayout.addWidget(newVendorButton)
-        buttonLayout.addWidget(viewVendorButton)
-        buttonLayout.addWidget(deleteVendorButton)
-        buttonLayout.addStretch(1)
+        buttonWidget = StandardButtonWidget()
+        buttonWidget.newButton.clicked.connect(self.showNewVendorDialog)
+        buttonWidget.viewButton.clicked.connect(self.showViewVendorDialog)
+        buttonWidget.deleteButton.clicked.connect(self.deleteSelectedVendorFromList)
 
         subLayout.addWidget(self.vendorTreeWidget)
-        subLayout.addLayout(buttonLayout)
+        subLayout.addWidget(buttonWidget)
 
         mainLayout.addLayout(subLayout)
 
@@ -729,11 +705,6 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
         self.invoiceAmountLabel = QLabel(str(self.invoice.amount()))
         self.invoicePaidLabel = QLabel(str(self.invoice.paid()))
         self.invoiceBalanceLabel = QLabel(str(self.invoice.balance()))
-        self.payInvoiceLabel = ClickableLabel("$")
-        self.payInvoiceLabel.setStyleSheet("QLabel { color: black } QLabel:hover { color: green }")
-
-        if self.invoice.balance() == 0:
-            self.payInvoiceLabel.setText("")
 
         layout = QHBoxLayout()
         layout.addWidget(idLabel)
@@ -743,7 +714,6 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
         layout.addWidget(self.invoiceAmountLabel)
         layout.addWidget(self.invoicePaidLabel)
         layout.addWidget(self.invoiceBalanceLabel)
-        layout.addWidget(self.payInvoiceLabel)
 
         self.main.setLayout(layout)
 
@@ -783,6 +753,7 @@ class InvoiceTreeWidget(QTreeWidget):
 class InvoiceWidget(QWidget):
     updateVendorTree = pyqtSignal()
     updateProjectTree = pyqtSignal()
+    updateAssetTree = pyqtSignal()
     
     def __init__(self, invoicesDict, parent):
         super().__init__()
@@ -820,18 +791,18 @@ class InvoiceWidget(QWidget):
         treeWidgetsLayout.addWidget(self.paidInvoicesLabel)
         treeWidgetsLayout.addWidget(self.paidInvoicesTreeWidget)
 
-        buttonLayout = StandardButtonWidget()
-        buttonLayout.newButton.clicked.connect(self.showNewInvoiceDialog)
-        buttonLayout.viewButton.clicked.connect(self.showViewInvoiceDialog)
-        buttonLayout.deleteButton.clicked.connect(self.deleteSelectedInvoiceFromList)
-        buttonLayout.addSpacer()
+        buttonWidget = StandardButtonWidget()
+        buttonWidget.newButton.clicked.connect(self.showNewInvoiceDialog)
+        buttonWidget.viewButton.clicked.connect(self.showViewInvoiceDialog)
+        buttonWidget.deleteButton.clicked.connect(self.deleteSelectedInvoiceFromList)
+        buttonWidget.addSpacer()
         
         payInvoiceButton = QPushButton("Pay...")
         payInvoiceButton.clicked.connect(self.payInvoice)
-        buttonLayout.addButton(payInvoiceButton)
+        buttonWidget.addButton(payInvoiceButton)
         
         subLayout.addLayout(treeWidgetsLayout)
-        subLayout.addWidget(buttonLayout)
+        subLayout.addWidget(buttonWidget)
         mainLayout.addLayout(subLayout)
         
         self.setLayout(mainLayout)
@@ -905,13 +876,16 @@ class InvoiceWidget(QWidget):
             self.parent.dataConnection.vendors[vendorId].addInvoice(newInvoice)
             
             # Add invoice<->project/asset links
+            type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
+
             if dialog.assetProjSelector.assetSelected() == True:
                 type_ = "assets"
                 type_action = "addAsset"
+                newInvoice.addAsset(self.parent.dataConnection.assets[type_Id])
+                self.parent.dataConnection.assets[type_Id].addInvoice(newInvoice)
             else:
                 type_ = "projects"
                 type_action = "addProject"
-                type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
                 newInvoice.addProject(self.parent.dataConnection.projects[type_Id])
                 self.parent.dataConnection.projects[type_Id].addInvoice(newInvoice)
 
@@ -973,6 +947,7 @@ class InvoiceWidget(QWidget):
             # invoice just created
             self.updateVendorTree.emit()
             self.updateProjectTree.emit()
+            self.updateAssetTree.emit()
 
     def showViewInvoiceDialog(self):
         # Determine which invoice tree (if any) has been selected
@@ -1041,7 +1016,12 @@ class InvoiceWidget(QWidget):
                         newTypeId = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
                         
                         if dialog.assetProjSelector.assetSelected() == True:
-                            pass
+                            type_ = "assets"
+                            oldType = item.invoice.assetProj[1]
+
+                            oldType.removeInvoice(item.invoice)
+                            item.invoice.addAsset(self.parent.dataConnection.assets[newTypeId])
+                            self.parent.dataConnection.assets[newTypeId].addInvoice(item.invoice)
                         else:
                             type_ = "projects"
                             oldType = item.invoice.assetProj[1]
@@ -1214,6 +1194,7 @@ class InvoiceWidget(QWidget):
 
 class APView(QWidget):
     updateProjectTree = pyqtSignal()
+    updateAssetTree = pyqtSignal()
     
     def __init__(self, dataConnection, parent):
         super().__init__(parent)
@@ -1226,6 +1207,7 @@ class APView(QWidget):
         self.invoiceWidget = InvoiceWidget(self.dataConnection.invoices, self)
         self.invoiceWidget.updateVendorTree.connect(self.updateVendorWidget)
         self.invoiceWidget.updateProjectTree.connect(self.emitUpdateProjectTree)
+        self.invoiceWidget.updateAssetTree.connect(self.emitUpdateAssetTree)
         
         layout.addWidget(self.vendorWidget)
         layout.addWidget(self.invoiceWidget)
@@ -1239,11 +1221,13 @@ class APView(QWidget):
     def emitUpdateProjectTree(self):
         self.updateProjectTree.emit()
 
+    def emitUpdateAssetTree(self):
+        self.updateAssetTree.emit()
+
 class ProposalTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, proposalItem, parent, suppressClickableLabels):
+    def __init__(self, proposalItem, parent):
         super().__init__(parent)
         self.proposal = proposalItem
-        self.suppressClickableLabels = suppressClickableLabels
         self.main = QWidget()
 
         idLabel = QLabel(str(self.proposal.idNum))
@@ -1251,14 +1235,6 @@ class ProposalTreeWidgetItem(QTreeWidgetItem):
         self.dateLabel = QLabel(self.proposal.date)
         self.description = QLabel("") # Put asset/project desc here
         self.proposalAmountLabel = QLabel(str(self.proposal.totalCost()))
-        self.acceptProposal = ClickableLabel("✔")
-        self.acceptProposal.setStyleSheet("QLabel { color: black } QLabel:hover { color: green }")
-        self.rejectProposal = ClickableLabel("✘")
-        self.rejectProposal.setStyleSheet("QLabel { color: black } QLabel:hover { color: red }")
-
-        if self.suppressClickableLabels == True:
-            self.acceptProposal.hide()
-            self.rejectProposal.hide()
 
         layout = QHBoxLayout()
         layout.addWidget(idLabel)
@@ -1266,8 +1242,6 @@ class ProposalTreeWidgetItem(QTreeWidgetItem):
         layout.addWidget(self.dateLabel)
         layout.addWidget(self.description)
         layout.addWidget(self.proposalAmountLabel)
-        layout.addWidget(self.acceptProposal)
-        layout.addWidget(self.rejectProposal)
 
         self.main.setLayout(layout)
 
@@ -1281,14 +1255,13 @@ class ProposalTreeWidget(QTreeWidget):
     rejectedProposal = pyqtSignal(int)
     acceptedProposal = pyqtSignal(int)
     
-    def __init__(self, proposalsDict, suppressClickableLabels=False):
+    def __init__(self, proposalsDict):
         super().__init__()
-        self.suppressClickableLabels = suppressClickableLabels
         self.buildItems(self, proposalsDict)
 
     def buildItems(self, parent, proposalsDict):
         for proposalKey in proposalsDict:
-            item = ProposalTreeWidgetItem(proposalsDict[proposalKey], parent, self.suppressClickableLabels)
+            item = ProposalTreeWidgetItem(proposalsDict[proposalKey], parent)
             self.addItem(item)
 
     def addItem(self, widgetItem):
@@ -1365,52 +1338,51 @@ class ProposalWidget(QWidget):
         treeWidgetsLayout.addWidget(self.acceptedProposalsLabel)
         treeWidgetsLayout.addWidget(self.acceptedProposalsTreeWidget)
 
-        buttonLayout = QVBoxLayout()
-        newButton = QPushButton("New")
-        newButton.clicked.connect(self.showNewProposalDialog)
-        viewButton = QPushButton("View")
-        viewButton.clicked.connect(self.showViewProposalDialog)
-        deleteButton = QPushButton("Delete")
-        deleteButton.clicked.connect(self.deleteSelectedProposalFromList)
-        buttonLayout.addWidget(newButton)
-        buttonLayout.addWidget(viewButton)
-        buttonLayout.addWidget(deleteButton)
-        buttonLayout.addStretch(1)
+        buttonWidget = StandardButtonWidget()
+        buttonWidget.newButton.clicked.connect(self.showNewProposalDialog)
+        buttonWidget.viewButton.clicked.connect(self.showViewProposalDialog)
+        buttonWidget.deleteButton.clicked.connect(self.deleteSelectedProposalFromList)
+        buttonWidget.addSpacer()
+
+        acceptProposalButton = QPushButton("Accept...")
+        rejectProposalButton = QPushButton("Reject...")
+        buttonWidget.addButton(acceptProposalButton)
+        buttonWidget.addButton(rejectProposalButton)
         
         subLayout.addLayout(treeWidgetsLayout)
-        subLayout.addLayout(buttonLayout)
+        subLayout.addWidget(buttonWidget)
         mainLayout.addLayout(subLayout)
         
         self.setLayout(mainLayout)
 
     def moveOpenToRejected(self, idx):
         item = self.openProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.rejectedProposalsTreeWidget, True)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.rejectedProposalsTreeWidget)
         self.rejectedProposalsTreeWidget.addItem(newItem)
 
     def moveOpenToAccepted(self, idx):
         item = self.openProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.acceptedProposalsTreeWidget, True)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.acceptedProposalsTreeWidget)
         self.acceptedProposalsTreeWidget.addItem(newItem)
 
     def moveRejectedToOpen(self, idx):
         item = self.rejectedProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.openProposalsTreeWidget, False)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.openProposalsTreeWidget)
         self.openProposalsTreeWidget.addItem(newItem)
 
     def moveRejectedToAccepted(self, idx):
         item = self.rejectedProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.acceptedProposalsTreeWidget, True)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.acceptedProposalsTreeWidget)
         self.acceptedProposalsTreeWidget.addItem(newItem)
 
     def moveAcceptedToOpen(self, idx):
         item = self.acceptedProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.openProposalsTreeWidget, False)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.openProposalsTreeWidget)
         self.openProposalsTreeWidget.addItem(newItem)
 
     def moveAcceptedToRejected(self, idx):
         item = self.acceptedProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.rejectedProposalsTreeWidget, True)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.rejectedProposalsTreeWidget)
         self.rejectedProposalsTreeWidget.addItem(newItem)
 
     def removeSelectionsFromAllBut(self, but):
@@ -1503,7 +1475,7 @@ class ProposalWidget(QWidget):
             self.parent.parent.dbConnection.commit()
 
             # Make proposal into a ProposalTreeWidgetItem and add it to ProposalTree
-            item = ProposalTreeWidgetItem(newProposal, self.openProposalsTreeWidget, False)
+            item = ProposalTreeWidgetItem(newProposal, self.openProposalsTreeWidget)
             self.openProposalsTreeWidget.addItem(item)
             self.updateProposalsCount()
             self.updateVendorWidgetTree.emit()
@@ -1820,20 +1792,13 @@ class ProjectWidget(QWidget):
         treeWidgetsLayout.addWidget(self.closedProjectsLabel)
         treeWidgetsLayout.addWidget(self.closedProjectsTreeWidget)
 
-        buttonLayout = QVBoxLayout()
-        newButton = QPushButton("New")
-        newButton.clicked.connect(self.showNewProjectDialog)
-        viewButton = QPushButton("View")
-        viewButton.clicked.connect(self.showViewProjectDialog)
-        deleteButton = QPushButton("Delete")
-        deleteButton.clicked.connect(self.deleteSelectedProjectFromList)
-        buttonLayout.addWidget(newButton)
-        buttonLayout.addWidget(viewButton)
-        buttonLayout.addWidget(deleteButton)
-        buttonLayout.addStretch(1)
-        
+        buttonWidget = StandardButtonWidget()
+        buttonWidget.newButton.clicked.connect(self.showNewProjectDialog)
+        buttonWidget.viewButton.clicked.connect(self.showViewProjectDialog)
+        buttonWidget.deleteButton.clicked.connect(self.deleteSelectedProjectFromList)
+
         subLayout.addLayout(treeWidgetsLayout)
-        subLayout.addLayout(buttonLayout)
+        subLayout.addWidget(buttonWidget)
         mainLayout.addLayout(subLayout)
         
         self.setLayout(mainLayout)
@@ -2055,20 +2020,13 @@ class CompanyWidget(QWidget):
         treeWidgetsLayout.addWidget(self.companiesTreeWidget)
         treeWidgetsLayout.addStretch(1)
 
-        buttonLayout = QVBoxLayout()
-        newButton = QPushButton("New")
-        newButton.clicked.connect(self.showNewCompanyDialog)
-        viewButton = QPushButton("View")
-        viewButton.clicked.connect(self.showViewCompanyDialog)
-        deleteButton = QPushButton("Delete")
-        deleteButton.clicked.connect(self.deleteSelectedCompanyFromList)
-        buttonLayout.addWidget(newButton)
-        buttonLayout.addWidget(viewButton)
-        buttonLayout.addWidget(deleteButton)
-        buttonLayout.addStretch(1)
+        buttonWidget = StandardButtonWidget()
+        buttonWidget.newButton.clicked.connect(self.showNewCompanyDialog)
+        buttonWidget.viewButton.clicked.connect(self.showViewCompanyDialog)
+        buttonWidget.deleteButton.clicked.connect(self.deleteSelectedCompanyFromList)
         
         subLayout.addLayout(treeWidgetsLayout)
-        subLayout.addLayout(buttonLayout)
+        subLayout.addWidget(buttonWidget)
         mainLayout.addLayout(subLayout)
         
         self.setLayout(mainLayout)
@@ -2266,20 +2224,13 @@ class AssetWidget(QWidget):
         assetWidgetsLayout.addWidget(self.disposedAssetsTreeWidget)
         assetWidgetsLayout.addStretch(1)
 
-        buttonLayout = QVBoxLayout()
-        newButton = QPushButton("New")
-        newButton.clicked.connect(self.showNewAssetDialog)
-        viewButton = QPushButton("View")
-        viewButton.clicked.connect(self.showViewAssetDialog)
-        deleteButton = QPushButton("Delete")
-        deleteButton.clicked.connect(self.deleteSelectedAssetFromList)
-        buttonLayout.addWidget(newButton)
-        buttonLayout.addWidget(viewButton)
-        buttonLayout.addWidget(deleteButton)
-        buttonLayout.addStretch(1)
-        
+        buttonWidget = StandardButtonWidget()
+        buttonWidget.newButton.clicked.connect(self.showNewAssetDialog)
+        buttonWidget.viewButton.clicked.connect(self.showViewAssetDialog)
+        buttonWidget.deleteButton.clicked.connect(self.deleteSelectedAssetFromList)
+
         subLayout.addLayout(assetWidgetsLayout)
-        subLayout.addLayout(buttonLayout)
+        subLayout.addWidget(buttonWidget)
         mainLayout.addLayout(subLayout)
         
         self.setLayout(mainLayout)
@@ -2399,6 +2350,9 @@ class AssetWidget(QWidget):
             self.parent.parent.dbConnection.commit()
             
             self.updateAssetsCount()
+
+    def refreshAssetTree(self):
+        self.currentAssetsTreeWidget.refreshData()
         
 class AssetView(QWidget):
     def __init__(self, dataConnection, parent):
