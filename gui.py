@@ -71,7 +71,7 @@ class Window(QMainWindow):
 
         self.dbCursor.execute("SELECT * FROM Proposals")
         for each in self.dbCursor:
-            self.data.proposals[each[0]] = Proposal(each[1], each[2], each[0])
+            self.data.proposals[each[0]] = Proposal(each[1], each[2], each[3], each[0])
 
         self.dbCursor.execute("SELECT * FROM ProposalsDetails")
         for each in self.dbCursor:

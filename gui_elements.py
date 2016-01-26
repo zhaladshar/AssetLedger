@@ -5,6 +5,7 @@ from gui_dialogs import *
 import re
 from classes import *
 import sys
+import constants
 
 class ClickableLabel(QLabel):
     released = pyqtSignal()
@@ -1233,7 +1234,12 @@ class ProposalTreeWidgetItem(QTreeWidgetItem):
         idLabel = QLabel(str(self.proposal.idNum))
         self.vendorLabel = QLabel(self.proposal.vendor.name)
         self.dateLabel = QLabel(self.proposal.date)
-        self.description = QLabel("") # Put asset/project desc here
+        if self.proposal.proposalFor[0] == "projects":
+            self.description = QLabel(self.proposal.proposalFor[1].description)
+        elif self.proposal.proposalFor[0] == "assets":
+            self.description = QLabel(self.proposal.proposalFor[1].description)
+        else:
+            self.description = QLabel("ASSET/PROJECT ERROR")
         self.proposalAmountLabel = QLabel(str(self.proposal.totalCost()))
 
         layout = QHBoxLayout()
@@ -1276,9 +1282,9 @@ class ProposalTreeWidget(QTreeWidget):
             try:
                 self.topLevelItem(idx).refreshData()
     
-                if self.topLevelItem(idx).proposal.status == "Open":
+                if self.topLevelItem(idx).proposal.status == constants.OPN_PROPOSAL_STATUS:
                     self.openProposal.emit(idx)
-                elif self.topLevelItem(idx).proposal.status == "Rejected":
+                elif self.topLevelItem(idx).proposal.status == constants.REJ_PROPOSAL_STATUS:
                     self.rejectedProposal.emit(idx)
                 else:
                     self.acceptedProposal.emit(idx)
@@ -1311,7 +1317,7 @@ class ProposalWidget(QWidget):
         self.openProposalsTreeWidget.rejectedProposal.connect(self.moveOpenToRejected)
         self.openProposalsTreeWidget.acceptedProposal.connect(self.moveOpenToAccepted)
 
-        self.rejectedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus("Rejected"))
+        self.rejectedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus(constants.REJ_PROPOSAL_STATUS))
         self.rejectedProposalsTreeWidget.setIndentation(0)
         self.rejectedProposalsTreeWidget.setHeaderHidden(True)
         self.rejectedProposalsTreeWidget.setMinimumWidth(500)
@@ -1320,7 +1326,7 @@ class ProposalWidget(QWidget):
         self.rejectedProposalsTreeWidget.openProposal.connect(self.moveRejectedToOpen)
         self.rejectedProposalsTreeWidget.acceptedProposal.connect(self.moveRejectedToAccepted)
         
-        self.acceptedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus("Accepted"))
+        self.acceptedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus(constants.ACC_PROPOSAL_STATUS))
         self.acceptedProposalsTreeWidget.setIndentation(0)
         self.acceptedProposalsTreeWidget.setHeaderHidden(True)
         self.acceptedProposalsTreeWidget.setMinimumWidth(500)
@@ -1345,7 +1351,9 @@ class ProposalWidget(QWidget):
         buttonWidget.addSpacer()
 
         acceptProposalButton = QPushButton("Accept...")
+        acceptProposalButton.clicked.connect(self.acceptProposal)
         rejectProposalButton = QPushButton("Reject...")
+        rejectProposalButton.clicked.connect(self.rejectProposal)
         buttonWidget.addButton(acceptProposalButton)
         buttonWidget.addButton(rejectProposalButton)
         
@@ -1354,6 +1362,36 @@ class ProposalWidget(QWidget):
         mainLayout.addLayout(subLayout)
         
         self.setLayout(mainLayout)
+
+    def acceptProposal(self):
+        idxToShow = self.openProposalsTreeWidget.indexFromItem(self.openProposalsTreeWidget.currentItem())
+        item = self.openProposalsTreeWidget.itemFromIndex(idxToShow)
+
+        if item:
+            dialog = ChangeProposalStatusDialog(constants.ACC_PROPOSAL_STATUS, self)
+            if dialog.exec_():
+                item.proposal.accept()
+                self.parent.parent.dbCursor.execute("UPDATE Proposals SET Status = ?, StatusReason = ? WHERE idNum = ?", (constants.ACC_PROPOSAL_STATUS, dialog.statusTxt.text(), str(item.proposal.idNum)))
+                self.parent.parent.dbConnection.commit()
+                
+        self.openProposalsTreeWidget.refreshData()
+        self.updateProposalsCount()
+        self.updateVendorWidgetTree.emit()
+
+    def rejectProposal(self):
+        idxToShow = self.openProposalsTreeWidget.indexFromItem(self.openProposalsTreeWidget.currentItem())
+        item = self.openProposalsTreeWidget.itemFromIndex(idxToShow)
+
+        if item:
+            dialog = ChangeProposalStatusDialog(constants.REJ_PROPOSAL_STATUS, self)
+            if dialog.exec_():
+                item.proposal.reject()
+                self.parent.parent.dbCursor.execute("UPDATE Proposals SET Status = ?, StatusReason = ? WHERE idNum = ?", (constants.REJ_PROPOSAL_STATUS, dialog.statusTxt.text(), str(item.proposal.idNum)))
+                self.parent.parent.dbConnection.commit()
+                
+        self.openProposalsTreeWidget.refreshData()
+        self.updateProposalsCount()
+        self.updateVendorWidgetTree.emit()
 
     def moveOpenToRejected(self, idx):
         item = self.openProposalsTreeWidget.takeTopLevelItem(idx)
@@ -2198,7 +2236,7 @@ class AssetWidget(QWidget):
 
         mainLayout = QVBoxLayout()
 
-        self.currentAssetsLabel = QLabel("Assets: %d / %.02f" % (len(self.assetsDict.currentAssets()), self.assetsDict.currentCost()))
+        self.currentAssetsLabel = QLabel("Current Assets: %d / %.02f" % (len(self.assetsDict.currentAssets()), self.assetsDict.currentCost()))
         mainLayout.addWidget(self.currentAssetsLabel)
 
         # Piece together the companies layout
@@ -2217,7 +2255,7 @@ class AssetWidget(QWidget):
         self.disposedAssetsTreeWidget.setMinimumWidth(500)
         self.disposedAssetsTreeWidget.setMaximumHeight(100)
 
-        self.disposedAssetsLabel = QLabel("Assets: %d / %.02f" % (len(self.assetsDict.disposedAssets()), self.assetsDict.disposedCost()))
+        self.disposedAssetsLabel = QLabel("Disposed Assets: %d / %.02f" % (len(self.assetsDict.disposedAssets()), self.assetsDict.disposedCost()))
         
         assetWidgetsLayout.addWidget(self.currentAssetsTreeWidget)
         assetWidgetsLayout.addWidget(self.disposedAssetsLabel)
@@ -2252,7 +2290,7 @@ class AssetWidget(QWidget):
         return int(regex.groups()[0])
 
     def updateAssetsCount(self):
-        self.currentAssetsLabel.setText("Assets: %d / %.02f" % (len(self.assetsDict.currentAssets()), self.assetsDict.currentCost()))
+        self.currentAssetsLabel.setText("Current Assets: %d / %.02f" % (len(self.assetsDict.currentAssets()), self.assetsDict.currentCost()))
 
     def showNewAssetDialog(self):
         dialog = AssetDialog("New", self)

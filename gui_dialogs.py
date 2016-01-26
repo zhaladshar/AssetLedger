@@ -716,3 +716,30 @@ class InvoicePaymentDialog(QDialog):
 
         self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
         self.setLayout(self.layout)
+
+class ChangeProposalStatusDialog(QDialog):
+    def __init__(self, proposalStatus, parent=None):
+        super().__init__(parent)
+
+        statusLbl = QLabel("Reason:")
+        self.statusTxt = QLineEdit()
+        saveButton = QPushButton("Save")
+        saveButton.clicked.connect(self.accept)
+        cancelButton = QPushButton("Cancel")
+        cancelButton.clicked.connect(self.reject)
+        
+        layout = QVBoxLayout()
+        subLayout = QHBoxLayout()
+        buttonLayout = QHBoxLayout()
+        
+        subLayout.addWidget(statusLbl)
+        subLayout.addWidget(self.statusTxt)
+        buttonLayout.addWidget(saveButton)
+        buttonLayout.addWidget(cancelButton)
+
+        layout.addLayout(subLayout)
+        layout.addLayout(buttonLayout)
+        
+        self.setLayout(layout)
+
+        self.setWindowTitle(proposalStatus + " Proposal")

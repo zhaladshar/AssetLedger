@@ -1,3 +1,5 @@
+import constants
+
 class InvoicesDict(dict):
     def __init__(self):
         super().__init__()
@@ -101,10 +103,11 @@ class ProposalDetail:
         self.invoiceDetails.pop(invoiceDetail.idNum)
 
 class Proposal:
-    def __init__(self, date, status, idNum):
+    def __init__(self, date, status, statusReason, idNum):
         self.idNum = idNum
         self.date = date
         self.status = status
+        self.statusReason = statusReason
         self.company = None
         self.vendor = None
         self.proposalFor = None
@@ -130,6 +133,12 @@ class Proposal:
         for detailKey in self.details.keys():
             cost += self.details[detailKey].cost
         return cost
+
+    def accept(self):
+        self.status = constants.ACC_PROPOSAL_STATUS
+
+    def reject(self):
+        self.status = constants.REJ_PROPOSAL_STATUS
 
 class Project:
     def __init__(self, desc, dateStart, idNum, dateEnd=None):
