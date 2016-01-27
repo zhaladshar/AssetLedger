@@ -79,7 +79,7 @@ class Window(QMainWindow):
 
         self.dbCursor.execute("SELECT * FROM Projects")
         for each in self.dbCursor:
-            self.data.projects[each[0]] = Project(each[1], each[2], each[0], each[3])
+            self.data.projects[each[0]] = Project(each[1], each[2], each[3], each[0], each[3])
 
         self.dbCursor.execute("SELECT * FROM Assets")
         for each in self.dbCursor:

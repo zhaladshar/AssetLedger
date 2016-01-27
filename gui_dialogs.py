@@ -1,7 +1,7 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
-from constants import PROPOSAL_STATUSES
+import constants
 import gui_elements
 
 class VendorDialog(QDialog):
@@ -221,20 +221,27 @@ class InvoiceDialog(QDialog):
     def getAcceptedProposalOfAssetProject(self):
         selection = self.assetProjSelector.selector.currentText()
         selectionId = self.parent.stripAllButNumbers(selection)
-        
-        if self.assetProjSelector.assetSelected() == True:
-            pass
-        else:
-            acceptedProposal = self.parent.parent.dataConnection.projects[selectionId].proposals.proposalsByStatus("Open")
-            
-            if acceptedProposal:
-                return list(acceptedProposal.values())[0]
+
+        if selectionId:
+            if self.assetProjSelector.assetSelected() == True:
+                acceptedProposal = self.parent.parent.dataConnection.assets[selectionId].proposals.proposalsByStatus(constants.ACC_PROPOSAL_STATUS)
+                
+                if acceptedProposal:
+                    return list(acceptedProposal.values())[0]
+                else:
+                    return None
             else:
-                return None
+                acceptedProposal = self.parent.parent.dataConnection.projects[selectionId].proposals.proposalsByStatus(constants.ACC_PROPOSAL_STATUS)
+
+                if acceptedProposal:
+                    return list(acceptedProposal.values())[0]
+                else:
+                    return None
+        else:
+            return None
 
     def updateDetailInvoiceWidget(self):
         proposal = self.getAcceptedProposalOfAssetProject()
-            
         self.detailsWidget.addProposal(proposal)
 
     def makeLabelsEditable(self):
@@ -315,7 +322,7 @@ class ProposalDialog(QDialog):
         self.vendorBox.addItems(vendorList)
 
         self.statusBox = QComboBox()
-        self.statusBox.addItems(PROPOSAL_STATUSES)
+        self.statusBox.addItems(constants.PROPOSAL_STATUSES)
         
         companyId = parent.stripAllButNumbers(self.companyBox.currentText())
         self.assetProjSelector = gui_elements.AssetProjSelector(parent.parent.dataConnection.companies[companyId])
@@ -743,3 +750,39 @@ class ChangeProposalStatusDialog(QDialog):
         self.setLayout(layout)
 
         self.setWindowTitle(proposalStatus + " Proposal")
+
+class CloseProjectDialog(QDialog):
+    def __init__(self, status, parent=None):
+        super().__init__(parent)
+
+        layout = QGridLayout()
+        
+        dateLbl = QLabel("Date:")
+        self.dateTxt = QLineEdit()
+
+        layout.addWidget(dateLbl, 0, 0)
+        layout.addWidget(self.dateTxt, 0, 1)
+        nextRow = 1
+
+        if status == constants.ABD_PROJECT_STATUS:
+            reasonLbl = QLabel("Reason:")
+            self.reasonTxt = QLineEdit()
+            
+            layout.addWidget(reasonLbl, nextRow, 0)
+            layout.addWidget(self.reasonTxt, nextRow, 1)
+            nextRow += 1
+
+        buttonLayout = QHBoxLayout()
+        saveButton = QPushButton("Save")
+        saveButton.clicked.connect(self.accept)
+        cancelButton = QPushButton("Cancel")
+        cancelButton.clicked.connect(self.reject)
+
+        buttonLayout.addWidget(saveButton)
+        buttonLayout.addWidget(cancelButton)
+
+        layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
+
+        self.setLayout(layout)
+
+        self.setWindowTitle(status + "Project")

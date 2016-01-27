@@ -126,26 +126,35 @@ class AssetProjSelector(QGroupBox):
 
         self.setLayout(layout)
 
-    def showAssetDict(self):
-        self.clear()
-        newList = []
-        for assetKey in self.company.assets.keys():
-            newList.append(str("%4s" % assetKey) + " - " + self.company.assets[assetKey].description)
-        
-        self.selector.addItems(newList)
-        self.selector.show()
-        self.emitRdoBtnChange()
+    def showAssetDict(self, checked):
+        # Only do this if we are clicking on the item, not if it is being
+        # unclicked.
+        if checked == True:
+            self.clear()
+            
+            newList = []
+            for assetKey in self.company.assets.keys():
+                newList.append(str("%4s" % assetKey) + " - " + self.company.assets[assetKey].description)
+            
+            self.selector.addItems(newList)
+            self.selector.show()
+            
+            self.emitRdoBtnChange()
 
-    def showProjectDict(self):
-        self.clear()
-        
-        newList = []
-        for projectKey in self.company.projects.keys():
-            newList.append(str("%4s" % projectKey) + " - " + self.company.projects[projectKey].description)
+    def showProjectDict(self, checked):
+        # Only do this if we are clicking on the item, not if it is being
+        # unclicked.
+        if checked == True:
+            self.clear()
+            
+            newList = []
+            for projectKey in self.company.projects.keys():
+                newList.append(str("%4s" % projectKey) + " - " + self.company.projects[projectKey].description)
 
-        self.selector.addItems(newList)
-        self.selector.show()
-        self.emitRdoBtnChange()
+            self.selector.addItems(newList)
+            self.selector.show()
+
+            self.emitRdoBtnChange()
 
     def dontEmitSignals(self, tf):
         self.dontEmit = tf
@@ -1455,6 +1464,7 @@ class ProposalWidget(QWidget):
             # Create proposal and add to database
             newProposal = Proposal(dialog.dateText.text(),
                                    "Open",
+                                   "",
                                    nextId)
             self.proposalsDict[newProposal.idNum] = newProposal
             
@@ -1468,11 +1478,13 @@ class ProposalWidget(QWidget):
             newProposal.addVendor(self.parent.dataConnection.vendors[vendorId])
             self.parent.dataConnection.vendors[vendorId].addProposal(newProposal)
             
-            # Add invoice<->project/asset links
+            # Add proposal<->project/asset links
             type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
             if dialog.assetProjSelector.assetSelected() == True:
                 type_ = "assets"
                 type_action = "addAsset"
+                newProposal.addAsset(self.parent.dataConnection.assets[type_Id])
+                self.parent.dataConnection.assets[type_Id].addProposal(newProposal)
             else:
                 type_ = "projects"
                 type_action = "addProject"
@@ -1509,7 +1521,7 @@ class ProposalWidget(QWidget):
                     self.parent.dataConnection.proposalsDetails[proposalDetail.idNum] = proposalDetail
 
                     nextProposalDetId += 1
-
+            
             self.parent.parent.dbConnection.commit()
 
             # Make proposal into a ProposalTreeWidgetItem and add it to ProposalTree
@@ -1517,7 +1529,7 @@ class ProposalWidget(QWidget):
             self.openProposalsTreeWidget.addItem(item)
             self.updateProposalsCount()
             self.updateVendorWidgetTree.emit()
-
+            
     def showViewProposalDialog(self):
         # Determine which tree the proposal is in--if any.  If none, don't
         # display dialog
@@ -1777,6 +1789,9 @@ class ProjectTreeWidgetItem(QTreeWidgetItem):
         self.CIPLabel.setText("CIP: %.02f" % self.project.calculateCIP())
 
 class ProjectTreeWidget(QTreeWidget):
+    projectAbandoned = pyqtSignal(int)
+    projectCompleted = pyqtSignal(int)
+    
     def __init__(self, projectsDict):
         super().__init__()
         self.buildItems(self, projectsDict)
@@ -1791,7 +1806,15 @@ class ProjectTreeWidget(QTreeWidget):
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
-            self.topLevelItem(idx).refreshData()
+            try:
+                self.topLevelItem(idx).refreshData()
+
+                if self.topLevelItem(idx).project.status() == constants.ABD_PROJECT_STATUS:
+                    self.projectAbandoned.emit(idx)
+                elif self.topLevelItem(idx).project.status() == constants.CMP_PROJECT_STATUS:
+                    self.projectCompleted.emit(idx)
+            except:
+                pass
 
 class ProjectWidget(QWidget):
     updateVendorWidgetTree = pyqtSignal()
@@ -1803,43 +1826,98 @@ class ProjectWidget(QWidget):
 
         mainLayout = QVBoxLayout()
 
-        self.openProjectsLabel = QLabel("Open: %d" % len(self.projectsDict.projectsByStatus("Open")))
+        self.openProjectsLabel = QLabel("%s: %d" % (constants.OPN_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.OPN_PROJECT_STATUS))))
         mainLayout.addWidget(self.openProjectsLabel)
 
         # Piece together the projects layout
         subLayout = QHBoxLayout()
         treeWidgetsLayout = QVBoxLayout()
 
-        self.openProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus("Open"))
+        self.openProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.OPN_PROJECT_STATUS))
         self.openProjectsTreeWidget.setIndentation(0)
         self.openProjectsTreeWidget.setHeaderHidden(True)
         self.openProjectsTreeWidget.setMinimumWidth(500)
         self.openProjectsTreeWidget.setMaximumHeight(100)
-        #self.openProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
+        self.openProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
+        self.openProjectsTreeWidget.projectAbandoned.connect(self.moveOpenToAbandoned)
 
-        self.closedProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus("Closed"))
-        self.closedProjectsTreeWidget.setIndentation(0)
-        self.closedProjectsTreeWidget.setHeaderHidden(True)
-        self.closedProjectsTreeWidget.setMinimumWidth(500)
-        self.closedProjectsTreeWidget.setMaximumHeight(100)
-        #self.closedProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
+        self.abandonedProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.ABD_PROJECT_STATUS))
+        self.abandonedProjectsTreeWidget.setIndentation(0)
+        self.abandonedProjectsTreeWidget.setHeaderHidden(True)
+        self.abandonedProjectsTreeWidget.setMinimumWidth(500)
+        self.abandonedProjectsTreeWidget.setMaximumHeight(100)
+        self.abandonedProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
 
-        self.closedProjectsLabel = QLabel("Closed: %d" % len(self.projectsDict.projectsByStatus("Closed")))
+        self.completedProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.CMP_PROJECT_STATUS))
+        self.completedProjectsTreeWidget.setIndentation(0)
+        self.completedProjectsTreeWidget.setHeaderHidden(True)
+        self.completedProjectsTreeWidget.setMinimumWidth(500)
+        self.completedProjectsTreeWidget.setMaximumHeight(100)
+        self.completedProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(3))
+
+        self.abandonedProjectsLabel = QLabel("%s: %d" % (constants.ABD_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.ABD_PROJECT_STATUS))))
+        self.completedProjectsLabel = QLabel("%s: %d" % (constants.CMP_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.CMP_PROJECT_STATUS))))
 
         treeWidgetsLayout.addWidget(self.openProjectsTreeWidget)
-        treeWidgetsLayout.addWidget(self.closedProjectsLabel)
-        treeWidgetsLayout.addWidget(self.closedProjectsTreeWidget)
+        treeWidgetsLayout.addWidget(self.abandonedProjectsLabel)
+        treeWidgetsLayout.addWidget(self.abandonedProjectsTreeWidget)
+        treeWidgetsLayout.addWidget(self.completedProjectsLabel)
+        treeWidgetsLayout.addWidget(self.completedProjectsTreeWidget)
 
         buttonWidget = StandardButtonWidget()
         buttonWidget.newButton.clicked.connect(self.showNewProjectDialog)
         buttonWidget.viewButton.clicked.connect(self.showViewProjectDialog)
         buttonWidget.deleteButton.clicked.connect(self.deleteSelectedProjectFromList)
+        buttonWidget.addSpacer()
+
+        completeProject = QPushButton("Complete...")
+        completeProject.clicked.connect(self.completeProject)
+        abandonProject = QPushButton("Abandon...")
+        abandonProject.clicked.connect(self.abandonProject)
+        buttonWidget.addButton(completeProject)
+        buttonWidget.addButton(abandonProject)
 
         subLayout.addLayout(treeWidgetsLayout)
         subLayout.addWidget(buttonWidget)
         mainLayout.addLayout(subLayout)
         
         self.setLayout(mainLayout)
+
+    def moveOpenToAbandoned(self, idx):
+        item = self.openProjectsTreeWidget.takeTopLevelItem(idx)
+        newItem = ProjectTreeWidgetItem(item.project, self.abandonedProjectsTreeWidget)
+        self.abandonedProjectsTreeWidget.addItem(newItem)
+        
+    def completeProject(self):
+        pass
+
+    def abandonProject(self):
+        idxToAbandon = self.openProjectsTreeWidget.indexFromItem(self.openProjectsTreeWidget.currentItem())
+        item = self.openProjectsTreeWidget.itemFromIndex(idxToAbandon)
+
+        if item:
+            dialog = CloseProjectDialog(constants.ABD_PROJECT_STATUS, self)
+
+            if dialog.exec_():
+                item.project.dateEnd = dialog.dateTxt.text()
+                item.project.notes = dialog.reasonTxt.text()
+                
+                self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=?, Notes=? WHERE idNum=?", (dialog.dateTxt.text(), dialog.reasonTxt.text(), item.project.idNum))
+                self.parent.parent.dbConnection.commit()
+
+        self.refreshProjectTree()
+        self.updateProjectsCount()
+
+    def removeSelectionsFromAllBut(self, but):
+        if but == 1:
+            self.abandonedProjectsTreeWidget.setCurrentItem(self.abandonedProjectsTreeWidget.invisibleRootItem())
+            self.completedProjectsTreeWidget.setCurrentItem(self.completedProjectsTreeWidget.invisibleRootItem())
+        elif but == 2:
+            self.openProjectsTreeWidget.setCurrentItem(self.openProjectsTreeWidget.invisibleRootItem())
+            self.completedProjectsTreeWidget.setCurrentItem(self.completedProjectsTreeWidget.invisibleRootItem())
+        else:
+            self.openProjectsTreeWidget.setCurrentItem(self.openProjectsTreeWidget.invisibleRootItem())
+            self.abandonedProjectsTreeWidget.setCurrentItem(self.abandonedProjectsTreeWidget.invisibleRootItem())
 
     def nextIdNum(self, name):
         self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
@@ -1866,6 +1944,7 @@ class ProjectWidget(QWidget):
             # Create project and add to database
             newProject = Project(dialog.descriptionText.text(),
                                  dialog.startDateText.text(),
+                                 "",
                                  nextId)
             companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
             newProject.addCompany(self.parent.dataConnection.companies[companyId])
@@ -1890,8 +1969,8 @@ class ProjectWidget(QWidget):
         item = self.openProjectsTreeWidget.itemFromIndex(idxToShow)
 
         if item == None:
-            idxToShow = self.closedProjectsTreeWidget.indexFromItem(self.closedProjectsTreeWidget.currentItem())
-            item = self.closedProjectsTreeWidget.itemFromIndex(idxToShow)
+            idxToShow = self.abandonedProjectsTreeWidget.indexFromItem(self.abandonedProjectsTreeWidget.currentItem())
+            item = self.abandonedProjectsTreeWidget.itemFromIndex(idxToShow)
 
         if item:
             dialog = ProjectDialog("View", self, item.project)
@@ -1969,8 +2048,9 @@ class ProjectWidget(QWidget):
             self.updateProjectsCount()
             
     def updateProjectsCount(self):
-        self.openProjectsLabel.setText("Open: %d" % len(self.projectsDict.projectsByStatus("Open")))
-        self.closedProjectsLabel.setText("Closed: %d" % len(self.projectsDict.projectsByStatus("Closed")))
+        self.openProjectsLabel.setText("%s: %d" % (constants.OPN_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.OPN_PROJECT_STATUS))))
+        self.abandonedProjectsLabel.setText("%s: %d" % (constants.ABD_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.ABD_PROJECT_STATUS))))
+        self.completedProjectsLabel.setText("%s: %d" % (constants.CMP_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.CMP_PROJECT_STATUS))))
 
     def refreshProjectTree(self):
         self.openProjectsTreeWidget.refreshData()

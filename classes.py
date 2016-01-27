@@ -141,11 +141,12 @@ class Proposal:
         self.status = constants.REJ_PROPOSAL_STATUS
 
 class Project:
-    def __init__(self, desc, dateStart, idNum, dateEnd=None):
+    def __init__(self, desc, dateStart, notes, idNum, dateEnd=None):
         self.idNum = idNum
         self.description = desc
         self.dateStart = dateStart
         self.dateEnd = dateEnd
+        self.notes = notes
         self.invoices = {}
         self.proposals = ProposalsDict()
         self.company = None
@@ -171,9 +172,13 @@ class Project:
 
     def status(self):
         if self.dateEnd == None or self.dateEnd == "":
-            return "Open"
+            return constants.OPN_PROJECT_STATUS
+        elif (self.dateEnd != None and self.dateEnd != "") and self.becameAsset == None:
+            return constants.ABD_PROJECT_STATUS
+        elif (self.dateEnd != None and self.dateEnd != "") and self.becameAsset != None:
+            return constants.CMP_PROJECT_STATUS
         else:
-            return "Closed"
+            return "ERROR CALCULATING PROJECT STATUS"
 
     def calculateCIP(self):
         CIP = 0
@@ -356,7 +361,7 @@ class Asset:
         self.fromProject = None
         self.invoices = {}
         self.history = {}
-        self.proposals = {}
+        self.proposals = ProposalsDict()
 
     def addAssetType(self, assetType):
         self.assetType = assetType
