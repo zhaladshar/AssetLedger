@@ -1817,7 +1817,7 @@ class ProjectTreeWidget(QTreeWidget):
                 pass
 
 class ProjectWidget(QWidget):
-    updateVendorWidgetTree = pyqtSignal()
+    addAssetToAssetView = pyqtSignal(int)
     
     def __init__(self, projectsDict, parent):
         super().__init__()
@@ -1889,8 +1889,60 @@ class ProjectWidget(QWidget):
         self.abandonedProjectsTreeWidget.addItem(newItem)
         
     def completeProject(self):
-        pass
+        idxToComplete = self.openProjectsTreeWidget.indexFromItem(self.openProjectsTreeWidget.currentItem())
+        item = self.openProjectsTreeWidget.itemFromIndex(idxToComplete)
 
+        if item:
+            dialog = CloseProjectDialog(constants.CMP_PROJECT_STATUS, self)
+
+            if dialog.exec_():
+                assetId = self.nextIdNum("Assets")
+                if dialog.inSvcChk.isChecked() == True:
+                    inSvcDate = dialog.dateTxt.text()
+                else:
+                    inSvcDate = ""
+
+                # Create new asset
+                newAsset = Asset(dialog.assetNameTxt.text(),
+                                 dialog.dateTxt.text(),
+                                 inSvcDate,
+                                 "",
+                                 float(dialog.usefulLifeTxt.text()),
+                                 assetId)
+                
+                # Add assetType, company, and fromProject data to asset
+                assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
+                newAsset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])
+                newAsset.addCompany(item.project.company)
+                newAsset.addProject(item.project)
+                
+                # Add reverse data
+                newAsset.company.addAsset(newAsset)
+                self.parent.dataConnection.assets[assetId] = newAsset
+
+                # Add completion information to project
+                item.project.addAsset(newAsset)
+                item.project.dateEnd = dialog.dateTxt.text()
+
+                #########################
+                ## Add to database
+                #########################
+                self.insertIntoDatabase("Assets", "(idNum, Description, AcquireDate, InSvcDate, UsefulLife)", "(" + str(newAsset.idNum) + ", '" + newAsset.description + "', '" + newAsset.acquireDate + "', '" + newAsset.inSvcDate + "', " + str(newAsset.usefulLife) + ")")
+                self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addAssetType', 'assetTypes', " + str(newAsset.assetType.idNum) + ")")
+                self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addCompany', 'companies', " + str(newAsset.company.idNum) + ")")
+                self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addProject', 'projects', " + str(newAsset.fromProject.idNum) + ")")
+                self.insertIntoDatabase("Xref", "", "('companies', " + str(newAsset.company.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
+                self.insertIntoDatabase("Xref", "", "('projects', " + str(newAsset.fromProject.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
+                self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=? WHERE idNum=?", (item.project.dateEnd, item.project.idNum))
+                
+                self.openProjectsTreeWidget.takeTopLevelItem(idxToComplete.row())
+                newItem = ProjectTreeWidgetItem(item.project, self.completedProjectsTreeWidget)
+                self.completedProjectsTreeWidget.addItem(newItem)
+                
+                self.addAssetToAssetView.emit(assetId)
+                self.refreshOpenProjectTree()
+                self.updateProjectsCount()
+                
     def abandonProject(self):
         idxToAbandon = self.openProjectsTreeWidget.indexFromItem(self.openProjectsTreeWidget.currentItem())
         item = self.openProjectsTreeWidget.itemFromIndex(idxToAbandon)
@@ -1905,7 +1957,7 @@ class ProjectWidget(QWidget):
                 self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=?, Notes=? WHERE idNum=?", (dialog.dateTxt.text(), dialog.reasonTxt.text(), item.project.idNum))
                 self.parent.parent.dbConnection.commit()
 
-        self.refreshProjectTree()
+        self.refreshOpenProjectTree()
         self.updateProjectsCount()
 
     def removeSelectionsFromAllBut(self, but):
@@ -2052,20 +2104,26 @@ class ProjectWidget(QWidget):
         self.abandonedProjectsLabel.setText("%s: %d" % (constants.ABD_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.ABD_PROJECT_STATUS))))
         self.completedProjectsLabel.setText("%s: %d" % (constants.CMP_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.CMP_PROJECT_STATUS))))
 
-    def refreshProjectTree(self):
+    def refreshOpenProjectTree(self):
         self.openProjectsTreeWidget.refreshData()
         
 class ProjectView(QWidget):
+    addAssetToAssetView = pyqtSignal(int)
+    
     def __init__(self, dataConnection, parent):
         super().__init__(parent)
         self.dataConnection = dataConnection
         self.parent = parent
 
         self.projectWidget = ProjectWidget(self.dataConnection.projects, self)
+        self.projectWidget.addAssetToAssetView.connect(self.emitAddAssetToAssetView)
         layout = QVBoxLayout()
         layout.addWidget(self.projectWidget)
 
         self.setLayout(layout)
+
+    def emitAddAssetToAssetView(self, assetId):
+        self.addAssetToAssetView.emit(assetId)
 
 class CompanyTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, companyItem, parent):
@@ -2387,6 +2445,7 @@ class AssetWidget(QWidget):
                              "",
                              dialog.usefulLifeText.text(),
                              nextId)
+            
             self.assetsDict[newAsset.idNum] = newAsset
             newAsset.addCompany(self.parent.dataConnection.companies[companyId])
             newAsset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])

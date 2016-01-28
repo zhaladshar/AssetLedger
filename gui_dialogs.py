@@ -771,6 +771,36 @@ class CloseProjectDialog(QDialog):
             layout.addWidget(reasonLbl, nextRow, 0)
             layout.addWidget(self.reasonTxt, nextRow, 1)
             nextRow += 1
+        elif status == constants.CMP_PROJECT_STATUS:
+            assetNameLbl = QLabel("Asset Name:")
+            self.assetNameTxt = QLineEdit()
+            inSvcLbl = QLabel("In Use:")
+            self.inSvcChk = QCheckBox()
+            usefulLifeLbl = QLabel("Useful Life:")
+            self.usefulLifeTxt = QLineEdit()
+            assetTypeLbl = QLabel("Asset Type:")
+            self.assetTypeBox = QComboBox()
+            assetList = []
+            for assetType in parent.parent.dataConnection.assetTypes.values():
+                assetList.append(str("%4s" % assetType.idNum) + " - " + assetType.description)
+            self.assetTypeBox.addItems(assetList)
+
+            layout.addWidget(assetNameLbl, nextRow, 0)
+            layout.addWidget(self.assetNameTxt, nextRow, 1)
+            nextRow += 1
+
+            layout.addWidget(inSvcLbl, nextRow, 0)
+            layout.addWidget(self.inSvcChk, nextRow, 1)
+            nextRow += 1
+
+            layout.addWidget(usefulLifeLbl, nextRow, 0)
+            layout.addWidget(self.usefulLifeTxt, nextRow, 1)
+            nextRow += 1
+
+            layout.addWidget(assetTypeLbl, nextRow, 0)
+            layout.addWidget(self.assetTypeBox, nextRow, 1)
+            nextRow += 1
+
 
         buttonLayout = QHBoxLayout()
         saveButton = QPushButton("Save")

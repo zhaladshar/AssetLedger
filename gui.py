@@ -35,7 +35,8 @@ class Window(QMainWindow):
         self.companyOverview.addNewCompany.connect(self.addNewCompanyButton)
         self.companyOverview.deleteCompany.connect(self.deleteCompanyButton)
         self.proposalOverview.updateVendorWidgetTree.connect(self.APOverview.vendorWidget.refreshVendorTree)
-        self.APOverview.updateProjectTree.connect(self.projectOverview.projectWidget.refreshProjectTree)
+        self.projectOverview.addAssetToAssetView.connect(self.addAssetToAssetModule)
+        self.APOverview.updateProjectTree.connect(self.projectOverview.projectWidget.refreshOpenProjectTree)
         self.APOverview.updateAssetTree.connect(self.assetOverview.assetWidget.refreshAssetTree)
 
         # Build menus
@@ -219,6 +220,11 @@ class Window(QMainWindow):
     def deleteCompanyButton(self, shortName):
         button = [shortName]
         self.companyLayout.deleteButtons(button)
+
+    def addAssetToAssetModule(self, assetId):
+        assetItem = AssetTreeWidgetItem(self.data.assets[assetId], self.assetOverview.assetWidget.currentAssetsTreeWidget)
+        self.assetOverview.assetWidget.currentAssetsTreeWidget.addItem(assetItem)
+        self.assetOverview.assetWidget.updateAssetsCount()
 
     def changeCompanySelection(self, companyChanged):
         if self.companyViewSelected == companyChanged:
