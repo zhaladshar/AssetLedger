@@ -3,6 +3,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 import constants
 import gui_elements
+import classes
 
 class VendorDialog(QDialog):
     def __init__(self, mode, parent=None, vendor=None):
@@ -816,3 +817,56 @@ class CloseProjectDialog(QDialog):
         self.setLayout(layout)
 
         self.setWindowTitle(status + "Project")
+
+class NewAssetTypeDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        nameLbl = QLabel("Name:")
+        self.nameTxt = QLineEdit()
+        saveBtn = QPushButton("Save")
+        saveBtn.clicked.connect(self.accept)
+        cancelBtn = QPushButton("Cancel")
+        cancelBtn.clicked.connect(self.reject)
+
+        buttonLayout = QHBoxLayout()
+        buttonLayout.addWidget(saveBtn)
+        buttonLayout.addWidget(cancelBtn)
+        
+        layout = QGridLayout()
+        layout.addWidget(nameLbl, 0, 0)
+        layout.addWidget(self.nameTxt, 0, 1)
+        layout.addLayout(buttonLayout, 1, 0, 1, 2)
+
+        self.setLayout(layout)
+        
+class AssetTypeDialog(QDialog):
+    def __init__(self, assetTypeDict, parent=None):
+        super().__init__(parent)
+        self.assetTypeDict = assetTypeDict
+
+        valuesAsList = []
+        for assetTypeKey in self.assetTypeDict:
+            valuesAsList.append("%4d - %s" % (self.assetTypeDict[assetTypeKey].idNum, self.assetTypeDict[assetTypeKey].description))
+
+        layout = QHBoxLayout()
+
+        listWidget = QListWidget()
+        listWidget.addItems(valuesAsList)
+
+        buttonLayout = gui_elements.StandardButtonWidget()
+        buttonLayout.newButton.clicked.connect(self.newAssetType)
+        buttonLayout.addSpacer()
+        closeBtn = QPushButton("Close")
+        closeBtn.clicked.connect(self.reject)
+        buttonLayout.addButton(closeBtn)
+        
+        layout.addWidget(listWidget)
+        layout.addWidget(buttonLayout)
+
+        self.setLayout(layout)
+
+    def newAssetType(self):
+        dialog = NewAssetTypeDialog(self)
+        if dialog.exec_():
+            print(dialog.nameTxt.text())

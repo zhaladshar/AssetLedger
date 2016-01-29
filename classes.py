@@ -57,20 +57,20 @@ class AssetsDict(dict):
         assetsDict = self.disposedAssets()
 
         for key in assetsDict:
-            amount += assetsDict[key]
+            amount += assetsDict[key].cost()
         return amount
 
     def currentAssets(self):
         assetDict = {}
         for assetKey in self:
-            if self[assetKey].disposeDate == "":
+            if self[assetKey].disposeDate == "" or self[assetKey].disposeDate == None:
                 assetDict[assetKey] = self[assetKey]
         return assetDict
 
     def disposedAssets(self):
         assetDict = {}
         for assetKey in self:
-            if self[assetKey].disposeDate != "":
+            if self[assetKey].disposeDate != "" and self[assetKey].disposeDate != None:
                 assetDict[assetKey] = self[assetKey]
         return assetDict
             

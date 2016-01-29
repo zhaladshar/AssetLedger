@@ -1934,6 +1934,7 @@ class ProjectWidget(QWidget):
                 self.insertIntoDatabase("Xref", "", "('companies', " + str(newAsset.company.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
                 self.insertIntoDatabase("Xref", "", "('projects', " + str(newAsset.fromProject.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
                 self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=? WHERE idNum=?", (item.project.dateEnd, item.project.idNum))
+                self.parent.parent.dbConnection.commit()
                 
                 self.openProjectsTreeWidget.takeTopLevelItem(idxToComplete.row())
                 newItem = ProjectTreeWidgetItem(item.project, self.completedProjectsTreeWidget)
@@ -2404,6 +2405,15 @@ class AssetWidget(QWidget):
         buttonWidget.newButton.clicked.connect(self.showNewAssetDialog)
         buttonWidget.viewButton.clicked.connect(self.showViewAssetDialog)
         buttonWidget.deleteButton.clicked.connect(self.deleteSelectedAssetFromList)
+        buttonWidget.addSpacer()
+
+        assetTypeBtn = QPushButton("Asset Types...")
+        assetTypeBtn.clicked.connect(self.showAssetTypeDialog)
+        impairBtn = QPushButton("Impair...")
+        disposeBtn = QPushButton("Dispose...")
+        buttonWidget.addButton(assetTypeBtn)
+        buttonWidget.addButton(impairBtn)
+        buttonWidget.addButton(disposeBtn)
 
         subLayout.addLayout(assetWidgetsLayout)
         subLayout.addWidget(buttonWidget)
@@ -2429,6 +2439,11 @@ class AssetWidget(QWidget):
 
     def updateAssetsCount(self):
         self.currentAssetsLabel.setText("Current Assets: %d / %.02f" % (len(self.assetsDict.currentAssets()), self.assetsDict.currentCost()))
+
+    def showAssetTypeDialog(self):
+        dialog = AssetTypeDialog(self.parent.dataConnection.assetTypes, self)
+        if dialog.exec_():
+            print("yay")
 
     def showNewAssetDialog(self):
         dialog = AssetDialog("New", self)
