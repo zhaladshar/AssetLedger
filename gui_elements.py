@@ -874,7 +874,7 @@ class InvoiceWidget(QWidget):
         dialog = InvoiceDialog("New", self)
         if dialog.exec_():
             nextId = self.nextIdNum("Invoices")
-
+            
             # Create new invoice
             newInvoice = Invoice(dialog.invoiceDateText.text(),
                                  dialog.dueDateText.text(),
@@ -898,12 +898,12 @@ class InvoiceWidget(QWidget):
                 type_action = "addProject"
                 newInvoice.addProject(self.parent.dataConnection.projects[type_Id])
                 self.parent.dataConnection.projects[type_Id].addInvoice(newInvoice)
-
+            
             # Add invoice<->company links
             companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
             newInvoice.addCompany(self.parent.dataConnection.companies[companyId])
             self.parent.dataConnection.companies[companyId].addInvoice(newInvoice)
-
+            
             # Create invoice detail items
             nextInvoiceDetId = self.nextIdNum("InvoicesDetails")
             
@@ -913,24 +913,24 @@ class InvoiceWidget(QWidget):
                 else:
                     invoiceDetail = InvoiceDetail(dialog.detailsWidget.details[key][1].text(), float(dialog.detailsWidget.details[key][2].text()), nextInvoiceDetId)
                     proposalDetId = self.stripAllButNumbers(dialog.detailsWidget.details[key][3].currentText())
-
+                
                 # Last item in the dialog is a blank line, so a blank invoice
                 # detail will be created.  Ignore it.
                 if invoiceDetail:
-                    self.insertIntoDatabase("InvoicesDetails", "(Description, Cost)", "('" + invoiceDetail.description + "', '" + str(invoiceDetail.cost) + "')")
+                    self.insertIntoDatabase("InvoicesDetails", "(Description, Cost)", "('" + invoiceDetail.description + "', " + str(invoiceDetail.cost) + ")")
                     self.insertIntoDatabase("Xref", "", "('invoicesDetails', " + str(nextInvoiceDetId) + ", 'addDetailOf', 'invoices', " + str(nextId) + ")")
                     self.insertIntoDatabase("Xref", "", "('invoices', " + str(nextId) + ", 'addDetail', 'invoicesDetails', " + str(nextInvoiceDetId) + ")")
-
+                    
                     newInvoice.addDetail(invoiceDetail)
                     invoiceDetail.addDetailOf(newInvoice)
                     self.parent.dataConnection.invoicesDetails[invoiceDetail.idNum] = invoiceDetail
-
+                    
                     if proposalDetId:
                         self.insertIntoDatabase("Xref", "", "('invoicesDetails', " + str(nextInvoiceDetId) + ", 'addProposalDetail', 'proposalsDetails', " + str(proposalDetId) + ")")
                         self.insertIntoDatabase("Xref", "", "('proposalsDetails', " + str(proposalDetId) + ", 'addInvoiceDetail', 'invoicesDetails', " + str(nextInvoiceDetId) +")")
                         invoiceDetail.addProposalDetail(self.parent.dataConnection.proposalsDetails[proposalDetId])
                         self.parent.dataConnection.proposalsDetails[proposalDetId].addInvoiceDetail(invoiceDetail)
-
+                        
                     nextInvoiceDetId += 1
             
             # Add the invoice to the corporate data structure and update the
@@ -947,18 +947,18 @@ class InvoiceWidget(QWidget):
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('companies', ?, 'addInvoice', 'invoices', ?)", (companyId, nextId))
 
             self.parent.parent.dbConnection.commit()
-
+            
             # Make invoice into an InvoiceTreeWidgetItem and add it to VendorTree
             item = InvoiceTreeWidgetItem(newInvoice, self.openInvoicesTreeWidget)
             self.openInvoicesTreeWidget.addItem(item)
             self.updateInvoicesCount()
-
+            
             # Update vendor tree widget to display new information based on
             # invoice just created
             self.updateVendorTree.emit()
             self.updateProjectTree.emit()
             self.updateAssetTree.emit()
-
+            
     def showViewInvoiceDialog(self):
         # Determine which invoice tree (if any) has been selected
         idxToShow = self.openInvoicesTreeWidget.indexFromItem(self.openInvoicesTreeWidget.currentItem())
@@ -1897,45 +1897,54 @@ class ProjectWidget(QWidget):
 
             if dialog.exec_():
                 assetId = self.nextIdNum("Assets")
+                costId = self.nextIdNum("Costs")
+                
                 if dialog.inSvcChk.isChecked() == True:
                     inSvcDate = dialog.dateTxt.text()
                 else:
                     inSvcDate = ""
 
-                # Create new asset
+                # Create new asset and cost
                 newAsset = Asset(dialog.assetNameTxt.text(),
                                  dialog.dateTxt.text(),
                                  inSvcDate,
                                  "",
                                  float(dialog.usefulLifeTxt.text()),
                                  assetId)
-                
-                # Add assetType, company, and fromProject data to asset
+                cost = Cost(item.project.calculateCIP(),
+                            dialog.dateTxt.text(),
+                            costId)
+                print(cost)
+                # Add assetType, company, fromProject, and cost data to asset
                 assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
                 newAsset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])
                 newAsset.addCompany(item.project.company)
                 newAsset.addProject(item.project)
-                
+                newAsset.addCost(cost)
+                print("here")
                 # Add reverse data
                 newAsset.company.addAsset(newAsset)
                 self.parent.dataConnection.assets[assetId] = newAsset
-
+                self.parent.dataConnection.costs[costId] = cost
+                cost.addAsset(newAsset)
+                print("and here")
                 # Add completion information to project
                 item.project.addAsset(newAsset)
                 item.project.dateEnd = dialog.dateTxt.text()
-
-                #########################
-                ## Add to database
-                #########################
+                print("lastly")
+                # Add to database
                 self.insertIntoDatabase("Assets", "(idNum, Description, AcquireDate, InSvcDate, UsefulLife)", "(" + str(newAsset.idNum) + ", '" + newAsset.description + "', '" + newAsset.acquireDate + "', '" + newAsset.inSvcDate + "', " + str(newAsset.usefulLife) + ")")
+                self.insertIntoDatabase("Costs", "(Date, Cost)", "('" + cost.date + "', " + str(cost.cost) + ")")
                 self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addAssetType', 'assetTypes', " + str(newAsset.assetType.idNum) + ")")
                 self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addCompany', 'companies', " + str(newAsset.company.idNum) + ")")
                 self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addProject', 'projects', " + str(newAsset.fromProject.idNum) + ")")
                 self.insertIntoDatabase("Xref", "", "('companies', " + str(newAsset.company.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
                 self.insertIntoDatabase("Xref", "", "('projects', " + str(newAsset.fromProject.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
+                self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addCost', 'costs', " + str(cost.idNum) + ")")
+                self.insertIntoDatabase("Xref", "", "('costs', " + str(cost.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
                 self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=? WHERE idNum=?", (item.project.dateEnd, item.project.idNum))
                 self.parent.parent.dbConnection.commit()
-                
+                print("all this")
                 self.openProjectsTreeWidget.takeTopLevelItem(idxToComplete.row())
                 newItem = ProjectTreeWidgetItem(item.project, self.completedProjectsTreeWidget)
                 self.completedProjectsTreeWidget.addItem(newItem)
@@ -2024,6 +2033,10 @@ class ProjectWidget(QWidget):
         if item == None:
             idxToShow = self.abandonedProjectsTreeWidget.indexFromItem(self.abandonedProjectsTreeWidget.currentItem())
             item = self.abandonedProjectsTreeWidget.itemFromIndex(idxToShow)
+
+            if item == None:
+                idxToShow = self.completedProjectsTreeWidget.indexFromItem(self.completedProjectsTreeWidget.currentItem())
+                item = self.completedProjectsTreeWidget.itemFromIndex(idxToShow)
 
         if item:
             dialog = ProjectDialog("View", self, item.project)

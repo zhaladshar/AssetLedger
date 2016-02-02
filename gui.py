@@ -90,6 +90,10 @@ class Window(QMainWindow):
         for each in self.dbCursor:
             self.data.assetTypes[each[0]] = AssetType(each[1], each[2], each[0])
 
+        self.dbCursor.execute("SELECT * FROM Costs")
+        for each in self.dbCursor:
+            self.data.costs[each[0]] = Cost(each[2], each[1], each[0])
+
         self.dbCursor.execute("SELECT * FROM Xref")
         for each in self.dbCursor:
             eval("self.data." + each[0] + "[" + str(each[1]) + "]." + each[2] + \

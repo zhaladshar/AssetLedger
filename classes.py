@@ -260,6 +260,19 @@ class Invoice:
     def removePayment(self, payment):
         self.payments.pop(payment.idNum)
 
+class Cost:
+    def __init__(self, amount, date, idNum):
+        self.idNum = idNum
+        self.date = date
+        self.cost = amount
+        self.assetProj = None
+
+    def addProject(self, project):
+        self.assetProj = ("projects", project)
+
+    def addAsset(self, asset):
+        self.assetProj = ("assets", asset)
+
 class Vendor:
     def __init__(self, name, address, city, state, zipcode, phone, idNum):
         self.idNum = idNum
@@ -360,6 +373,7 @@ class Asset:
         self.company = None
         self.fromProject = None
         self.invoices = {}
+        self.costs = {}
         self.history = {}
         self.proposals = ProposalsDict()
 
@@ -381,10 +395,15 @@ class Asset:
     def removeInvoice(self, invoice):
         self.invoices.pop(invoice.idNum)
 
+    def addCost(self, cost):
+        self.costs[cost.idNum] = cost
+        
     def cost(self):
         amount = 0.0
         for invoiceKey in self.invoices:
             amount += self.invoices[invoiceKey].amount()
+        for costKey in self.costs:
+            amount += self.costs[costKey].cost
         return amount
 
     def depreciatedAmount(self):
@@ -406,6 +425,7 @@ class CorporateStructure:
         self.invoices = InvoicesDict()
         self.invoicesDetails = {}
         self.invoicesPayments = {}
+        self.costs = {}
         self.proposals = ProposalsDict()
         self.proposalsDetails = {}
         self.assets = AssetsDict()
