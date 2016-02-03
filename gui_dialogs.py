@@ -819,11 +819,20 @@ class CloseProjectDialog(QDialog):
         self.setWindowTitle(status + "Project")
 
 class NewAssetTypeDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, mode, parent=None, assetType=None):
         super().__init__(parent)
-
         nameLbl = QLabel("Name:")
-        self.nameTxt = QLineEdit()
+        depLbl = QLabel("Depreciable:")
+
+        if mode == "View":
+            self.nameTxt = QLineEdit(assetType.description)
+            self.depChk = QCheckBox()
+            if assetType.depreciable == True:
+                self.depChk.setCheckState(Qt.Checked)
+        else:
+            self.nameTxt = QLineEdit()
+            self.depChk = QCheckBox()
+            
         saveBtn = QPushButton("Save")
         saveBtn.clicked.connect(self.accept)
         cancelBtn = QPushButton("Cancel")
@@ -836,7 +845,9 @@ class NewAssetTypeDialog(QDialog):
         layout = QGridLayout()
         layout.addWidget(nameLbl, 0, 0)
         layout.addWidget(self.nameTxt, 0, 1)
-        layout.addLayout(buttonLayout, 1, 0, 1, 2)
+        layout.addWidget(depLbl, 1, 0)
+        layout.addWidget(self.depChk, 1, 1)
+        layout.addLayout(buttonLayout, 2, 0, 1, 2)
 
         self.setLayout(layout)
         
@@ -844,6 +855,7 @@ class AssetTypeDialog(QDialog):
     def __init__(self, assetTypeDict, parent=None):
         super().__init__(parent)
         self.assetTypeDict = assetTypeDict
+        self.parent = parent
 
         valuesAsList = []
         for assetTypeKey in self.assetTypeDict:
@@ -851,22 +863,71 @@ class AssetTypeDialog(QDialog):
 
         layout = QHBoxLayout()
 
-        listWidget = QListWidget()
-        listWidget.addItems(valuesAsList)
+        self.listWidget = QListWidget()
+        self.listWidget.addItems(valuesAsList)
+        self.listWidget.setCurrentRow(0)
 
         buttonLayout = gui_elements.StandardButtonWidget()
         buttonLayout.newButton.clicked.connect(self.newAssetType)
+        buttonLayout.viewButton.clicked.connect(self.showAssetType)
+        buttonLayout.deleteButton.clicked.connect(self.deleteAssetType)
         buttonLayout.addSpacer()
         closeBtn = QPushButton("Close")
         closeBtn.clicked.connect(self.reject)
         buttonLayout.addButton(closeBtn)
         
-        layout.addWidget(listWidget)
+        layout.addWidget(self.listWidget)
         layout.addWidget(buttonLayout)
 
         self.setLayout(layout)
 
     def newAssetType(self):
-        dialog = NewAssetTypeDialog(self)
+        dialog = NewAssetTypeDialog("New", self)
         if dialog.exec_():
-            print(dialog.nameTxt.text())
+            nextAssetTypeId = self.parent.nextIdNum("AssetTypes")
+            
+            if dialog.depChk.checkState() == Qt.Checked:
+                depreciable = 1
+            else:
+                depreciable = 0
+            newAssetType = classes.AssetType(dialog.nameTxt.text(),
+                                             depreciable,
+                                             nextAssetTypeId)
+            
+            self.listWidget.addItem("%4d - %s" % (newAssetType.idNum, newAssetType.description))
+            self.parent.parent.dataConnection.assetTypes[newAssetType.idNum] = newAssetType
+            
+            self.parent.insertIntoDatabase("AssetTypes", "(AssetType, Depreciable)", "('" + newAssetType.description + "', " + str(depreciable) + ")")
+            self.parent.parent.parent.dbConnection.commit()
+
+    def showAssetType(self):
+        idxToShow = self.listWidget.currentRow()
+        item = self.listWidget.item(idxToShow)
+        assetTypeId = self.parent.stripAllButNumbers(item.text())
+        assetType = self.assetTypeDict[assetTypeId]
+        
+        dialog = NewAssetTypeDialog("View", self, assetType)
+        if dialog.exec_():
+            assetType.description = dialog.nameTxt.text()
+
+            if dialog.depChk.checkState() == Qt.Checked:
+                depreciable = 1
+                assetType.depreciable = True
+            else:
+                depreciable = 0
+                assetType.depreciable = False
+
+            self.parent.parent.parent.dbCursor.execute("UPDATE AssetTypes SET AssetType=?, Depreciable=? WHERE idNum=?", (assetType.description, depreciable, assetType.idNum))
+            self.parent.parent.parent.dbConnection.commit()
+
+            item.setText("%4d - %s" % (assetType.idNum, assetType.description))
+
+    def deleteAssetType(self):
+        idxToDelete = self.listWidget.currentRow()
+        item = self.listWidget.takeItem(idxToDelete)
+        assetTypeId = self.parent.stripAllButNumbers(item.text())
+
+        # Remove from the database
+        self.parent.parent.dataConnection.assetTypes.pop(assetTypeId)
+        self.parent.parent.parent.dbCursor.execute("DELETE FROM AssetTypes WHERE idNum=?", (assetTypeId,))
+        self.parent.parent.parent.dbConnection.commit()
