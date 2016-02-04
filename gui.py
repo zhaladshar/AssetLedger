@@ -3,6 +3,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 import sqlite3
 import sys
+import os.path
 from classes import *
 from constants import *
 from gui_elements import *
@@ -12,13 +13,11 @@ class Window(QMainWindow):
     def __init__(self, dbName):
         super().__init__()
         self.data = CorporateStructure()
-        self.dbConnection = sqlite3.connect(dbName)
-        self.dbCursor = self.dbConnection.cursor()
         self.mainMenu = self.menuBar()
         self.mainWidget = QWidget()
 
         # Import data
-        self.importData()
+        self.importData(dbName)
 
         # Provide layout for views
         self.views = QStackedWidget()
@@ -45,59 +44,67 @@ class Window(QMainWindow):
         # Build layout
         self.buildLayout()
 
-    def importData(self):
-        self.dbCursor.execute("SELECT * FROM Companies")
-        for each in self.dbCursor:
-            if each[3] == "Y":
-                active = True
-            else:
-                active = False
-            self.data.companies[each[0]] = Company(each[1], each[2], active, each[0])
+    def importData(self, dbName):
+        # Check if database exists.  If so, import; otherwise, initialize db.
+        if os.path.exists(constants.DB_NAME):
+            self.dbConnection = sqlite3.connect(dbName)
+            self.dbCursor = self.dbConnection.cursor()
+            
+            self.dbCursor.execute("SELECT * FROM Companies")
+            for each in self.dbCursor:
+                if each[3] == "Y":
+                    active = True
+                else:
+                    active = False
+                self.data.companies[each[0]] = Company(each[1], each[2], active, each[0])
 
-        self.dbCursor.execute("SELECT * FROM Vendors")
-        for each in self.dbCursor:
-            self.data.vendors[each[0]] = Vendor(each[1], each[2], each[3], each[4], each[5], each[6], each[0])
+            self.dbCursor.execute("SELECT * FROM Vendors")
+            for each in self.dbCursor:
+                self.data.vendors[each[0]] = Vendor(each[1], each[2], each[3], each[4], each[5], each[6], each[0])
 
-        self.dbCursor.execute("SELECT * FROM Invoices")
-        for each in self.dbCursor:
-            self.data.invoices[each[0]] = Invoice(each[1], each[2], each[0])
+            self.dbCursor.execute("SELECT * FROM Invoices")
+            for each in self.dbCursor:
+                self.data.invoices[each[0]] = Invoice(each[1], each[2], each[0])
 
-        self.dbCursor.execute("SELECT * FROM InvoicesDetails")
-        for each in self.dbCursor:
-            self.data.invoicesDetails[each[0]] = InvoiceDetail(each[1], each[2], each[0])
+            self.dbCursor.execute("SELECT * FROM InvoicesDetails")
+            for each in self.dbCursor:
+                self.data.invoicesDetails[each[0]] = InvoiceDetail(each[1], each[2], each[0])
 
-        self.dbCursor.execute("SELECT * FROM InvoicesPayments")
-        for each in self.dbCursor:
-            self.data.invoicesPayments[each[0]] = InvoicePayment(each[1], each[2], each[0])
+            self.dbCursor.execute("SELECT * FROM InvoicesPayments")
+            for each in self.dbCursor:
+                self.data.invoicesPayments[each[0]] = InvoicePayment(each[1], each[2], each[0])
 
-        self.dbCursor.execute("SELECT * FROM Proposals")
-        for each in self.dbCursor:
-            self.data.proposals[each[0]] = Proposal(each[1], each[2], each[3], each[0])
+            self.dbCursor.execute("SELECT * FROM Proposals")
+            for each in self.dbCursor:
+                self.data.proposals[each[0]] = Proposal(each[1], each[2], each[3], each[0])
 
-        self.dbCursor.execute("SELECT * FROM ProposalsDetails")
-        for each in self.dbCursor:
-            self.data.proposalsDetails[each[0]] = ProposalDetail(each[1], each[2], each[0])
+            self.dbCursor.execute("SELECT * FROM ProposalsDetails")
+            for each in self.dbCursor:
+                self.data.proposalsDetails[each[0]] = ProposalDetail(each[1], each[2], each[0])
 
-        self.dbCursor.execute("SELECT * FROM Projects")
-        for each in self.dbCursor:
-            self.data.projects[each[0]] = Project(each[1], each[2], each[3], each[0], each[3])
+            self.dbCursor.execute("SELECT * FROM Projects")
+            for each in self.dbCursor:
+                self.data.projects[each[0]] = Project(each[1], each[2], each[3], each[0], each[3])
 
-        self.dbCursor.execute("SELECT * FROM Assets")
-        for each in self.dbCursor:
-            self.data.assets[each[0]] = Asset(each[1], each[2], each[3], each[4], each[5], each[0])
+            self.dbCursor.execute("SELECT * FROM Assets")
+            for each in self.dbCursor:
+                self.data.assets[each[0]] = Asset(each[1], each[2], each[3], each[4], each[5], each[6], each[0])
 
-        self.dbCursor.execute("SELECT * FROM AssetTypes")
-        for each in self.dbCursor:
-            self.data.assetTypes[each[0]] = AssetType(each[1], each[2], each[0])
+            self.dbCursor.execute("SELECT * FROM AssetTypes")
+            for each in self.dbCursor:
+                self.data.assetTypes[each[0]] = AssetType(each[1], each[2], each[0])
 
-        self.dbCursor.execute("SELECT * FROM Costs")
-        for each in self.dbCursor:
-            self.data.costs[each[0]] = Cost(each[2], each[1], each[0])
+            self.dbCursor.execute("SELECT * FROM Costs")
+            for each in self.dbCursor:
+                self.data.costs[each[0]] = Cost(each[2], each[1], each[0])
 
-        self.dbCursor.execute("SELECT * FROM Xref")
-        for each in self.dbCursor:
-            eval("self.data." + each[0] + "[" + str(each[1]) + "]." + each[2] + \
-                 "(" + "self.data." + each[3] + "[" + str(each[4]) + "])")
+            self.dbCursor.execute("SELECT * FROM Xref")
+            for each in self.dbCursor:
+                eval("self.data." + each[0] + "[" + str(each[1]) + "]." + each[2] + \
+                     "(" + "self.data." + each[3] + "[" + str(each[4]) + "])")
+        else:
+            # Need to put in db creation routine
+            pass
 
     def newFile(self):
         pass
@@ -286,6 +293,6 @@ class Window(QMainWindow):
 
 if __name__ == "__main__":
         app = QApplication(sys.argv)
-        form = Window("data.db")
+        form = Window(constants.DB_NAME)
         form.show()
         app.exec_()

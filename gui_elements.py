@@ -1914,24 +1914,24 @@ class ProjectWidget(QWidget):
                 cost = Cost(item.project.calculateCIP(),
                             dialog.dateTxt.text(),
                             costId)
-                print(cost)
+                
                 # Add assetType, company, fromProject, and cost data to asset
                 assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
                 newAsset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])
                 newAsset.addCompany(item.project.company)
                 newAsset.addProject(item.project)
                 newAsset.addCost(cost)
-                print("here")
+                
                 # Add reverse data
                 newAsset.company.addAsset(newAsset)
                 self.parent.dataConnection.assets[assetId] = newAsset
                 self.parent.dataConnection.costs[costId] = cost
                 cost.addAsset(newAsset)
-                print("and here")
+                
                 # Add completion information to project
                 item.project.addAsset(newAsset)
                 item.project.dateEnd = dialog.dateTxt.text()
-                print("lastly")
+                
                 # Add to database
                 self.insertIntoDatabase("Assets", "(idNum, Description, AcquireDate, InSvcDate, UsefulLife)", "(" + str(newAsset.idNum) + ", '" + newAsset.description + "', '" + newAsset.acquireDate + "', '" + newAsset.inSvcDate + "', " + str(newAsset.usefulLife) + ")")
                 self.insertIntoDatabase("Costs", "(Date, Cost)", "('" + cost.date + "', " + str(cost.cost) + ")")
@@ -1944,7 +1944,7 @@ class ProjectWidget(QWidget):
                 self.insertIntoDatabase("Xref", "", "('costs', " + str(cost.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
                 self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=? WHERE idNum=?", (item.project.dateEnd, item.project.idNum))
                 self.parent.parent.dbConnection.commit()
-                print("all this")
+                
                 self.openProjectsTreeWidget.takeTopLevelItem(idxToComplete.row())
                 newItem = ProjectTreeWidgetItem(item.project, self.completedProjectsTreeWidget)
                 self.completedProjectsTreeWidget.addItem(newItem)
@@ -2364,6 +2364,8 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
         self.inSvcDateLabel.setText(self.asset.inSvcDate)
         
 class AssetTreeWidget(QTreeWidget):
+    disposeAsset = pyqtSignal(int)
+    
     def __init__(self, assetsDict):
         super().__init__()
         self.buildItems(self, assetsDict)
@@ -2378,7 +2380,13 @@ class AssetTreeWidget(QTreeWidget):
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
-            self.topLevelItem(idx).refreshData()
+            try:
+                self.topLevelItem(idx).refreshData()
+                
+                if self.topLevelItem(idx).asset.inSvc() != True:
+                    self.disposeAsset.emit(idx)
+            except:
+                pass
             
 class AssetWidget(QWidget):
     def __init__(self, assetsDict, parent):
@@ -2400,12 +2408,15 @@ class AssetWidget(QWidget):
         self.currentAssetsTreeWidget.setHeaderHidden(True)
         self.currentAssetsTreeWidget.setMinimumWidth(500)
         self.currentAssetsTreeWidget.setMaximumHeight(100)
+        self.currentAssetsTreeWidget.disposeAsset.connect(self.moveCurrentAssetToDisposed)
+        self.currentAssetsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
 
         self.disposedAssetsTreeWidget = AssetTreeWidget(self.assetsDict.disposedAssets())
         self.disposedAssetsTreeWidget.setIndentation(0)
         self.disposedAssetsTreeWidget.setHeaderHidden(True)
         self.disposedAssetsTreeWidget.setMinimumWidth(500)
         self.disposedAssetsTreeWidget.setMaximumHeight(100)
+        self.disposedAssetsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
 
         self.disposedAssetsLabel = QLabel("Disposed Assets: %d / %.02f" % (len(self.assetsDict.disposedAssets()), self.assetsDict.disposedCost()))
         
@@ -2424,6 +2435,7 @@ class AssetWidget(QWidget):
         assetTypeBtn.clicked.connect(self.showAssetTypeDialog)
         impairBtn = QPushButton("Impair...")
         disposeBtn = QPushButton("Dispose...")
+        disposeBtn.clicked.connect(self.disposeAsset)
         buttonWidget.addButton(assetTypeBtn)
         buttonWidget.addButton(impairBtn)
         buttonWidget.addButton(disposeBtn)
@@ -2452,11 +2464,37 @@ class AssetWidget(QWidget):
 
     def updateAssetsCount(self):
         self.currentAssetsLabel.setText("Current Assets: %d / %.02f" % (len(self.assetsDict.currentAssets()), self.assetsDict.currentCost()))
+        self.disposedAssetsLabel.setText("Disposed Assets: %d / %.02f" % (len(self.assetsDict.disposedAssets()), self.assetsDict.disposedCost()))
 
     def showAssetTypeDialog(self):
         dialog = AssetTypeDialog(self.parent.dataConnection.assetTypes, self)
-        if dialog.exec_():
-            print("yay")
+        dialog.exec_()
+
+    def removeSelectionsFromAllBut(self, but):
+        if but == 1:
+            self.disposedAssetsTreeWidget.setCurrentItem(self.disposedAssetsTreeWidget.invisibleRootItem())
+        else:
+            self.currentAssetsTreeWidget.setCurrentItem(self.currentAssetsTreeWidget.invisibleRootItem())
+
+    def moveCurrentAssetToDisposed(self, idx):
+        item = self.currentAssetsTreeWidget.takeTopLevelItem(idx)
+        newItem = AssetTreeWidgetItem(item.asset, self.disposedAssetsTreeWidget)
+        self.disposedAssetsTreeWidget.addItem(newItem)
+    
+    def disposeAsset(self):
+        idxToDispose = self.currentAssetsTreeWidget.indexFromItem(self.currentAssetsTreeWidget.currentItem())
+        item = self.currentAssetsTreeWidget.itemFromIndex(idxToDispose)
+
+        if item:
+            dialog = DisposeAssetDialog(self)
+            if dialog.exec_():
+                self.parent.parent.dbCursor.execute("UPDATE Assets SET DisposeDate=?, DisposeAmount=? WHERE idNum=?", (dialog.dispDateTxt.text(), float(dialog.dispAmtTxt.text()), item.asset.idNum))
+                self.parent.parent.dbConnection.commit()
+                item.asset.disposeDate = dialog.dispDateTxt.text()
+                item.asset.disposeAmount = float(dialog.dispAmtTxt.text())
+                
+                self.refreshAssetTree()
+                self.updateAssetsCount()
 
     def showNewAssetDialog(self):
         dialog = AssetDialog("New", self)
@@ -2534,7 +2572,7 @@ class AssetWidget(QWidget):
                         item.asset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])
                         
                     self.parent.parent.dbConnection.commit()
-                    self.currentAssetsTreeWidget.refreshData()
+                    self.refreshAssetTree()
 
     def deleteSelectedAssetFromList(self):
         # Get the index of the item in the company list to delete

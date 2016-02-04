@@ -362,12 +362,13 @@ class Company:
         self.assets.pop(asset.idNum)
 
 class Asset:
-    def __init__(self, desc, acqDate, inSvcDate, disposeDate, usefulLife, idNum):
+    def __init__(self, desc, acqDate, inSvcDate, disposeDate, disposeAmount, usefulLife, idNum):
         self.idNum = idNum
         self.description = desc
         self.acquireDate = acqDate
         self.inSvcDate = inSvcDate
         self.disposeDate = disposeDate
+        self.disposeAmount = disposeAmount
         self.usefulLife = usefulLife
         self.assetType = None
         self.company = None
@@ -408,6 +409,12 @@ class Asset:
 
     def depreciatedAmount(self):
         return 0
+
+    def inSvc(self):
+        if self.disposeDate == "" or self.disposeDate == None:
+            return True
+        else:
+            return False
 
 class AssetType:
     def __init__(self, description, depreciable, idNum):

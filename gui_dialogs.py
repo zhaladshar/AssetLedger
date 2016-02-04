@@ -931,3 +931,30 @@ class AssetTypeDialog(QDialog):
         self.parent.parent.dataConnection.assetTypes.pop(assetTypeId)
         self.parent.parent.parent.dbCursor.execute("DELETE FROM AssetTypes WHERE idNum=?", (assetTypeId,))
         self.parent.parent.parent.dbConnection.commit()
+
+class DisposeAssetDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        dispDateLbl = QLabel("Dispose Date:")
+        dispAmtLbl = QLabel("Disposal Amount:")
+        self.dispDateTxt = QLineEdit()
+        self.dispAmtTxt = QLineEdit()
+
+        layout = QGridLayout()
+        layout.addWidget(dispDateLbl, 0, 0)
+        layout.addWidget(self.dispDateTxt, 0, 1)
+        layout.addWidget(dispAmtLbl, 1, 0)
+        layout.addWidget(self.dispAmtTxt, 1, 1)
+        
+        saveBtn = QPushButton("Save")
+        saveBtn.clicked.connect(self.accept)
+        cancelBtn = QPushButton("Cancel")
+        cancelBtn.clicked.connect(self.reject)
+        
+        buttonLayout = QHBoxLayout()
+        buttonLayout.addWidget(saveBtn)
+        buttonLayout.addWidget(cancelBtn)
+        
+        layout.addLayout(buttonLayout, 2, 0, 1, 2)
+        self.setLayout(layout)

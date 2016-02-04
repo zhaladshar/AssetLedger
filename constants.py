@@ -1,3 +1,4 @@
+DB_NAME = "data.db"
 VIEWS_LIST = ["Companies", "Proposals", "Projects", "Assets", "G/L", "A/P"]
 SPLASH_OPTIONS = [("+New Company", "self.newCompany", "Company...", "Create new company"),
                   ("+New Project", "self.newProject", "Project...", "Create new project"),
