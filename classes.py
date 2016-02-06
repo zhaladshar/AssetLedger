@@ -1,5 +1,16 @@
 import constants
 
+class GLAccountsDict(dict):
+    def __init__(self):
+        super().__init__()
+
+    def accountGroups(self):
+        tempDict = {}
+        for glKey in self:
+            if self[glKey].placeHolder == True:
+                tempDict[glKey] = self[glKey]
+        return tempDict
+
 class InvoicesDict(dict):
     def __init__(self):
         super().__init__()
@@ -424,6 +435,23 @@ class AssetType:
             self.depreciable = False
         else:
             self.depreciable = True
+
+class GLAccount:
+    def __init__(self, description, placeHolder, idNum):
+        self.idNum = idNum
+        self.description = description
+        if placeHolder == 0:
+            self.placeHolder = False
+        else:
+            self.placeHolder = True
+        self.childOf = None
+        self.parentOf = {}
+
+    def addChild(self, child):
+        self.parentOf[child.idNum] = child
+
+    def addParent(self, parent):
+        self.childOf = parent
         
 class CorporateStructure:
     def __init__(self):
@@ -438,3 +466,4 @@ class CorporateStructure:
         self.assets = AssetsDict()
         self.assetTypes = {}
         self.projects = ProjectsDict()
+        self.glAccounts = GLAccountsDict()

@@ -958,3 +958,76 @@ class DisposeAssetDialog(QDialog):
         
         layout.addLayout(buttonLayout, 2, 0, 1, 2)
         self.setLayout(layout)
+
+class GLAccountDialog(QDialog):
+    def __init__(self, mode, parent=None, glAccount=None):
+        super().__init__(parent)
+        self.hasChanges = False
+
+        self.layout = QGridLayout()
+        
+        accountNumLbl = QLabel("Account #:")
+        descriptionLbl = QLabel("Description:")
+        acctGrpLbl = QLabel("Account Group:")
+        self.listOfAcctGrpsLbl = QLabel("Group under...")
+        
+        self.acctGrpsBox = QComboBox()
+        valueAsList = []
+        tempDict = parent.parent.dataConnection.glAccounts.accountGroups()
+        for acctGroupKey in tempDict:
+            valueAsList.append(str("%4d - %s" %  (tempDict[acctGroupKey].idNum, tempDict[acctGroupKey].description)))
+        self.acctGrpsBox.addItems(valueAsList)
+        
+        if mode == "View":
+            self.accountNumText = QLabel(str(glAccount.idNum))
+            self.descriptionText = QLabel(glAccount.description)
+            self.acctGrpChk = QCheckBox()
+            if glAccount.placeHolder == True:
+                self.acctGrpChk.setCheckState(Qt.Checked)
+        else:
+            self.accountNumText = QLineEdit()
+            self.descriptionText = QLineEdit()
+            self.acctGrpChk = QCheckBox()
+            self.acctGrpChk.setCheckState(Qt.Checked)
+            self.acctGrpChk.stateChanged.connect(self.showHideAcctGrpBox)
+            
+            self.listOfAcctGrpsLbl.hide()
+            self.acctGrpsBox.hide()
+
+        self.layout.addWidget(accountNumLbl, 0, 0)
+        self.layout.addWidget(self.accountNumText, 0, 1)
+        self.layout.addWidget(descriptionLbl, 1, 0)
+        self.layout.addWidget(self.descriptionText, 1, 1)
+        self.layout.addWidget(acctGrpLbl, 2, 0)
+        self.layout.addWidget(self.acctGrpChk, 2, 1)
+        self.layout.addWidget(self.listOfAcctGrpsLbl, 3, 0)
+        self.layout.addWidget(self.acctGrpsBox, 3, 1)
+        
+        buttonLayout = QHBoxLayout()
+        
+        saveButton = QPushButton("Save")
+        saveButton.clicked.connect(self.accept)
+        buttonLayout.addWidget(saveButton)
+        
+        if mode == "View":
+            editButton = QPushButton("Edit")
+            editButton.clicked.connect(self.makeLabelsEditable)
+            buttonLayout.addWidget(editButton)
+        
+        cancelButton = QPushButton("Cancel")
+        cancelButton.clicked.connect(self.reject)
+        buttonLayout.addWidget(cancelButton)
+        
+        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        self.setLayout(self.layout)
+
+    def makeLabelsEditable(self):
+        pass
+
+    def showHideAcctGrpBox(self, state):
+        if state == Qt.Checked:
+            self.listOfAcctGrpsLbl.hide()
+            self.acctGrpsBox.hide()
+        else:
+            self.listOfAcctGrpsLbl.show()
+            self.acctGrpsBox.show()

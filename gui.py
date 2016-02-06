@@ -26,6 +26,7 @@ class Window(QMainWindow):
         self.proposalOverview = ProposalView(self.data, self)
         self.projectOverview = ProjectView(self.data, self)
         self.assetOverview = AssetView(self.data, self)
+        self.glOverview = GLView(self.data, self)
         self.APOverview = APView(self.data, self)
         self.companyViewSelected = None
         self.detailViewSelected = None
@@ -98,6 +99,14 @@ class Window(QMainWindow):
             for each in self.dbCursor:
                 self.data.costs[each[0]] = Cost(each[2], each[1], each[0])
 
+            self.dbCursor.execute("SELECT * FROM GLAccounts")
+            for each in self.dbCursor:
+                if each[2] == 0:
+                    placeHolder = False
+                else:
+                    placeHolder = True
+                self.data.glAccounts[each[0]] = GLAccount(each[1], placeHolder, each[0])
+                
             self.dbCursor.execute("SELECT * FROM Xref")
             for each in self.dbCursor:
                 eval("self.data." + each[0] + "[" + str(each[1]) + "]." + each[2] + \
@@ -209,6 +218,9 @@ class Window(QMainWindow):
         # Build the asset overview widget
         self.views.addWidget(self.assetOverview)
 
+        # Build the GL overview widget
+        self.views.addWidget(self.glOverview)
+
         # Build the A/P overview widget
         self.views.addWidget(self.APOverview)
 
@@ -265,8 +277,10 @@ class Window(QMainWindow):
                     self.views.setCurrentIndex(PROPOSAL_OVERVIEW_INDEX)
                 elif self.detailViewSelected == "Projects":
                     self.views.setCurrentIndex(PROJECT_OVERVIEW_INDEX)
-                if self.detailViewSelected == "Assets":
+                elif self.detailViewSelected == "Assets":
                     self.views.setCurrentIndex(ASSET_OVERVIEW_INDEX)
+                elif self.detailViewSelected == "G/L":
+                    self.views.setCurrentIndex(GL_OVERVIEW_INDEX)
                 elif self.detailViewSelected == "A/P":
                     self.views.setCurrentIndex(AP_OVERVIEW_INDEX)
             else:
