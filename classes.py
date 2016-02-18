@@ -71,10 +71,31 @@ class AssetsDict(dict):
             amount += assetsDict[key].cost()
         return amount
 
-    def currentAssets(self):
-        assetDict = {}
+    def topLevelAssets(self):
+        assetDict = AssetsDict()
+        for assetKey in self:
+            if self[assetKey].subAssetOf == None:
+                assetDict[assetKey] = self[assetKey]
+        return assetDict
+
+    def currentAssets(self, topLevelOnlyFg=False, companyId=None):
+        assetDict = AssetsDict()
         for assetKey in self:
             if self[assetKey].disposeDate == "" or self[assetKey].disposeDate == None:
+                assetDict[assetKey] = self[assetKey]
+
+        if topLevelOnlyFg == True:
+            assetDict = assetDict.topLevelAssets()
+
+        if companyId:
+            assetDict = assetDict.assetsByCompany(companyId)
+            
+        return assetDict
+
+    def assetsByCompany(self, companyId):
+        assetDict = AssetsDict()
+        for assetKey in self:
+            if self[assetKey].company.idNum == companyId:
                 assetDict[assetKey] = self[assetKey]
         return assetDict
 
@@ -373,7 +394,7 @@ class Company:
         self.assets.pop(asset.idNum)
 
 class Asset:
-    def __init__(self, desc, acqDate, inSvcDate, disposeDate, disposeAmount, usefulLife, idNum):
+    def __init__(self, desc, acqDate, inSvcDate, disposeDate, disposeAmount, usefulLife, salvageAmt, depMethod, idNum):
         self.idNum = idNum
         self.description = desc
         self.acquireDate = acqDate
@@ -381,12 +402,16 @@ class Asset:
         self.disposeDate = disposeDate
         self.disposeAmount = disposeAmount
         self.usefulLife = usefulLife
+        self.salvageAmount = salvageAmt
+        self.depMethod = depMethod
         self.assetType = None
         self.company = None
         self.fromProject = None
+        self.subAssetOf = None
         self.invoices = {}
         self.costs = {}
         self.history = {}
+        self.subAssets = {}
         self.proposals = ProposalsDict()
 
     def addAssetType(self, assetType):
@@ -409,6 +434,18 @@ class Asset:
 
     def addCost(self, cost):
         self.costs[cost.idNum] = cost
+
+    def addSubAsset(self, asset):
+        self.subAssets[asset.idNum] = asset
+
+    def removeSubAsset(self, asset):
+        self.subAssets.pop(asset.idNum)
+
+    def addSubAssetOf(self, asset):
+        self.subAssetOf = asset
+
+    def removeSubAssetOf(self):
+        self.subAssetOf = None
         
     def cost(self):
         amount = 0.0

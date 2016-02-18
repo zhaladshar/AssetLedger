@@ -2338,7 +2338,14 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
         super().__init__(parent)
         self.asset = assetItem
         self.main = QWidget()
+        layout = QHBoxLayout()
         
+        for depth in range(self.depth(self.asset)):
+            bufferLabel = QLabel("")
+            bufferLabel.setStyleSheet("QLabel { background-color: rgba(255, 255, 255, 0) }")
+            bufferLabel.setFixedWidth(15)
+            layout.addWidget(bufferLabel)
+
         idLabel = QLabel(str(self.asset.idNum))
         self.descLabel = QLabel(self.asset.description)
         self.costLabel = QLabel(str(self.asset.cost()))
@@ -2346,7 +2353,6 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
         self.botDateLabel = QLabel(self.asset.acquireDate)
         self.inSvcDateLabel = QLabel(self.asset.inSvcDate)
         
-        layout = QHBoxLayout()
         layout.addWidget(idLabel)
         layout.addWidget(self.descLabel)
         layout.addWidget(self.costLabel)
@@ -2362,21 +2368,59 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
         self.depAmtLabel.setText(str(self.asset.depreciatedAmount()))
         self.botDateLabel.setText(self.asset.acquireDate)
         self.inSvcDateLabel.setText(self.asset.inSvcDate)
+
+    def depth(self, asset):
+        if asset.subAssetOf == None:
+            return 0
+        else:
+            return 1 + self.depth(asset.subAssetOf)
+
+    def assignChildren(self, listOfChildren, parent):
+        print(listOfChildren)
+        for item in listOfChildren:
+            print(item.asset.description)
+            newItem = AssetTreeWidgetItem(item.asset, parent)
+
+            if item.childCount() > 0:
+                self.assignChildren(item.takeChildren(), newItem)
         
 class AssetTreeWidget(QTreeWidget):
     disposeAsset = pyqtSignal(int)
     
-    def __init__(self, assetsDict):
+    def __init__(self, assetsDict, inSvcFg=True):
         super().__init__()
+        self.inSvcFg = inSvcFg
+        self.itemsInTree = []
         self.buildItems(self, assetsDict)
 
     def buildItems(self, parent, assetsDict):
+        # This function will check to make sure the asset's service status
+        # matches that required by the TreeWidget and also that its idNum has not
+        # already been added to the tree (this condition is caused when an asset
+        # and its subasset have both been disposed; the flat dictionary passed
+        # to the tree will end up adding the subasset when it adds the parent
+        # item's subassets and then again when it reaches that item in the flat
+        # dictionary).  If not, it will create the item, add it to the tree,
+        # and then go through its subassets and add them if their statuses meet
+        # the requirements.  Otherwise, it will cycle to the next
         for assetKey in assetsDict:
-            item = AssetTreeWidgetItem(assetsDict[assetKey], parent)
-            self.addItem(item)
+            item = parent
+            
+            if assetsDict[assetKey].inSvc() == self.inSvcFg:
+                if assetKey not in self.itemsInTree:
+                    item = AssetTreeWidgetItem(assetsDict[assetKey], parent)
+                    self.addItem(item)
+
+                    if assetsDict[assetKey].subAssets:
+                        self.buildItems(item, assetsDict[assetKey].subAssets)
 
     def addItem(self, widgetItem):
         self.setItemWidget(widgetItem, 0, widgetItem.main)
+        self.itemsInTree.append(widgetItem.asset.idNum)
+
+    def addItems(self, listOfItems):
+        for item in listOfItems:
+            self.addItem(item)
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
@@ -2403,7 +2447,7 @@ class AssetWidget(QWidget):
         subLayout = QHBoxLayout()
         assetWidgetsLayout = QVBoxLayout()
 
-        self.currentAssetsTreeWidget = AssetTreeWidget(self.assetsDict.currentAssets())
+        self.currentAssetsTreeWidget = AssetTreeWidget(self.assetsDict.currentAssets(True))
         self.currentAssetsTreeWidget.setIndentation(0)
         self.currentAssetsTreeWidget.setHeaderHidden(True)
         self.currentAssetsTreeWidget.setMinimumWidth(500)
@@ -2411,7 +2455,7 @@ class AssetWidget(QWidget):
         self.currentAssetsTreeWidget.disposeAsset.connect(self.moveCurrentAssetToDisposed)
         self.currentAssetsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
 
-        self.disposedAssetsTreeWidget = AssetTreeWidget(self.assetsDict.disposedAssets())
+        self.disposedAssetsTreeWidget = AssetTreeWidget(self.assetsDict.disposedAssets(), False)
         self.disposedAssetsTreeWidget.setIndentation(0)
         self.disposedAssetsTreeWidget.setHeaderHidden(True)
         self.disposedAssetsTreeWidget.setMinimumWidth(500)
@@ -2454,6 +2498,10 @@ class AssetWidget(QWidget):
         else:
             return 1
         
+    def insertIntoDatabase(self, tblName, columns, values):
+        sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
+        self.parent.parent.dbCursor.execute(sql)
+
     def stripAllButNumbers(self, string):
         regex = re.match(r"\s*([0-9]+).*", string)
         return int(regex.groups()[0])
@@ -2477,6 +2525,16 @@ class AssetWidget(QWidget):
         newItem = AssetTreeWidgetItem(item.asset, self.disposedAssetsTreeWidget)
         self.disposedAssetsTreeWidget.addItem(newItem)
     
+    def getParentItem(self, assetNum):
+        iterator = QTreeWidgetItemIterator(self.currentAssetsTreeWidget)
+        
+        while iterator.value():
+            if iterator.value().asset.subAssets:
+                if assetNum in iterator.value().asset.subAssets.keys():
+                    return iterator.value()
+            
+            iterator += 1
+
     def disposeAsset(self):
         idxToDispose = self.currentAssetsTreeWidget.indexFromItem(self.currentAssetsTreeWidget.currentItem())
         item = self.currentAssetsTreeWidget.itemFromIndex(idxToDispose)
@@ -2499,12 +2557,17 @@ class AssetWidget(QWidget):
             nextId = self.nextIdNum("Assets")
             companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
             assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
+            if dialog.childOfAssetBox.currentText() == "":
+                subAssetOfId = None
+            else:
+                subAssetOfId = self.stripAllButNumbers(dialog.childOfAssetBox.currentText())
             
-            # Create proposal and add to database
+            # Create asset and add to database
             newAsset = Asset(dialog.descriptionText.text(),
                              dialog.dateAcquiredText.text(),
                              dialog.dateInSvcText.text(),
                              "",
+                             None,
                              dialog.usefulLifeText.text(),
                              nextId)
             
@@ -2512,16 +2575,28 @@ class AssetWidget(QWidget):
             newAsset.addCompany(self.parent.dataConnection.companies[companyId])
             newAsset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])
             self.parent.dataConnection.companies[companyId].addAsset(newAsset)
-            
-            self.insertIntoDatabase("Assets", "(Description, AcquireDate, InSvcDate, DisposeDate, UsefulLife)", "('" + newAsset.description + "', '" + newAsset.acquireDate + "', '" + newAsset.inSvcDate + "', '" + newAsset.disposeDate + "', '" + newAsset.usefulLife + "')")
+
+            self.insertIntoDatabase("Assets", "(Description, AcquireDate, InSvcDate, UsefulLife)", "('" + newAsset.description + "', '" + newAsset.acquireDate + "', '" + newAsset.inSvcDate + "', " + str(newAsset.usefulLife) + ")")
             self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('companies', " + str(companyId) + ", 'addAsset', 'assets', " + str(nextId) + ")")
             self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
             self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addAssetType', 'assetTypes', " + str(assetTypeId) + ")")
             
+            # Add subasset info, if it exists
+            if subAssetOfId:
+                newAsset.addSubAssetOf(self.parent.dataConnection.assets[subAssetOfId])
+                self.parent.dataConnection.assets[subAssetOfId].addSubAsset(newAsset)
+                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addSubAssetOf', 'assets', " + str(subAssetOfId) + ")")
+                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(subAssetOfId) + ", 'addSubAsset', 'assets', " + str(nextId) + ")")
+
             self.parent.parent.dbConnection.commit()
             
-            # Make project into a ProjectTreeWidgetItem and add it to ProjectTree
-            item = AssetTreeWidgetItem(newAsset, self.currentAssetsTreeWidget)
+            # Make asset into an AssetTreeWidgetItem and add it to AssetTree
+            if subAssetOfId == None:
+                item = AssetTreeWidgetItem(newAsset, self.currentAssetsTreeWidget)
+            else:
+                parentItem = self.getParentItem(subAssetOfId)
+                item = AssetTreeWidgetItem(newAsset, parentItem)
+
             self.currentAssetsTreeWidget.addItem(item)
             self.updateAssetsCount()
             
@@ -2542,13 +2617,17 @@ class AssetWidget(QWidget):
                            "', AcquireDate = '" + dialog.dateAcquiredText_edit.text() +
                            "', InSvcDate = '" + dialog.dateInSvcText_edit.text() + 
                            "', UsefulLife = " + dialog.usefulLifeText_edit.text() +
-                           " WHERE idNum = " + str(item.asset.idNum))
+                           ", SalvageAmount = " + str(dialog.salvageValueText_edit.text()) +
+                           ", DepreciationMethod = '" + dialog.depMethodBox.currentText() + 
+                           "' WHERE idNum = " + str(item.asset.idNum))
                     self.parent.parent.dbCursor.execute(sql)
 
                     item.asset.description = dialog.descriptionText_edit.text()
                     item.asset.acquireDate = dialog.dateAcquiredText_edit.text()
                     item.asset.inSvcDate = dialog.dateInSvcText_edit.text()
                     item.asset.usefulLife = dialog.usefulLifeText_edit.text()
+                    item.asset.salvageAmount = float(dialog.salvageValueText_edit.text())
+                    item.asset.depMethod = dialog.depMethodBox.currentText()
 
                     if dialog.companyChanged == True:
                         companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
@@ -2566,7 +2645,75 @@ class AssetWidget(QWidget):
                         self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectBeingLinked='assetTypes' AND ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=?", (assetTypeId, item.asset.idNum))
                         
                         item.asset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])
-                        
+
+                    if dialog.parentAssetChanged == True:
+                        # Check to see if the asset has been changed to be the
+                        # child of a different asset or is now a top-level asset
+                        if dialog.childOfAssetBox.currentText() == "":
+                            # The case where an item is not a subasset, changed
+                            # to a subasset, and then changed back to no subasset
+                            # will flag the parentAssetChanged flag to be true
+                            # even though there is no real change.  Need to make
+                            # sure that item.asset.subAssetOf exists
+                            if item.asset.subAssetOf:
+                                oldParentItem = self.getParentItem(item.asset.idNum)
+                                
+                                item.asset.subAssetOf.removeSubAsset(item.asset)
+                                item.asset.removeSubAssetOf()
+                                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=? AND Method='addSubAssetOf'",
+                                                                    (item.asset.idNum,))
+                                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='assets' AND ObjectIdBeingLinked=? AND Method='addSubAsset'",
+                                                                    (item.asset.idNum,))
+                                
+                                oldItemIdx = oldParentItem.indexOfChild(item)
+                                oldParentItem.takeChild(oldItemIdx)
+                                newItem = AssetTreeWidgetItem(item.asset, self.currentAssetsTreeWidget)
+                                self.currentAssetsTreeWidget.addItem(newItem)
+                        else:
+                            newParentAssetId = self.stripAllButNumbers(dialog.childOfAssetBox.currentText())
+                            
+                            # Make sure subAssetOf exists.  If it doesn't, some
+                            # code will not be used.
+                            if item.asset.subAssetOf:
+                                oldParentItem = self.getParentItem(item.asset.idNum)
+                                
+                                item.asset.subAssetOf.removeSubAsset(item.asset)
+                                item.asset.addSubAssetOf(self.parent.dataConnection.assets[newParentAssetId])
+                                item.asset.subAssetOf.addSubAsset(item.asset)
+                                
+                                oldItemIdx = oldParentItem.indexOfChild(item)
+                                oldParentItem.takeChild(oldItemIdx)
+                                newParentItem = self.getParentItem(item.asset.idNum)
+                                newItem = AssetTreeWidgetItem(item.asset, newParentItem)
+
+                                # Move children of old item to newItem
+                                newItem.assignChildren(item.takeChildren(), newItem)
+                                
+                                childrenIterator = QTreeWidgetItemIterator(newItem)
+                                while childrenIterator.value():
+                                    print(childrenIterator.value().asset.description)
+                                    self.currentAssetsTreeWidget.addItem(childrenIterator.value())
+                                    childrenIterator += 1
+                                
+                                self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=? AND Method='addSubAssetOf' AND ObjectBeingLinked='assets'",
+                                                                    (newParentAssetId, item.asset.idNum))
+                                self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo='assets' AND Method='addSubAsset' AND ObjectBeingLinked='assets' AND ObjectIdBeingLinked=?",
+                                                                    (newParentAssetId, item.asset.idNum))
+                            else:
+                                # Changing from no parent asset to a parent
+                                # asset.
+                                item.asset.addSubAssetOf(self.parent.dataConnection.assets[newParentAssetId])
+                                item.asset.subAssetOf.addSubAsset(item.asset)
+
+                                oldItemIdx = self.currentAssetsTreeWidget.indexOfTopLevelItem(item)
+                                self.currentAssetsTreeWidget.takeTopLevelItem(oldItemIdx)
+                                parentItem = self.getParentItem(item.asset.idNum)
+                                newItem = AssetTreeWidgetItem(item.asset, parentItem)
+                                self.currentAssetsTreeWidget.addItem(newItem)
+
+                                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(item.asset.idNum) + ", 'addSubAssetOf', 'assets', " + str(newParentAssetId) + ")")
+                                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(newParentAssetId) + ", 'addSubAsset', 'assets', " + str(item.asset.idNum) + ")")
+                                
                     self.parent.parent.dbConnection.commit()
                     self.refreshAssetTree()
 

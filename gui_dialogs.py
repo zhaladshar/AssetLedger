@@ -577,15 +577,19 @@ class AssetDialog(QDialog):
         self.hasChanges = False
         self.companyChanged = False
         self.assetTypeChanged = False
+        self.parentAssetChanged = False
 
         self.layout = QGridLayout()
         
         companyLbl = QLabel("Company:")
         descriptionLbl = QLabel("Description:")
         assetTypeLbl = QLabel("Asset Type:")
+        childOfLbl = QLabel("Child of:")
         dateAcquiredLbl = QLabel("Date Acquired:")
         dateInSvcLbl = QLabel("Date in Service:")
         usefulLifeLbl = QLabel("Useful Life:")
+        depMethodLbl = QLabel("Depreciation Method:")
+        salvageValueLbl = QLabel("Salvage Amount:")
         costLbl = QLabel("Cost:")
 
         self.companyBox = QComboBox()
@@ -595,10 +599,19 @@ class AssetDialog(QDialog):
         self.companyBox.addItems(companyList)
 
         self.assetTypeBox = QComboBox()
-        assetList = []
+        assetTypeList = []
         for assetType in parent.parent.dataConnection.assetTypes.values():
-            assetList.append(str("%4s" % assetType.idNum) + " - " + assetType.description)
-        self.assetTypeBox.addItems(assetList)
+            assetTypeList.append(str("%4s" % assetType.idNum) + " - " + assetType.description)
+        self.assetTypeBox.addItems(assetTypeList)
+
+        self.childOfAssetBox = QComboBox()
+        assetList = [""]
+        for assetKey in parent.parent.dataConnection.assets:
+            assetList.append(str("%4d - %s" % (parent.parent.dataConnection.assets[assetKey].idNum, parent.parent.dataConnection.assets[assetKey].description)))
+        self.childOfAssetBox.addItems(assetList)
+        
+        self.depMethodBox = QComboBox()
+        self.depMethodBox.addItems(constants.DEP_METHODS)
         
         if mode == "View":
             self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % asset.company.idNum) + " - " + asset.company.shortName))
@@ -606,15 +619,25 @@ class AssetDialog(QDialog):
             self.descriptionText = QLabel(asset.description)
             self.assetTypeBox.setCurrentIndex(self.assetTypeBox.findText(str("%4s" % asset.assetType.idNum) + " - " + asset.assetType.description))
             self.assetTypeBox.setEnabled(False)
+            if asset.subAssetOf == None:
+                subAssetOfText = ""
+            else:
+                subAssetOfText = "%4d - %s" % (asset.subAssetOf.idNum, asset.subAssetOf.description)
+            self.childOfAssetBox.setCurrentText(subAssetOfText)
+            self.childOfAssetBox.setEnabled(False)
             self.dateAcquiredText = QLabel(asset.acquireDate)
             self.dateInSvcText = QLabel(asset.inSvcDate)
             self.usefulLifeText = QLabel(str(asset.usefulLife))
+            self.depMethodBox.setCurrentIndex(self.depMethodBox.findText(asset.depMethod))
+            self.depMethodBox.setEnabled(False)
+            self.salvageValueText = QLabel(str(asset.salvageAmount))
             self.costText = QLabel(str(asset.cost()))
         else:
             self.descriptionText = QLineEdit()
             self.dateAcquiredText = QLineEdit()
             self.dateInSvcText = QLineEdit()
             self.usefulLifeText = QLineEdit()
+            self.salvageValueText = QLineEdit()
             self.costText = QLabel()
 
         #########
@@ -631,14 +654,20 @@ class AssetDialog(QDialog):
         self.layout.addWidget(self.descriptionText, 1, 1)
         self.layout.addWidget(assetTypeLbl, 2, 0)
         self.layout.addWidget(self.assetTypeBox, 2, 1)
-        self.layout.addWidget(dateAcquiredLbl, 3, 0)
-        self.layout.addWidget(self.dateAcquiredText, 3, 1)
-        self.layout.addWidget(dateInSvcLbl, 4, 0)
-        self.layout.addWidget(self.dateInSvcText, 4, 1)
-        self.layout.addWidget(usefulLifeLbl, 5, 0)
-        self.layout.addWidget(self.usefulLifeText, 5, 1)
-        self.layout.addWidget(costLbl, 6, 0)
-        self.layout.addWidget(self.costText, 6, 1)
+        self.layout.addWidget(childOfLbl, 3, 0)
+        self.layout.addWidget(self.childOfAssetBox, 3, 1)
+        self.layout.addWidget(dateAcquiredLbl, 4, 0)
+        self.layout.addWidget(self.dateAcquiredText, 4, 1)
+        self.layout.addWidget(dateInSvcLbl, 5, 0)
+        self.layout.addWidget(self.dateInSvcText, 5, 1)
+        self.layout.addWidget(usefulLifeLbl, 6, 0)
+        self.layout.addWidget(self.usefulLifeText, 6, 1)
+        self.layout.addWidget(depMethodLbl, 7, 0)
+        self.layout.addWidget(self.depMethodBox, 7, 1)
+        self.layout.addWidget(salvageValueLbl, 8, 0)
+        self.layout.addWidget(self.salvageValueText, 8, 1)
+        self.layout.addWidget(costLbl, 9, 0)
+        self.layout.addWidget(self.costText, 9, 1)
         
         buttonLayout = QHBoxLayout()
         
@@ -655,7 +684,7 @@ class AssetDialog(QDialog):
         cancelButton.clicked.connect(self.reject)
         buttonLayout.addWidget(cancelButton)
         
-        self.layout.addLayout(buttonLayout, 7, 0, 1, 2)
+        self.layout.addLayout(buttonLayout, 10, 0, 1, 2)
         self.setLayout(self.layout)
         
     def changed(self):
@@ -668,6 +697,10 @@ class AssetDialog(QDialog):
     def assetTypeChange(self):
         self.assetTypeChanged = True
         self.hasChanges = True
+
+    def parentAssetChange(self):
+        self.parentAssetChanged = True
+        self.hasChanges = True
         
     def makeLabelsEditable(self):
         self.companyBox.setEnabled(True)
@@ -676,17 +709,24 @@ class AssetDialog(QDialog):
         self.descriptionText_edit.textEdited.connect(self.changed)
         self.assetTypeBox.setEnabled(True)
         self.assetTypeBox.currentIndexChanged.connect(self.assetTypeChange)
+        self.childOfAssetBox.setEnabled(True)
+        self.childOfAssetBox.currentIndexChanged.connect(self.parentAssetChange)
         self.dateAcquiredText_edit = QLineEdit(self.dateAcquiredText.text())
         self.dateAcquiredText_edit.textEdited.connect(self.changed)
         self.dateInSvcText_edit = QLineEdit(self.dateInSvcText.text())
         self.dateInSvcText_edit.textEdited.connect(self.changed)
         self.usefulLifeText_edit = QLineEdit(self.usefulLifeText.text())
         self.usefulLifeText_edit.textEdited.connect(self.changed)
+        self.depMethodBox.setEnabled(True)
+        self.depMethodBox.currentIndexChanged.connect(self.changed)
+        self.salvageValueText_edit = QLineEdit(self.salvageValueText.text())
+        self.salvageValueText_edit.textEdited.connect(self.changed)
         
         self.layout.addWidget(self.descriptionText_edit, 1, 1)
-        self.layout.addWidget(self.dateAcquiredText_edit, 3, 1)
-        self.layout.addWidget(self.dateInSvcText_edit, 4, 1)
-        self.layout.addWidget(self.usefulLifeText_edit, 5, 1)
+        self.layout.addWidget(self.dateAcquiredText_edit, 4, 1)
+        self.layout.addWidget(self.dateInSvcText_edit, 5, 1)
+        self.layout.addWidget(self.usefulLifeText_edit, 6, 1)
+        self.layout.addWidget(self.salvageValueText_edit, 8, 1)
 
 class InvoicePaymentDialog(QDialog):
     def __init__(self, parent=None, invoice=None):
