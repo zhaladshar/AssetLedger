@@ -352,15 +352,11 @@ class Company:
         self.active = active
         self.proposals = {}
         self.projects = {}
-        self.assets = {}
+        self.assets = AssetsDict()
         self.invoices = {}
 
     def assetsAmount(self):
-        amount = 0
-        for key in self.assets:
-            pass
-
-        return amount
+        return self.assets.currentCost()
 
     def CIPAmount(self):
         CIP = 0

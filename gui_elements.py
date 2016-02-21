@@ -2490,6 +2490,9 @@ class AssetWidget(QWidget):
         
         self.setLayout(mainLayout)
 
+    def printdata(self):
+        idx = self.currentAssetsTreeWidget.indexFromItem(self.currentAssetsTreeWidget.currentItem())
+
     def nextIdNum(self, name):
         self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
         largestId = self.parent.parent.dbCursor.fetchone()
@@ -2884,11 +2887,16 @@ class GLWidget(QWidget):
             
     def deleteGLAccount(self):
         idxToDelete = self.chartOfAccountsTreeWidget.indexFromItem(self.chartOfAccountsTreeWidget.currentItem())
+        print(idxToDelete)
         item = self.chartOfAccountsTreeWidget.takeTopLevelItem(idxToDelete)
+        print("")
         if item:
+            print(item)
             self.parent.parent.dbCursor.execute("DELETE FROM GLAccounts WHERE idNum=?", (item.glAccountItem.idNum,))
+            print("sql")
             self.parent.parent.dbConnection.commit()
             self.glAccountsDict.pop(item.glAccountItem.idNum)
+            print("pop")
 
 class GLView(QWidget):
     def __init__(self, dataConnection, parent):
