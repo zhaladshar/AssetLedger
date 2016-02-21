@@ -2376,9 +2376,7 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
             return 1 + self.depth(asset.subAssetOf)
 
     def assignChildren(self, listOfChildren, parent):
-        print(listOfChildren)
         for item in listOfChildren:
-            print(item.asset.description)
             newItem = AssetTreeWidgetItem(item.asset, parent)
 
             if item.childCount() > 0:
@@ -2422,13 +2420,28 @@ class AssetTreeWidget(QTreeWidget):
         for item in listOfItems:
             self.addItem(item)
 
+    def refreshChildren(self, parentItem):
+        for idx in range(parentItem.childCount()):
+            parentItem.child(idx).refreshData()
+
+            if parentItem.child(idx).childCount() > 0:
+                self.refreshChildren(parentItem.child(idx))
+
+            if parentItem.child(idx).asset.inSvc() != True:
+                self.disposeAsset.emit(parentItem.child(idx).asset.idNum)
+
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
             try:
                 self.topLevelItem(idx).refreshData()
-                
+
+                if self.topLevelItem(idx).childCount() > 0:
+                    self.refreshChildren(self.topLevelItem(idx))
+                    
                 if self.topLevelItem(idx).asset.inSvc() != True:
-                    self.disposeAsset.emit(idx)
+                    self.disposeAsset.emit(self.topLevelItem(idx).asset.idNum)
+
+
             except:
                 pass
             
@@ -2523,8 +2536,14 @@ class AssetWidget(QWidget):
         else:
             self.currentAssetsTreeWidget.setCurrentItem(self.currentAssetsTreeWidget.invisibleRootItem())
 
-    def moveCurrentAssetToDisposed(self, idx):
-        item = self.currentAssetsTreeWidget.takeTopLevelItem(idx)
+    def moveCurrentAssetToDisposed(self, assetId):
+        # Need to get the parent item whose child is an asset given by assetId.
+        # Then, need to cycle through the children of that parent and take the child whose
+        # asset is assetId.  Then need to reassign it to disposedAssetsTreeWidget.
+        parentItem = self.getParentItem(assetId)
+        for idx in range(parentItem.childCount()):
+            if parentItem.child(idx).asset.idNum == assetId:
+                item = parentItem.takeChild(idx)
         newItem = AssetTreeWidgetItem(item.asset, self.disposedAssetsTreeWidget)
         self.disposedAssetsTreeWidget.addItem(newItem)
     
@@ -2538,7 +2557,17 @@ class AssetWidget(QWidget):
             
             iterator += 1
 
+    def disposeChildAssets(self, parentItem, amt, date):
+        for idx in range(parentItem.childCount()):
+            self.parent.parent.dbCursor.execute("UPDATE Assets SET DisposeDate=?, DisposeAmount=? WHERE idNum=?", (date, amt, parentItem.child(idx).asset.idNum))
+            parentItem.child(idx).asset.disposeDate = date
+            parentItem.child(idx).asset.disposeAmount = amt
+
+            if parentItem.child(idx).childCount() > 0:
+                self.disposeChildAssets(parentItem.child(idx), amt, date)
+
     def disposeAsset(self):
+        # Need to dispose not only given item, but also any child items it may have.
         idxToDispose = self.currentAssetsTreeWidget.indexFromItem(self.currentAssetsTreeWidget.currentItem())
         item = self.currentAssetsTreeWidget.itemFromIndex(idxToDispose)
 
@@ -2546,10 +2575,13 @@ class AssetWidget(QWidget):
             dialog = DisposeAssetDialog(self)
             if dialog.exec_():
                 self.parent.parent.dbCursor.execute("UPDATE Assets SET DisposeDate=?, DisposeAmount=? WHERE idNum=?", (dialog.dispDateTxt.text(), float(dialog.dispAmtTxt.text()), item.asset.idNum))
-                self.parent.parent.dbConnection.commit()
                 item.asset.disposeDate = dialog.dispDateTxt.text()
                 item.asset.disposeAmount = float(dialog.dispAmtTxt.text())
-                
+
+                if item.childCount() > 0:
+                    self.disposeChildAssets(item, float(dialog.dispAmtTxt.text()), dialog.dispDateTxt.text())
+
+                self.parent.parent.dbConnection.commit()
                 self.refreshAssetTree()
                 self.updateAssetsCount()
 
