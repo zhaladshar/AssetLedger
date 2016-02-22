@@ -1003,6 +1003,7 @@ class GLAccountDialog(QDialog):
     def __init__(self, mode, parent=None, glAccount=None):
         super().__init__(parent)
         self.hasChanges = False
+        self.accountGroupChanged = False
 
         self.layout = QGridLayout()
         
@@ -1024,6 +1025,13 @@ class GLAccountDialog(QDialog):
             self.acctGrpChk = QCheckBox()
             if glAccount.placeHolder == True:
                 self.acctGrpChk.setCheckState(Qt.Checked)
+                self.listOfAcctGrpsLbl.hide()
+                self.acctGrpsBox.hide()
+            else:
+                self.acctGrpChk.setCheckState(Qt.Unchecked)
+                self.acctGrpsBox.setCurrentIndex(self.acctGrpsBox.findText(str("%4d - %s" % (glAccount.childOf.idNum, glAccount.childOf.description))))
+            self.acctGrpsBox.setEnabled(False)
+            self.acctGrpChk.setEnabled(False)
         else:
             self.accountNumText = QLineEdit()
             self.descriptionText = QLineEdit()
@@ -1061,8 +1069,23 @@ class GLAccountDialog(QDialog):
         self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
         self.setLayout(self.layout)
 
+    def changed(self):
+        self.hasChanges = True
+
+    def accountGroupChange(self):
+        self.hasChanges = True
+        self.accountGroupChanged = True
+
     def makeLabelsEditable(self):
-        pass
+        self.accountNumText_edit = QLineEdit(self.accountNumText.text())
+        self.accountNumText_edit.textEdited.connect(self.changed)
+        self.descriptionText_edit = QLineEdit(self.descriptionText.text())
+        self.descriptionText_edit.textEdited.connect(self.changed)
+        self.acctGrpsBox.setEnabled(True)
+        self.acctGrpsBox.currentIndexChanged.connect(self.accountGroupChange)
+
+        self.layout.addWidget(self.accountNumText_edit, 0, 1)
+        self.layout.addWidget(self.descriptionText_edit, 1, 1)
 
     def showHideAcctGrpBox(self, state):
         if state == Qt.Checked:

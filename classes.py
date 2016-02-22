@@ -483,6 +483,9 @@ class GLAccount:
     def addChild(self, child):
         self.parentOf[child.idNum] = child
 
+    def removeChild(self, child):
+        self.parentOf.pop(child.idNum)
+
     def addParent(self, parent):
         self.childOf = parent
         

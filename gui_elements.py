@@ -2794,21 +2794,22 @@ class GLTreeWidgetItem(QTreeWidgetItem):
         self.glAccount = glAccount
         self.main = QWidget()
         
-        idLabel = QLabel(str(self.glAccount.idNum))
+        self.idLabel = QLabel(str(self.glAccount.idNum))
         self.descLabel = QLabel(self.glAccount.description)
 
         if glAccount.placeHolder == True:
-            idLabel.setStyleSheet(" QLabel { font-weight: bold } ")
+            self.idLabel.setStyleSheet(" QLabel { font-weight: bold } ")
             self.descLabel.setStyleSheet(" QLabel { font-weight: bold } ")
         
         layout = QHBoxLayout()
-        layout.addWidget(idLabel)
+        layout.addWidget(self.idLabel)
         layout.addWidget(self.descLabel)
         
         self.main.setLayout(layout)
 
     def refreshData(self):
-        self.descLabel.setText(self.asset.description)
+        self.idLabel.setText(str(self.glAccount.idNum))
+        self.descLabel.setText(self.glAccount.description)
         
 class GLTreeWidget(QTreeWidget):
     def __init__(self, glAccountsDict):
@@ -2860,6 +2861,7 @@ class GLWidget(QWidget):
 
         buttonWidget = StandardButtonWidget()
         buttonWidget.newButton.clicked.connect(self.showNewGLAccountDialog)
+        buttonWidget.viewButton.clicked.connect(self.showViewGLAccountDialog)
         buttonWidget.deleteButton.clicked.connect(self.deleteGLAccount)
         
         subLayout.addLayout(treeWidgetsLayout)
@@ -2895,8 +2897,9 @@ class GLWidget(QWidget):
             newGLAccount = GLAccount(dialog.descriptionText.text(),
                                      placeHolder,
                                      int(dialog.accountNumText.text()))
-            newGLAccount.addParent(self.glAccountsDict[parentAccount])
-            self.glAccountsDict[parentAccount].addChild(newGLAccount)
+            if placeHolder == 0:
+                newGLAccount.addParent(self.glAccountsDict[parentAccount])
+                self.glAccountsDict[parentAccount].addChild(newGLAccount)
             
             # Add to database and corporate structure. If we are dealing
             # with a "live" GL account, we need to add Xref records to
@@ -2916,19 +2919,41 @@ class GLWidget(QWidget):
                 item = GLTreeWidgetItem(self.glAccountsDict[newGLAccount.idNum], parentItem)
             
             self.chartOfAccountsTreeWidget.addItem(item)
+
+    def showViewGLAccountDialog(self):
+        idxToShow = self.chartOfAccountsTreeWidget.indexFromItem(self.chartOfAccountsTreeWidget.currentItem())
+        item = self.chartOfAccountsTreeWidget.itemFromIndex(idxToShow)
+
+        if item:
+            dialog = GLAccountDialog("View", self, item.glAccount)
+            if dialog.exec_():
+                if dialog.hasChanges == True:
+                    self.parent.parent.dbCursor.execute("UPDATE GLAccounts SET idNum=?, Description=? WHERE idNum=?", (dialog.accountNumText_edit.text(), dialog.descriptionText_edit.text(), item.glAccount.idNum))
+                    item.glAccount.idNum = int(dialog.accountNumText_edit.text())
+                    item.glAccount.description = dialog.descriptionText_edit.text()
+
+                    if dialog.accountGroupChanged == True:
+                        newParent = self.stripAllButNumbers(dialog.acctGrpsBox.currentText())
+                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo='glAccounts', ObjectIdBeingLinked=?, Method='addChild', ObjectBeingLinked='glAccounts'",
+                                                            (newParent, item.glAccount.idNum))
+                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectBeingLinked='glAccounts', Method='addParent', ObjectToAddLinkTo='glAccounts', ObjectIdToAddLinkTo=?",
+                                                            (newParent, item.glAccount.idNum))
+                        item.glAccount.childOf.removeChild(item.glAccount)
+                        item.glAccount.addParent(self.glAccountsDict[newParent])
+                        item.glAccount.childOf.addChild(item.glAccount)
+
+                    self.parent.parent.dbConnection.commit()
+                    self.chartOfAccountsTreeWidget.refreshData()
+
             
     def deleteGLAccount(self):
-        idxToDelete = self.chartOfAccountsTreeWidget.indexFromItem(self.chartOfAccountsTreeWidget.currentItem())
-        print(idxToDelete)
+        idxToDelete = self.chartOfAccountsTreeWidget.indexOfTopLevelItem(self.chartOfAccountsTreeWidget.currentItem())
         item = self.chartOfAccountsTreeWidget.takeTopLevelItem(idxToDelete)
-        print("")
+        
         if item:
-            print(item)
-            self.parent.parent.dbCursor.execute("DELETE FROM GLAccounts WHERE idNum=?", (item.glAccountItem.idNum,))
-            print("sql")
+            self.parent.parent.dbCursor.execute("DELETE FROM GLAccounts WHERE idNum=?", (item.glAccount.idNum,))
             self.parent.parent.dbConnection.commit()
-            self.glAccountsDict.pop(item.glAccountItem.idNum)
-            print("pop")
+            self.glAccountsDict.pop(item.glAccount.idNum)
 
 class GLView(QWidget):
     def __init__(self, dataConnection, parent):
