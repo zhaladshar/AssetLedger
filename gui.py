@@ -99,6 +99,10 @@ class Window(QMainWindow):
             for each in self.dbCursor:
                 self.data.costs[each[0]] = Cost(each[2], each[1], each[0])
 
+            self.dbCursor.execute("SELECT * FROM GLPostings")
+            for each in self.dbCursor:
+                self.data.costs[each[0]] = GLPosting(each[1], each[2], each[3], each[0])
+
             self.dbCursor.execute("SELECT * FROM GLAccounts")
             for each in self.dbCursor:
                 if each[2] == 0:

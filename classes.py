@@ -11,6 +11,13 @@ class GLAccountsDict(dict):
                 tempDict[glKey] = self[glKey]
         return tempDict
 
+    def accounts(self):
+        tempDict = {}
+        for glKey in self:
+            if self[glKey].placeHolder != True:
+                tempDict[glKey] = self[glKey]
+        return tempDict
+
 class InvoicesDict(dict):
     def __init__(self):
         super().__init__()
@@ -479,6 +486,7 @@ class GLAccount:
             self.placeHolder = True
         self.childOf = None
         self.parentOf = {}
+        self.postings = {}
 
     def addChild(self, child):
         self.parentOf[child.idNum] = child
@@ -488,6 +496,26 @@ class GLAccount:
 
     def addParent(self, parent):
         self.childOf = parent
+
+    def addPosting(self, posting):
+        self.postings[posting.idNum] = posting
+
+    def balance(self):
+        balance = 0
+        for postingKey in self.postings:
+            balance += self.postings[postingKey].amount
+        return balance
+
+class GLPosting:
+    def __init__(self, date, amount, description, idNum):
+        self.idNum = idNum
+        self.date = date
+        self.amount = amount
+        self.description = description
+        self.glAccount = None
+
+    def addGLAccount(self, glAccount):
+        self.glAccount = glAccount
         
 class CorporateStructure:
     def __init__(self):
@@ -503,3 +531,4 @@ class CorporateStructure:
         self.assetTypes = {}
         self.projects = ProjectsDict()
         self.glAccounts = GLAccountsDict()
+        self.glPostings = {}
