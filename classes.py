@@ -323,6 +323,7 @@ class Vendor:
         self.phone = phone
         self.proposals = ProposalsDict()
         self.invoices = InvoicesDict()
+        self.glAccount = None
 
     def balance(self):
         amountPaid = 0.0
@@ -350,6 +351,9 @@ class Vendor:
 
     def removeProposal(self, proposal):
         self.proposals.pop(proposal.idNum)
+
+    def addGLAccount(self, glAccount):
+        self.glAccount = glAccount
 
 class Company:
     def __init__(self, name, shortName, active, idNum):
@@ -507,11 +511,13 @@ class GLAccount:
         return balance
 
 class GLPosting:
-    def __init__(self, date, amount, description, idNum):
+    def __init__(self, date, amount, debitcredit, description, ref, idNum):
         self.idNum = idNum
         self.date = date
         self.amount = amount
+        self.debitcredit = debitcredit
         self.description = description
+        self.reference = ref
         self.glAccount = None
 
     def addGLAccount(self, glAccount):

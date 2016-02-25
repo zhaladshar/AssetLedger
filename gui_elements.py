@@ -612,11 +612,15 @@ class VendorWidget(QWidget):
 
         self.setLayout(mainLayout)
 
-    def printOut(self):
-        print(self.vendorTreeWidget.indexOfTopLevelItem(self.vendorTreeWidget.currentItem()))
+    def stripAllButNumbers(self, string):
+        if string == "":
+            return None
+        else:
+            regex = re.match(r"\s*([0-9]+).*", string)
+            return int(regex.groups()[0])
 
     def showNewVendorDialog(self):
-        dialog = VendorDialog("New", self)
+        dialog = VendorDialog("New", self.parent.dataConnection.glAccounts, self)
         if dialog.exec_():
             # Find current largest id and increment by one
             self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'Vendors'")
@@ -625,6 +629,7 @@ class VendorWidget(QWidget):
                 nextId = largestId[0] + 1
             else:
                 nextId = 1
+            GLNumber = self.stripAllButNumbers(dialog.glAccountsBox.currentText())
 
             # Create new vendor and add it to database and company data
             newVendor = Vendor(dialog.nameText.text(),
@@ -634,9 +639,11 @@ class VendorWidget(QWidget):
                                dialog.zipText.text(),
                                dialog.phoneText.text(),
                                nextId)
+            newVendor.addGLAccount(self.parent.dataConnection.glAccounts[GLNumber])
             self.vendorsDict[newVendor.idNum] = newVendor
             self.parent.parent.dbCursor.execute("INSERT INTO Vendors (Name, Address, City, State, ZIP, Phone) VALUES (?, ?, ?, ?, ?, ?)",
                                   (newVendor.name, newVendor.address, newVendor.city, newVendor.state, newVendor.zip, newVendor.phone))
+            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)", ("vendors", newVendor.idNum, "addGLAccount", "glAccounts", GLNumber))
             self.parent.parent.dbConnection.commit()
 
             # Make vendor into a VendorTreeWidgetItem and add it to VendorTree
@@ -650,7 +657,7 @@ class VendorWidget(QWidget):
 
         # Only display dialog if an item in the widget tree has been selected
         if item:
-            dialog = VendorDialog("View", self, item.vendor)
+            dialog = VendorDialog("View", self.parent.dataConnection.glAccounts, self, item.vendor)
             if dialog.exec_():
                 if dialog.hasChanges == True:
                     # Commit changes to database and to vendor entry
@@ -663,7 +670,6 @@ class VendorWidget(QWidget):
                           "' WHERE idNum = " + str(item.vendor.idNum))
 
                     self.parent.parent.dbCursor.execute(sql)
-                    self.parent.parent.dbConnection.commit()
 
                     self.vendorsDict[item.vendor.idNum].name = dialog.nameText_edit.text()
                     self.vendorsDict[item.vendor.idNum].address = dialog.addressText_edit.text()
@@ -672,6 +678,14 @@ class VendorWidget(QWidget):
                     self.vendorsDict[item.vendor.idNum].zip = dialog.zipText_edit.text()
                     self.vendorsDict[item.vendor.idNum].phone = dialog.phoneText_edit.text()
 
+                    if dialog.glAccountChanged == True:
+                        newGLAccountNum = self.stripAllButNumbers(dialog.glAccountsBox.currentText())
+                        oldGLAccountNum = item.vendor.glAccount.idNum
+                        item.vendor.addGLAccount(self.parent.dataConnection.glAccounts[newGLAccountNum])
+
+                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='glAccounts'",
+                                                            (newGLAccountNum, oldGLAccountNum))
+                    self.parent.parent.dbConnection.commit()
                     self.vendorTreeWidget.refreshData()
 
     def deleteSelectedVendorFromList(self):

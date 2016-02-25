@@ -6,10 +6,11 @@ import gui_elements
 import classes
 
 class VendorDialog(QDialog):
-    def __init__(self, mode, parent=None, vendor=None):
+    def __init__(self, mode, GLDict, parent=None, vendor=None):
         super().__init__(parent)
         self.vendor = vendor
         self.hasChanges = False
+        self.glAccountChanged = False
 
         self.layout = QGridLayout()
 
@@ -19,6 +20,14 @@ class VendorDialog(QDialog):
         stateLbl = QLabel("State:")
         zipLbl = QLabel("ZIP:")
         phoneLbl = QLabel("Phone:")
+        glAccountLbl = QLabel("GL Account:")
+        
+        glAccountsList = []
+        glAccountsDict = GLDict.accounts()
+        for glKey in glAccountsDict:
+            glAccountsList.append(str("%4d - %s" % (glAccountsDict[glKey].idNum, glAccountsDict[glKey].description)))
+        self.glAccountsBox = QComboBox()
+        self.glAccountsBox.addItems(glAccountsList)
 
         if mode == "View":
             self.nameText = QLabel(self.vendor.name)
@@ -27,6 +36,8 @@ class VendorDialog(QDialog):
             self.stateText = QLabel(self.vendor.state)
             self.zipText = QLabel(self.vendor.zip)
             self.phoneText = QLabel(self.vendor.phone)
+            self.glAccountsBox.setCurrentIndex(self.glAccountsBox.findText(str("%4d - %s" % (vendor.glAccount.idNum, vendor.glAccount.description))))
+            self.glAccountsBox.setEnabled(False)
         else:
             self.nameText = QLineEdit()
             self.addressText = QLineEdit()
@@ -47,21 +58,23 @@ class VendorDialog(QDialog):
         self.layout.addWidget(self.zipText,4, 1)
         self.layout.addWidget(phoneLbl, 5, 0)
         self.layout.addWidget(self.phoneText, 5, 1)
-        nextRow = 6
-
+        self.layout.addWidget(glAccountLbl, 6, 0)
+        self.layout.addWidget(self.glAccountsBox, 6, 1)
+        nextRow = 7
+        
         if mode == "View":
             invoicesWidget = gui_elements.InvoiceTreeWidget(self.vendor.invoices)
             invoicesWidget.setIndentation(0)
             invoicesWidget.setHeaderHidden(True)
             self.layout.addWidget(invoicesWidget, nextRow, 0, 1, 2)
             nextRow += 1
-
-            proposalsWidget = gui_elements.ProposalTreeWidget(self.vendor.proposals, True)
+            
+            proposalsWidget = gui_elements.ProposalTreeWidget(self.vendor.proposals)
             proposalsWidget.setIndentation(0)
             proposalsWidget.setHeaderHidden(True)
             self.layout.addWidget(proposalsWidget, nextRow, 0, 1, 2)
             nextRow += 1
-
+        
         buttonLayout = QHBoxLayout()
         saveButton = QPushButton("Save")
         saveButton.clicked.connect(self.accept)
@@ -79,6 +92,10 @@ class VendorDialog(QDialog):
         self.layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
 
+    def glAccountChange(self):
+        self.glAccountChanged = True
+        self.hasChanges = True
+
     def makeLabelsEditable(self):
         self.nameText_edit = QLineEdit(self.nameText.text())
         self.nameText_edit.textEdited.connect(self.changed)
@@ -92,19 +109,18 @@ class VendorDialog(QDialog):
         self.zipText_edit.textEdited.connect(self.changed)
         self.phoneText_edit = QLineEdit(self.phoneText.text())
         self.phoneText_edit.textEdited.connect(self.changed)
-
+        self.glAccountsBox.setEnabled(True)
+        self.glAccountsBox.currentIndexChanged.connect(self.glAccountChange)
+        
         self.layout.addWidget(self.nameText_edit, 0, 1)
         self.layout.addWidget(self.addressText_edit, 1, 1)
         self.layout.addWidget(self.cityText_edit, 2, 1)
         self.layout.addWidget(self.stateText_edit, 3, 1)
         self.layout.addWidget(self.zipText_edit, 4, 1)
         self.layout.addWidget(self.phoneText_edit, 5, 1)
-
+        
     def changed(self):
         self.hasChanges = True
-
-    def accept(self):
-        QDialog.accept(self)
 
 class InvoiceDialog(QDialog):
     def __init__(self, mode, parent=None, invoice=None):
