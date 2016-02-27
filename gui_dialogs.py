@@ -455,10 +455,11 @@ class ProposalDialog(QDialog):
         self.assetProjSelector.clear()
         
 class ProjectDialog(QDialog):
-    def __init__(self, mode, parent=None, project=None):
+    def __init__(self, mode, GLDict, parent=None, project=None):
         super().__init__(parent)
         self.hasChanges = False
         self.companyChanged = False
+        self.glAccountChanged = False
 
         self.layout = QGridLayout()
         
@@ -466,6 +467,7 @@ class ProjectDialog(QDialog):
         descriptionLbl = QLabel("Description:")
         startDateLbl = QLabel("Start Date:")
         self.endDateLbl = QLabel("End Date:")
+        glAccountLbl = QLabel("GL Account:")
         
         self.companyBox = QComboBox()
         companyList = []
@@ -473,12 +475,21 @@ class ProjectDialog(QDialog):
             companyList.append(str("%4s" % company.idNum) + " - " + company.shortName)
         self.companyBox.addItems(companyList)
         
+        glAccountsList = []
+        glAccountsDict = GLDict.accounts()
+        for glKey in glAccountsDict:
+            glAccountsList.append(str("%4d - %s" % (glAccountsDict[glKey].idNum, glAccountsDict[glKey].description)))
+        self.glAccountsBox = QComboBox()
+        self.glAccountsBox.addItems(glAccountsList)
+        
         if mode == "View":
             self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % project.company.idNum) + " - " + project.company.shortName))
             self.companyBox.setEnabled(False)
             self.descriptionText = QLabel(project.description)
             self.startDateText = QLabel(project.dateStart)
             self.endDateText = QLineEdit()
+            self.glAccountsBox.setCurrentIndex(self.glAccountsBox.findText(str("%4d - %s" % (project.glAccount.idNum, project.glAccount.description))))
+            self.glAccountsBox.setEnabled(False)
         else:
             self.descriptionText = QLineEdit()
             self.startDateText = QLineEdit()
@@ -492,6 +503,8 @@ class ProjectDialog(QDialog):
         self.layout.addWidget(self.startDateText, 2, 1)
         self.layout.addWidget(self.endDateLbl, 3, 0)
         self.layout.addWidget(self.endDateText, 3, 1)
+        self.layout.addWidget(glAccountLbl, 4, 0)
+        self.layout.addWidget(self.glAccountsBox, 4, 1)
         
         self.endDateLbl.hide()
         self.endDateText.hide()
@@ -511,7 +524,7 @@ class ProjectDialog(QDialog):
         cancelButton.clicked.connect(self.reject)
         buttonLayout.addWidget(cancelButton)
         
-        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        self.layout.addLayout(buttonLayout, 5, 0, 1, 2)
         self.setLayout(self.layout)
         
     def changed(self):
@@ -521,6 +534,10 @@ class ProjectDialog(QDialog):
         self.companyChanged = True
         self.hasChanges = True
 
+    def glAccountChange(self):
+        self.glAccountChanged = True
+        self.hasChanges = True
+
     def makeLabelsEditable(self):
         self.companyBox.setEnabled(True)
         self.companyBox.currentIndexChanged.connect(self.companyChange)
@@ -528,6 +545,8 @@ class ProjectDialog(QDialog):
         self.descriptionText_edit.textEdited.connect(self.changed)
         self.startDateText_edit = QLineEdit(self.startDateText.text())
         self.startDateText_edit.textEdited.connect(self.changed)
+        self.glAccountsBox.setEnabled(True)
+        self.glAccountsBox.currentIndexChanged.connect(self.glAccountChange)
 
         self.endDateText.textEdited.connect(self.changed)
 

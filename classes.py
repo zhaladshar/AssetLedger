@@ -188,6 +188,7 @@ class Project:
         self.notes = notes
         self.invoices = {}
         self.proposals = ProposalsDict()
+        self.glAccount = None
         self.company = None
         self.becameAsset = None
 
@@ -206,6 +207,9 @@ class Project:
     def removeProposal(self, proposal):
         self.proposals.pop(proposal.idNum)
 
+    def addGLAccount(self, glAccount):
+        self.glAccount = glAccount
+        
     def addCompany(self, company):
         self.company = company
 

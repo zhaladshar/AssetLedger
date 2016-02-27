@@ -683,8 +683,8 @@ class VendorWidget(QWidget):
                         oldGLAccountNum = item.vendor.glAccount.idNum
                         item.vendor.addGLAccount(self.parent.dataConnection.glAccounts[newGLAccountNum])
 
-                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='glAccounts'",
-                                                            (newGLAccountNum, oldGLAccountNum))
+                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='vendors' AND ObjectIdBeingLinked=? AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='glAccounts'",
+                                                            (newGLAccountNum, oldGLAccountNum, item.vendor.idNum))
                     self.parent.parent.dbConnection.commit()
                     self.vendorTreeWidget.refreshData()
 
@@ -705,6 +705,8 @@ class VendorWidget(QWidget):
                 # Delete item from database and update the vendors dictionary
                 self.vendorTreeWidget.takeTopLevelItem(idxToDelete)
                 self.parent.parent.dbCursor.execute("DELETE FROM Vendors WHERE idNum=?", (item.vendor.idNum,))
+                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=?", (item.vendor.idNum,))
+                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='vendors' AND ObjectIdBeingLinked=?", (item.vendor.idNum,))
                 self.parent.parent.dbConnection.commit()
                 self.vendorsDict.pop(item.vendor.idNum)
                 self.updateVendorCount()
@@ -2012,16 +2014,18 @@ class ProjectWidget(QWidget):
         self.parent.parent.dbCursor.execute(sql)
 
     def showNewProjectDialog(self):
-        dialog = ProjectDialog("New", self)
+        dialog = ProjectDialog("New", self.parent.dataConnection.glAccounts, self)
         if dialog.exec_():
             # Find current largest id and increment by one
             nextId = self.nextIdNum("Projects")
+            glAccountNum = self.stripAllButNumbers(dialog.glAccountsBox.currentText())
             
             # Create project and add to database
             newProject = Project(dialog.descriptionText.text(),
                                  dialog.startDateText.text(),
                                  "",
                                  nextId)
+            newProject.addGLAccount(self.parent.dataConnection.glAccounts[glAccountNum])
             companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
             newProject.addCompany(self.parent.dataConnection.companies[companyId])
             self.parent.dataConnection.companies[companyId].addProject(newProject)
@@ -2029,7 +2033,8 @@ class ProjectWidget(QWidget):
 
             self.insertIntoDatabase("Projects", "(Description, DateStart)", "('" + newProject.description + "', '" + newProject.dateStart + "')")
             self.insertIntoDatabase("Xref", "", "('projects', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
-            self.insertIntoDatabase("Xref", "", "('companies', " + str(companyId) + ", 'addProject', 'projects', " + str(nextId) + ")")            
+            self.insertIntoDatabase("Xref", "", "('companies', " + str(companyId) + ", 'addProject', 'projects', " + str(nextId) + ")")
+            self.insertIntoDatabase("Xref", "", "('projects', " + str(nextId) + ", 'addGLAccount', 'glAccounts', " + str(glAccountNum) + ")")
             
             self.parent.parent.dbConnection.commit()
             
@@ -2053,7 +2058,7 @@ class ProjectWidget(QWidget):
                 item = self.completedProjectsTreeWidget.itemFromIndex(idxToShow)
 
         if item:
-            dialog = ProjectDialog("View", self, item.project)
+            dialog = ProjectDialog("View", self.parent.dataConnection.glAccounts, self, item.project)
             
             dialog.setWindowTitle("View Project")
             if dialog.exec_():
@@ -2086,15 +2091,22 @@ class ProjectWidget(QWidget):
                         item.project.addCompany(self.parent.dataConnection.companies[newCompanyId])
                         self.parent.dataConnection.companies[newCompanyId].addProject(item.project)
 
-                    self.parent.parent.dbConnection.commit()
+                    if dialog.glAccountChanged == True:
+                        oldGLAccountNum = item.project.glAccount.idNum
+                        newGLAccountNum = self.stripAllButNumbers(dialog.glAccountsBox.currentText())
 
+                        item.project.addGLAccount(self.parent.dataConnection.glAccounts[newGLAccountNum])
+                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='projects' AND ObjectIdToAddLinkTo=? AND Method='addGLAccount' AND ObjectIdBeingLinked=?",
+                                                            (newGLAccountNum, item.project.idNum, oldGLAccountNum))
+
+                    self.parent.parent.dbConnection.commit()
+                    
                     item.project.description = dialog.descriptionText_edit.text()
                     item.project.dateStart = dialog.startDateText_edit.text()
                     item.project.dateEnd = dialog.endDateText.text()
-
+                    
                     self.openProjectsTreeWidget.refreshData()
-                    self.closedProjectsTreeWidget.refreshData()
-
+                    
     def deleteSelectedProjectFromList(self):
         # Check to see if the item to delete is in the open project tree widget
         idxToDelete = self.openProjectsTreeWidget.indexOfTopLevelItem(self.openProjectsTreeWidget.currentItem())
@@ -2102,7 +2114,9 @@ class ProjectWidget(QWidget):
         if idxToDelete >= 0:
             item = self.openProjectsTreeWidget.takeTopLevelItem(idxToDelete)
         else:
-            idxToDelete = self.closedProjectsTreeWidget.indexOfTopLevelItem(self.closedProjectsTreeWidget.currentItem())
+            idxToDelete = self.completedProjectsTreeWidget.indexOfTopLevelItem(self.completedProjectsTreeWidget.currentItem())
+            if idxToDelete < 0:
+                idxToDelete = self.abandonedProjectsTreeWidget.indexOfTopLevelItem(self.abandonedProjectsTreeWidget.currentItem())
             item = None
             
             if idxToDelete >= 0:
@@ -2115,10 +2129,10 @@ class ProjectWidget(QWidget):
         
         if item:
             self.parent.parent.dbCursor.execute("DELETE FROM Projects WHERE idNum=?", (item.project.idNum,))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='projects' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='companies' AND ObjectIdBeingLinked=?)",
-                                                (item.project.idNum, item.project.company.idNum))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='companies' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='projects' AND ObjectIdBeingLinked=?)",
-                                                (item.project.company.idNum, item.project.idNum))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='projects' AND ObjectIdToAddLinkTo=?)",
+                                                (item.project.idNum,))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectIdBeingLinked=? AND ObjectBeingLinked='projects')",
+                                                (item.project.idNum,))
 
             self.parent.dataConnection.companies[item.project.company.idNum].removeProject(item.project)
             self.projectsDict.pop(item.project.idNum)
