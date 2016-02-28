@@ -483,6 +483,18 @@ class AssetType:
             self.depreciable = False
         else:
             self.depreciable = True
+        self.assetGLAccount = None
+        self.expenseGLAccount = None
+        self.accumExpGLAccount = None
+
+    def addAssetGLAccount(self, glAccount):
+        self.assetGLAccount = glAccount
+
+    def addExpenseGLAccount(self, glAccount):
+        self.expenseGLAccount = glAccount
+
+    def addAccumExpGLAccount(self, glAccount):
+        self.accumExpGLAccount = glAccount
 
 class GLAccount:
     def __init__(self, description, placeHolder, idNum):

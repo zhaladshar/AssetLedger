@@ -2553,7 +2553,7 @@ class AssetWidget(QWidget):
         self.disposedAssetsLabel.setText("Disposed Assets: %d / %.02f" % (len(self.assetsDict.disposedAssets()), self.assetsDict.disposedCost()))
 
     def showAssetTypeDialog(self):
-        dialog = AssetTypeDialog(self.parent.dataConnection.assetTypes, self)
+        dialog = AssetTypeDialog(self.parent.dataConnection.assetTypes, self.parent.dataConnection.glAccounts, self)
         dialog.exec_()
 
     def removeSelectionsFromAllBut(self, but):
