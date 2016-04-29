@@ -92,6 +92,11 @@ class VendorDialog(QDialog):
         self.layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
 
+        if mode == "View":
+            self.setWindowTitle("View/Edit Vendor")
+        else:
+            self.setWindowTitle("New Vendor")
+
     def glAccountChange(self):
         self.glAccountChanged = True
         self.hasChanges = True
@@ -170,6 +175,8 @@ class InvoiceDialog(QDialog):
             
             if invoice.assetProj[0] == "assets":
                 # Need to disable signals, otherwise checking the radio button
+                # will cause a myriad of signals to be passed and will crash
+                # the program.
                 self.assetProjSelector.dontEmitSignals(True)
                 self.assetProjSelector.assetRdoBtn.setChecked(True)
                 self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
@@ -234,6 +241,11 @@ class InvoiceDialog(QDialog):
             
         self.layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
+
+        if mode == "View":
+            self.setWindowTitle("View/Edit Invoice")
+        else:
+            self.setWindowTitle("New Invoice")
 
     def getAcceptedProposalOfAssetProject(self):
         selection = self.assetProjSelector.selector.currentText()
@@ -411,6 +423,11 @@ class ProposalDialog(QDialog):
         self.layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
 
+        if mode == "View":
+            self.setWindowTitle("View/Edit Proposal")
+        else:
+            self.setWindowTitle("New Proposal")
+
     def accept(self):
         QDialog.accept(self)
 
@@ -526,6 +543,11 @@ class ProjectDialog(QDialog):
         
         self.layout.addLayout(buttonLayout, 5, 0, 1, 2)
         self.setLayout(self.layout)
+
+        if mode == "View":
+            self.setWindowTitle("View/Edit Project")
+        else:
+            self.setWindowTitle("New Project")
         
     def changed(self):
         self.hasChanges = True
@@ -592,6 +614,11 @@ class CompanyDialog(QDialog):
         
         self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
         self.setLayout(self.layout)
+
+        if mode == "View":
+            self.setWindowTitle("View/Edit Company")
+        else:
+            self.setWindowTitle("New Company")
         
     def changed(self):
         self.hasChanges = True
@@ -721,6 +748,11 @@ class AssetDialog(QDialog):
         
         self.layout.addLayout(buttonLayout, 10, 0, 1, 2)
         self.setLayout(self.layout)
+
+        if mode == "View":
+            self.setWindowTitle("View/Edit Asset")
+        else:
+            self.setWindowTitle("New Asset")
         
     def changed(self):
         self.hasChanges = True
@@ -800,6 +832,8 @@ class InvoicePaymentDialog(QDialog):
         self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
         self.setLayout(self.layout)
 
+        self.setWindowTitle("Pay Invoice")
+
 class ChangeProposalStatusDialog(QDialog):
     def __init__(self, proposalStatus, parent=None):
         super().__init__(parent)
@@ -877,7 +911,6 @@ class CloseProjectDialog(QDialog):
             layout.addWidget(self.assetTypeBox, nextRow, 1)
             nextRow += 1
 
-
         buttonLayout = QHBoxLayout()
         saveButton = QPushButton("Save")
         saveButton.clicked.connect(self.accept)
@@ -921,9 +954,9 @@ class NewAssetTypeDialog(QDialog):
         
         if mode == "View":
             self.nameTxt = QLabel(assetType.description)
+            self.glAssetAccountsBox.setCurrentIndex(self.glAssetAccountsBox.findText(str("%4d - %s" % (assetType.assetGLAccount.idNum, assetType.assetGLAccount.description))))
             if assetType.depreciable == True:
                 self.depChk.setCheckState(Qt.Checked)
-                self.glAssetAccountsBox.setCurrentIndex(self.glAssetAccountsBox.findText(str("%4d - %s" % (assetType.assetGLAccount.idNum, assetType.assetGLAccount.description))))
                 self.glExpenseAccountsBox.setCurrentIndex(self.glExpenseAccountsBox.findText(str("%4d - %s" % (assetType.expenseGLAccount.idNum, assetType.expenseGLAccount.description))))
                 self.glAccumExpenseAccountsBox.setCurrentIndex(self.glAccumExpenseAccountsBox.findText(str("%4d - %s" % (assetType.accumExpGLAccount.idNum, assetType. accumExpGLAccount.description))))
             else:
@@ -968,6 +1001,11 @@ class NewAssetTypeDialog(QDialog):
         
         self.setLayout(layout)
 
+        if mode == "View":
+            self.setWindowTitle("View/Edit Asset Type")
+        else:
+            self.setWindowTitle("New Asset Type")
+
     def changed(self):
         self.hasChanges = True
 
@@ -1007,7 +1045,7 @@ class AssetTypeDialog(QDialog):
         self.assetTypeDict = assetTypeDict
         self.GLDict = GLDict
         self.parent = parent
-
+        
         valuesAsList = []
         for assetTypeKey in self.assetTypeDict:
             valuesAsList.append("%4d - %s" % (self.assetTypeDict[assetTypeKey].idNum, self.assetTypeDict[assetTypeKey].description))
@@ -1031,6 +1069,8 @@ class AssetTypeDialog(QDialog):
         layout.addWidget(buttonLayout)
 
         self.setLayout(layout)
+
+        self.setWindowTitle("Asset Types")
 
     def newAssetType(self):
         dialog = NewAssetTypeDialog("New", self.GLDict, self)
@@ -1083,19 +1123,20 @@ class AssetTypeDialog(QDialog):
 
                 if dialog.glAccountsChanged == True:
                     assetGLNum = self.parent.stripAllButNumbers(dialog.glAssetAccountsBox.currentText())
-                    expenseGLNum = self.parent.stripAllButNumbers(dialog.glExpenseAccountsBox.currentText())
-                    accumExpGLNum = self.parent.stripAllButNumbers(dialog.glAccumExpenseAccountsBox.currentText())
-
                     assetType.addAssetGLAccount(self.parent.parent.dataConnection.glAccounts[assetGLNum])
-                    assetType.addExpenseGLAccount(self.parent.parent.dataConnection.glAccounts[expenseGLNum])
-                    assetType.addAccumExpGLAccount(self.parent.parent.dataConnection.glAccounts[accumExpGLNum])
-                    
                     self.parent.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='assetTypes' AND ObjectIdToAddLinkTo=? AND Method='addAssetGLAccount'",
                                                                (assetGLNum, assetTypeId))
-                    self.parent.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='assetTypes' AND ObjectIdToAddLinkTo=? AND Method='addExpenseGLAccount'",
-                                                               (expenseGLNum, assetTypeId))
-                    self.parent.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='assetTypes' AND ObjectIdToAddLinkTo=? AND Method='addAccumExpGLAccount'",
-                                                               (accumExpGLNum, assetTypeId))
+                    if depreciable == 1:
+                        expenseGLNum = self.parent.stripAllButNumbers(dialog.glExpenseAccountsBox.currentText())
+                        accumExpGLNum = self.parent.stripAllButNumbers(dialog.glAccumExpenseAccountsBox.currentText())
+
+                        assetType.addExpenseGLAccount(self.parent.parent.dataConnection.glAccounts[expenseGLNum])
+                        assetType.addAccumExpGLAccount(self.parent.parent.dataConnection.glAccounts[accumExpGLNum])
+                    
+                        self.parent.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='assetTypes' AND ObjectIdToAddLinkTo=? AND Method='addExpenseGLAccount'",
+                                                                   (expenseGLNum, assetTypeId))
+                        self.parent.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='assetTypes' AND ObjectIdToAddLinkTo=? AND Method='addAccumExpGLAccount'",
+                                                                   (accumExpGLNum, assetTypeId))
 
                 self.parent.parent.parent.dbConnection.commit()
 
@@ -1109,6 +1150,7 @@ class AssetTypeDialog(QDialog):
         # Remove from the database
         self.parent.parent.dataConnection.assetTypes.pop(assetTypeId)
         self.parent.parent.parent.dbCursor.execute("DELETE FROM AssetTypes WHERE idNum=?", (assetTypeId,))
+        self.parent.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectIdToAddLinkTo=? AND ObjectToAddLinkTo='assetTypes'", (assetTypeId))
         self.parent.parent.parent.dbConnection.commit()
 
 class DisposeAssetDialog(QDialog):
@@ -1138,6 +1180,8 @@ class DisposeAssetDialog(QDialog):
         layout.addLayout(buttonLayout, 2, 0, 1, 2)
         self.setLayout(layout)
 
+        self.setWindowTitle("Dispose of Asset")
+
 class GLAccountDialog(QDialog):
     def __init__(self, mode, parent=None, glAccount=None):
         super().__init__(parent)
@@ -1154,7 +1198,7 @@ class GLAccountDialog(QDialog):
         self.acctGrpsBox = QComboBox()
         valueAsList = []
         tempDict = parent.parent.dataConnection.glAccounts.accountGroups()
-        for acctGroupKey in tempDict:
+        for acctGroupKey in tempDict.sortedListOfKeys():
             valueAsList.append(str("%4d - %s" %  (tempDict[acctGroupKey].idNum, tempDict[acctGroupKey].description)))
         self.acctGrpsBox.addItems(valueAsList)
         
@@ -1207,6 +1251,11 @@ class GLAccountDialog(QDialog):
         
         self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
         self.setLayout(self.layout)
+
+        if mode == "View":
+            self.setWindowTitle("View/Edit GL Account")
+        else:
+            self.setWindowTitle("New GL Account")
 
     def changed(self):
         self.hasChanges = True

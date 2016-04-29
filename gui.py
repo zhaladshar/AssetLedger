@@ -45,12 +45,14 @@ class Window(QMainWindow):
         # Build layout
         self.buildLayout()
 
+        self.setWindowTitle("AssetLedger")
+
     def importData(self, dbName):
         # Check if database exists.  If so, import; otherwise, initialize db.
-        if os.path.exists(constants.DB_NAME):
-            self.dbConnection = sqlite3.connect(dbName)
-            self.dbCursor = self.dbConnection.cursor()
-            
+        databaseExists = os.path.exists(constants.DB_NAME)
+        self.dbConnection = sqlite3.connect(dbName)
+        self.dbCursor = self.dbConnection.cursor()
+        if databaseExists:
             self.dbCursor.execute("SELECT * FROM Companies")
             for each in self.dbCursor:
                 if each[3] == "Y":
@@ -101,7 +103,11 @@ class Window(QMainWindow):
 
             self.dbCursor.execute("SELECT * FROM GLPostings")
             for each in self.dbCursor:
-                self.data.costs[each[0]] = GLPosting(each[1], each[2], each[3], each[4], each[5], each[0])
+                self.data.glPostings[each[0]] = GLPosting(each[1], each[2], each[0])
+
+            self.dbCursor.execute("SELECT * FROM GLPostingsDetails")
+            for each in self.dbCursor:
+                self.data.glPostingsDetails[each[0]] = GLPostingDetail(each[1], each[2], each[0])
 
             self.dbCursor.execute("SELECT * FROM GLAccounts")
             for each in self.dbCursor:
@@ -117,7 +123,117 @@ class Window(QMainWindow):
                      "(" + "self.data." + each[3] + "[" + str(each[4]) + "])")
         else:
             # Need to put in db creation routine
-            pass
+            self.dbCursor.execute("""CREATE TABLE AssetTypes
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     AssetType   TEXT,
+                                     Depreciable INTEGER
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE Assets
+                                    (idNum              INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Description        TEXT,
+                                     AcquireDate        TEXT,
+                                     InSvcDate          TEXT,
+                                     DisposeDate        TEXT,
+                                     DisposeAmount      REAL,
+                                     UsefulLife         REAL,
+                                     SalvageAmount      REAL,
+                                     DepreciationMethod TEXT
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE Companies
+                                    (idNum     INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Name      TEXT NOT NULL,
+                                     ShortName TEXT NOT NULL,
+                                     Active    TEXT
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE Costs
+                                    (idNum INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Date  TEXT,
+                                     Cost  REAL
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE GLAccounts
+                                    (idNum      INTEGER,
+                                     Description TEXT,
+                                     Placeholder INTEGER,
+                                     PRIMARY KEY(idNum)
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE GLPostings
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Date        TEXT,
+                                     Amount      REAL,
+                                     DebitCredit TEXT,
+                                     Description TEXT,
+                                     Reference   INTEGER
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE GLPostingsDetails
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Amount      REAL,
+                                     DebitCredit TEXT
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE Invoices
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     InvoiceDate TEXT,
+                                     DueDate     TEXT
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE InvoicesDetails
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Description TEXT,
+                                     Cost        REAL
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE InvoicesPayments
+                                    (idNum      INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     DatePaid   TEXT,
+                                     AmountPaid REAL
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE Projects
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Description TEXT,
+                                     DateStart   TEXT,
+                                     DateEnd     TEXT,
+                                     Notes       TEXT
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE Proposals
+                                    (idNum        INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     ProposalDate TEXT,
+                                     Status       TEXT,
+                                     StatusReason TEXT
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE ProposalsDetails
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Description TEXT,
+                                     Cost        REAL
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE Vendors
+                                    (idNum   INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Name    TEXT,
+                                     Address TEXT,
+                                     City    TEXT,
+                                     State   TEXT,
+                                     ZIP     TEXT,
+                                     Phone   TEXT
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE Xref
+                                    (ObjectToAddLinkTo   TEXT,
+                                     ObjectIdToAddLinkTo INTEGER,
+                                     Method              TEXT,
+                                     ObjectBeingLinked   TEXT,
+                                     ObjectIdBeingLinked INTEGER
+                                    )""")
+
+            self.dbConnection.commit()
 
     def newFile(self):
         pass
@@ -272,7 +388,7 @@ class Window(QMainWindow):
             if self.detailViewSelected:
                 print("YEY")
             else:
-                self.views.setCurrentIndex(COMPANY_OVERVIEW_INDEX)
+                self.views.setCurrentIndex(MAIN_OVERVIEW_INDEX)
         else:
             if self.detailViewSelected:
                 if self.detailViewSelected == "Companies":

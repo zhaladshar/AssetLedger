@@ -780,6 +780,7 @@ class InvoiceWidget(QWidget):
     updateVendorTree = pyqtSignal()
     updateProjectTree = pyqtSignal()
     updateAssetTree = pyqtSignal()
+    postToGL = pyqtSignal(str, str, list)
     
     def __init__(self, invoicesDict, parent):
         super().__init__()
@@ -968,6 +969,17 @@ class InvoiceWidget(QWidget):
             item = InvoiceTreeWidgetItem(newInvoice, self.openInvoicesTreeWidget)
             self.openInvoicesTreeWidget.addItem(item)
             self.updateInvoicesCount()
+
+            # Create GL posting.
+            date = newInvoice.invoiceDate
+            description = str("Post invoice %d from vendor %d on %s" % (newInvoice.idNum, newInvoice.vendor.idNum, date))
+            details = [(newInvoice.amount(), "CR", newInvoice.vendor.glAccount.idNum, newInvoice, "invoices")]
+            if newInvoice.assetProj[0] == "projects":
+                details.append((newInvoice.amount(), "DR", newInvoice.assetProj[1].glAccount.idNum, None, None))
+            else:
+                details.append((newInvoice.amount(), "DR", newInvoice.assetProj[1].assetType.assetGLAccount.idNum, None, None))
+            
+            self.postToGL.emit(date, description, details)
             
             # Update vendor tree widget to display new information based on
             # invoice just created
@@ -1234,6 +1246,7 @@ class APView(QWidget):
         self.invoiceWidget.updateVendorTree.connect(self.updateVendorWidget)
         self.invoiceWidget.updateProjectTree.connect(self.emitUpdateProjectTree)
         self.invoiceWidget.updateAssetTree.connect(self.emitUpdateAssetTree)
+        self.invoiceWidget.postToGL.connect(self.postToGL)
         
         layout.addWidget(self.vendorWidget)
         layout.addWidget(self.invoiceWidget)
@@ -1241,6 +1254,14 @@ class APView(QWidget):
 
         self.setLayout(layout)
 
+    def nextIdNum(self, name):
+        self.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
+        largestId = self.parent.dbCursor.fetchone()
+        if largestId != None:
+            return int(largestId[0]) + 1
+        else:
+            return 1
+        
     def updateVendorWidget(self):
         self.vendorWidget.refreshVendorTree()
 
@@ -1250,6 +1271,45 @@ class APView(QWidget):
     def emitUpdateAssetTree(self):
         self.updateAssetTree.emit()
 
+    def postToGL(self, date, description, listOfDetails):
+        glPostingIdNum = self.nextIdNum("GLPostings")
+        glPostingDetailIdNum = self.nextIdNum("GLPostingsDetails")
+        
+        glPosting = GLPosting(date, description, glPostingIdNum)
+        self.dataConnection.glPostings[glPosting.idNum] = glPosting
+        self.parent.dbCursor.execute("INSERT INTO GLPostings (Date, Description) VALUES (?, ?)",
+                                            (glPosting.date, glPosting.description))
+        
+        for detail in listOfDetails:
+            glPostingDetail = GLPostingDetail(detail[0], detail[1], glPostingDetailIdNum)
+            
+            glPosting.addDetail(glPostingDetail)
+            glPostingDetail.addDetailOf(glPosting)
+            glPostingDetail.addGLAccount(self.dataConnection.glAccounts[detail[2]])
+            glPostingDetail.glAccount.addPosting(glPosting)
+
+            if detail[3]:
+                detail[3].addGLPosting(glPostingDetail)
+                self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
+                                             (detail[4], detail[3].idNum, "addGLPosting", "glPostings", glPosting.idNum))
+            
+            self.dataConnection.glPostingsDetails[glPostingDetail.idNum] = glPostingDetail
+
+            self.parent.dbCursor.execute("INSERT INTO GLPostingsDetails (Amount, DebitCredit) VALUES (?, ?)",
+                                         (glPostingDetail.amount, glPostingDetail.debitCredit))
+            self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
+                                                ("glPostings", glPosting.idNum, "addDetail", "glPostingsDetails", glPostingDetail.idNum))
+            self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
+                                                ("glPostingsDetails", glPostingDetail.idNum, "addDetailOf", "glPostings", glPosting.idNum))
+            self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
+                                                ("glPostingsDetails", glPostingDetail.idNum, "addGLAccount", "glAccounts", glPostingDetail.glAccount.idNum))
+            self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
+                                                ("glAccounts", glPostingDetail.glAccount.idNum, "addPosting", "glPostings", glPosting.idNum))
+            
+            self.parent.dbConnection.commit()
+
+            glPostingDetailIdNum += 1
+            
 class ProposalTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, proposalItem, parent):
         super().__init__(parent)
@@ -2850,11 +2910,11 @@ class GLTreeWidget(QTreeWidget):
 
     def buildItems(self, parent, glAccountsDict):
         tempDict = glAccountsDict.accountGroups()
-        for glAccountKey in tempDict:
+        for glAccountKey in tempDict.sortedListOfKeys():
             item = GLTreeWidgetItem(tempDict[glAccountKey], parent)
             
             if item.glAccount.parentOf:
-                for subAccountKey in item.glAccount.parentOf:
+                for subAccountKey in item.glAccount.parentOf.sortedListOfKeys():
                     subItem = GLTreeWidgetItem(item.glAccount.parentOf[subAccountKey], item)
                     self.addItem(subItem)
             

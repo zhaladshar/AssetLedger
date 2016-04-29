@@ -1,22 +1,52 @@
 import constants
 
+class VendorsDict(dict):
+    def __init__(self):
+        super().__init__()
+
+    def vendorsByCompany(self, companyId):
+        if companyId:
+            newDict = VendorsDict()
+            for vendorId, vendor in self.items():
+                if vendor.invoices.invoicesByCompany(companyId) or vendor.proposals.proposalsByCompany(companyId):
+                    newDict[vendorId] = vendor
+            return newDict
+        else:
+            return self
+
+class GLPostingsDict(dict):
+    def __init__(self):
+        super().__init__()
+
+    def postingsByGLAcct(self, glAcctNum):
+        tempDict = {}
+        for key in self:
+            for detailKey in self[key].details:
+                if self[key].details[detailKey].glAccount.idNum == glAcctNum:
+                    tempDict[detailKey] = self[key].details[detailKey]
+        return tempDict
+    
 class GLAccountsDict(dict):
     def __init__(self):
         super().__init__()
 
     def accountGroups(self):
-        tempDict = {}
+        tempDict = GLAccountsDict()
         for glKey in self:
             if self[glKey].placeHolder == True:
                 tempDict[glKey] = self[glKey]
         return tempDict
 
     def accounts(self):
-        tempDict = {}
+        tempDict = GLAccountsDict()
         for glKey in self:
             if self[glKey].placeHolder != True:
                 tempDict[glKey] = self[glKey]
         return tempDict
+
+    def sortedListOfKeys(self):
+        sortedList = sorted(list(self), key=lambda x: x)
+        return sortedList
 
 class InvoicesDict(dict):
     def __init__(self):
@@ -36,6 +66,16 @@ class InvoicesDict(dict):
                 tempDict[invoiceKey] = self[invoiceKey]
         return tempDict
 
+    def invoicesByCompany(self, companyId):
+        if companyId:
+            newDict = InvoicesDict()
+            for invoiceId, invoice in self.items():
+                if invoice.company.idNum == companyId:
+                    newDict[invoiceId] = invoice
+            return newDict
+        else:
+            return self
+
 class ProposalsDict(dict):
     def __init__(self):
         super().__init__()
@@ -46,6 +86,16 @@ class ProposalsDict(dict):
             if self[proposalKey].status == status:
                 tempDict[proposalKey] = self[proposalKey]
         return tempDict
+
+    def proposalsByCompany(self, companyId):
+        if companyId:
+            newDict = ProposalsDict()
+            for proposalId, proposal in self.items():
+                if proposal.company.idNum == companyId:
+                    newDict[proposalId] = proposal
+            return newDict
+        else:
+            return self
 
 class ProjectsDict(dict):
     def __init__(self):
@@ -191,6 +241,7 @@ class Project:
         self.glAccount = None
         self.company = None
         self.becameAsset = None
+        self.glPostings = {}
 
     def addInvoice(self, invoice):
         self.invoices[invoice.idNum] = invoice
@@ -212,6 +263,9 @@ class Project:
         
     def addCompany(self, company):
         self.company = company
+
+    def addGLPosting(self, glPosting):
+        self.glPostings[glPosting.idNum] = glPosting
 
     def status(self):
         if self.dateEnd == None or self.dateEnd == "":
@@ -263,6 +317,7 @@ class Invoice:
         self.assetProj = None
         self.payments = {}
         self.details = {}
+        self.glPosting = None
 
     def amount(self):
         amount = 0.0
@@ -302,6 +357,9 @@ class Invoice:
 
     def removePayment(self, payment):
         self.payments.pop(payment.idNum)
+
+    def addGLPosting(self, glPosting):
+        self.glPosting = glPosting
 
 class Cost:
     def __init__(self, amount, date, idNum):
@@ -505,8 +563,8 @@ class GLAccount:
         else:
             self.placeHolder = True
         self.childOf = None
-        self.parentOf = {}
-        self.postings = {}
+        self.parentOf = GLAccountsDict()
+        self.postings = GLPostingsDict()
 
     def addChild(self, child):
         self.parentOf[child.idNum] = child
@@ -522,27 +580,43 @@ class GLAccount:
 
     def balance(self):
         balance = 0
-        for postingKey in self.postings:
-            balance += self.postings[postingKey].amount
+        if self.placeHolder == True:
+            for childKey in self.parentOf:
+                balance += self.parentOf[childKey].balance()
+        else:
+            tempDict = self.postings.postingsByGLAcct(self.idNum)
+            for postingKey in tempDict:
+                balance += tempDict[postingKey].amount
         return balance
 
 class GLPosting:
-    def __init__(self, date, amount, debitcredit, description, ref, idNum):
+    def __init__(self, date, description, idNum):
         self.idNum = idNum
         self.date = date
-        self.amount = amount
-        self.debitcredit = debitcredit
         self.description = description
-        self.reference = ref
+        self.details = {}
+
+    def addDetail(self, detail):
+        self.details[detail.idNum] = detail
+
+class GLPostingDetail:
+    def __init__(self, amount, debitCredit, idNum):
+        self.idNum = idNum
+        self.amount = amount
+        self.debitCredit = debitCredit
         self.glAccount = None
+        self.detailOf = None
+
+    def addDetailOf(self, detailOf):
+        self.detailOf = detailOf
 
     def addGLAccount(self, glAccount):
         self.glAccount = glAccount
-        
+
 class CorporateStructure:
     def __init__(self):
         self.companies = CompanyDict()
-        self.vendors = {}
+        self.vendors = VendorsDict()
         self.invoices = InvoicesDict()
         self.invoicesDetails = {}
         self.invoicesPayments = {}
@@ -554,3 +628,4 @@ class CorporateStructure:
         self.projects = ProjectsDict()
         self.glAccounts = GLAccountsDict()
         self.glPostings = {}
+        self.glPostingsDetails = {}
