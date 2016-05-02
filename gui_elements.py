@@ -782,9 +782,10 @@ class InvoiceWidget(QWidget):
     updateAssetTree = pyqtSignal()
     postToGL = pyqtSignal(str, str, list)
     
-    def __init__(self, invoicesDict, parent):
+    def __init__(self, invoicesDict, paymentTypesDict, parent):
         super().__init__()
         self.invoicesDict = invoicesDict
+        self.paymentTypesDict = paymentTypesDict
         self.parent = parent
 
         mainLayout = QVBoxLayout()
@@ -827,6 +828,10 @@ class InvoiceWidget(QWidget):
         payInvoiceButton = QPushButton("Pay...")
         payInvoiceButton.clicked.connect(self.payInvoice)
         buttonWidget.addButton(payInvoiceButton)
+
+        paymentTypeButton = QPushButton("Pymt Types...")
+        paymentTypeButton.clicked.connect(self.showPaymentTypeDialog)
+        buttonWidget.addButton(paymentTypeButton)
         
         subLayout.addLayout(treeWidgetsLayout)
         subLayout.addWidget(buttonWidget)
@@ -842,7 +847,7 @@ class InvoiceWidget(QWidget):
         item = self.openInvoicesTreeWidget.itemFromIndex(idxToShow)
         
         if item:
-            dialog = InvoicePaymentDialog(self, item.invoice)
+            dialog = InvoicePaymentDialog(self.paymentTypesDict, self, item.invoice)
             if dialog.exec_():
                 nextId = self.nextIdNum("InvoicesPayments")
                 
@@ -858,7 +863,18 @@ class InvoiceWidget(QWidget):
                 
                 newPayment.addInvoice(item.invoice)
                 item.invoice.addPayment(newPayment)
+
+                # Create GL posting for this payment
+                paymentTypeId = self.stripAllButNumbers(self.paymentTypeBox.currentText())
+                date = dialog.datePaidText.text()
+                description = str("Post payment for invoice %d from vendor %d on %s" % (dialog.invoiceText.text(), item.invoice.vendor.idNum, date))
+                details = []
+                details.append((float(dialog.amountText.text()), "CR", self.paymentTypesDict[paymentTypeId].glAccount.idNum, newPayment, "invoicesPayments"))
+                details.append((float(dialog.amountText.text()), "DR", item.invoice.vendor.glAccount.idNum, None, None))
+            
+                self.postToGL.emit(date, description, details)
                 
+                # Refresh AP info
                 self.updateVendorTree.emit()
                 self.refreshOpenInvoiceTree()
 
@@ -867,6 +883,10 @@ class InvoiceWidget(QWidget):
             self.paidInvoicesTreeWidget.setCurrentItem(self.paidInvoicesTreeWidget.invisibleRootItem())
         else:
             self.openInvoicesTreeWidget.setCurrentItem(self.openInvoicesTreeWidget.invisibleRootItem())
+
+    def showPaymentTypeDialog(self):
+        dialog = PaymentTypeDialog(self.parent.dataConnection.paymentTypes, self.parent.dataConnection.glAccounts, self)
+        dialog.exec_()
 
     def nextIdNum(self, name):
         self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
@@ -1177,19 +1197,11 @@ class InvoiceWidget(QWidget):
 
         if item:
             self.parent.parent.dbCursor.execute("DELETE FROM Invoices WHERE idNum=?", (item.invoice.idNum,))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='vendors' AND ObjectIdBeingLinked=?)",
-                                                (item.invoice.idNum, item.invoice.vendor.idNum))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='vendors' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
-                                                (item.invoice.vendor.idNum, item.invoice.idNum))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked=? AND ObjectIdBeingLinked=?)",
-                                                (item.invoice.idNum, item.invoice.assetProj[0], item.invoice.assetProj[1].idNum))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo=? AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
-                                                (item.invoice.assetProj[0], item.invoice.assetProj[1].idNum, item.invoice.idNum))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='companies' AND ObjectIdBeingLinked=?)",
-                                                (item.invoice.idNum, item.invoice.company.idNum))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='companies' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
-                                                (item.invoice.company.idNum, item.invoice.idNum))
-
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=?)",
+                                                (item.invoice.idNum,))
+            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?)",
+                                                (item.invoice.idNum,))
+            
             # Delete invoice details and detail/proposal connections
             for detailKey in item.invoice.details:
                 invoiceDetId = item.invoice.details[detailKey].idNum
@@ -1199,7 +1211,8 @@ class InvoiceWidget(QWidget):
                 self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectBeingLinked='invoicesDetails' AND ObjectIdBeingLinked=?)", (invoiceDetId,))
 
                 invoiceDetail = self.parent.dataConnection.invoicesDetails.pop(invoiceDetId)
-                self.parent.dataConnection.proposalsDetails[invoiceDetail.proposalDetail.idNum].removeInvoiceDetail(invoiceDetail)
+                if invoiceDetail.proposalDetail:
+                    self.parent.dataConnection.proposalsDetails[invoiceDetail.proposalDetail.idNum].removeInvoiceDetail(invoiceDetail)
             
             self.parent.parent.dbConnection.commit()
             self.parent.dataConnection.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
@@ -1233,6 +1246,7 @@ class InvoiceWidget(QWidget):
 class APView(QWidget):
     updateProjectTree = pyqtSignal()
     updateAssetTree = pyqtSignal()
+    updateGLTree = pyqtSignal()
     
     def __init__(self, dataConnection, parent):
         super().__init__(parent)
@@ -1242,7 +1256,7 @@ class APView(QWidget):
         layout = QVBoxLayout()
         
         self.vendorWidget = VendorWidget(self.dataConnection.vendors, self)
-        self.invoiceWidget = InvoiceWidget(self.dataConnection.invoices, self)
+        self.invoiceWidget = InvoiceWidget(self.dataConnection.invoices, self.dataConnection.paymentTypes, self)
         self.invoiceWidget.updateVendorTree.connect(self.updateVendorWidget)
         self.invoiceWidget.updateProjectTree.connect(self.emitUpdateProjectTree)
         self.invoiceWidget.updateAssetTree.connect(self.emitUpdateAssetTree)
@@ -1298,17 +1312,18 @@ class APView(QWidget):
             self.parent.dbCursor.execute("INSERT INTO GLPostingsDetails (Amount, DebitCredit) VALUES (?, ?)",
                                          (glPostingDetail.amount, glPostingDetail.debitCredit))
             self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                                ("glPostings", glPosting.idNum, "addDetail", "glPostingsDetails", glPostingDetail.idNum))
+                                         ("glPostings", glPosting.idNum, "addDetail", "glPostingsDetails", glPostingDetail.idNum))
             self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                                ("glPostingsDetails", glPostingDetail.idNum, "addDetailOf", "glPostings", glPosting.idNum))
+                                         ("glPostingsDetails", glPostingDetail.idNum, "addDetailOf", "glPostings", glPosting.idNum))
             self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                                ("glPostingsDetails", glPostingDetail.idNum, "addGLAccount", "glAccounts", glPostingDetail.glAccount.idNum))
+                                         ("glPostingsDetails", glPostingDetail.idNum, "addGLAccount", "glAccounts", glPostingDetail.glAccount.idNum))
             self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                                ("glAccounts", glPostingDetail.glAccount.idNum, "addPosting", "glPostings", glPosting.idNum))
+                                         ("glAccounts", glPostingDetail.glAccount.idNum, "addPosting", "glPostings", glPosting.idNum))
             
             self.parent.dbConnection.commit()
 
             glPostingDetailIdNum += 1
+        self.updateGLTree.emit()
             
 class ProposalTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, proposalItem, parent):
@@ -2899,7 +2914,7 @@ class GLTreeWidgetItem(QTreeWidgetItem):
     def refreshData(self):
         self.idLabel.setText(str(self.glAccount.idNum))
         self.descLabel.setText(self.glAccount.description)
-        self.descLabel.setText(str(self.glAccount.balance()))
+        self.balanceLabel.setText(str(self.glAccount.balance()))
         
 class GLTreeWidget(QTreeWidget):
     moveGLAcctXToYFromZ = pyqtSignal(int, int, int)
@@ -3094,3 +3109,6 @@ class GLView(QWidget):
         layout.addWidget(self.glWidget)
 
         self.setLayout(layout)
+
+    def refreshGL(self):
+        self.glWidget.chartOfAccountsTreeWidget.refreshData()

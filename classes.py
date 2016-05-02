@@ -613,6 +613,15 @@ class GLPostingDetail:
     def addGLAccount(self, glAccount):
         self.glAccount = glAccount
 
+class PaymentType:
+    def __init__(self, description, idNum):
+        self.idNum = idNum
+        self.description = description
+        self.glAccount = None
+
+    def addGLAccount(self, glAccount):
+        self.glAccount = glAccount
+        
 class CorporateStructure:
     def __init__(self):
         self.companies = CompanyDict()
@@ -629,3 +638,4 @@ class CorporateStructure:
         self.glAccounts = GLAccountsDict()
         self.glPostings = {}
         self.glPostingsDetails = {}
+        self.paymentTypes = {}

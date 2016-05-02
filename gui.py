@@ -38,6 +38,7 @@ class Window(QMainWindow):
         self.projectOverview.addAssetToAssetView.connect(self.addAssetToAssetModule)
         self.APOverview.updateProjectTree.connect(self.projectOverview.projectWidget.refreshOpenProjectTree)
         self.APOverview.updateAssetTree.connect(self.assetOverview.assetWidget.refreshAssetTree)
+        self.APOverview.updateGLTree.connect(self.glOverview.refreshGL)
 
         # Build menus
         self.buildMenus()
@@ -116,6 +117,10 @@ class Window(QMainWindow):
                 else:
                     placeHolder = True
                 self.data.glAccounts[each[0]] = GLAccount(each[1], placeHolder, each[0])
+
+            self.dbCursor.execute("SELECT * FROM PaymentTypes")
+            for each in self.dbCursor:
+                self.data.paymentTypes[each[0]] = PaymentType(each[1], each[0])
                 
             self.dbCursor.execute("SELECT * FROM Xref")
             for each in self.dbCursor:
@@ -231,6 +236,11 @@ class Window(QMainWindow):
                                      Method              TEXT,
                                      ObjectBeingLinked   TEXT,
                                      ObjectIdBeingLinked INTEGER
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE PaymentTypes
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Description TEXT
                                     )""")
 
             self.dbConnection.commit()
@@ -386,7 +396,18 @@ class Window(QMainWindow):
     def updateViews(self):
         if self.companyViewSelected:
             if self.detailViewSelected:
-                print("YEY")
+                if self.detailViewSelected == "Companies":
+                    self.views.setCurrentIndex(COMPANY_OVERVIEW_INDEX)
+                elif self.detailViewSelected == "Proposals":
+                    self.views.setCurrentIndex(PROPOSAL_OVERVIEW_INDEX)
+                elif self.detailViewSelected == "Projects":
+                    self.views.setCurrentIndex(PROJECT_OVERVIEW_INDEX)
+                elif self.detailViewSelected == "Assets":
+                    self.views.setCurrentIndex(ASSET_OVERVIEW_INDEX)
+                elif self.detailViewSelected == "G/L":
+                    self.views.setCurrentIndex(GL_OVERVIEW_INDEX)
+                elif self.detailViewSelected == "A/P":
+                    self.views.setCurrentIndex(AP_OVERVIEW_INDEX)
             else:
                 self.views.setCurrentIndex(MAIN_OVERVIEW_INDEX)
         else:
