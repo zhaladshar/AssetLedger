@@ -14,12 +14,29 @@ class VendorsDict(dict):
         else:
             return self
 
+class GLPostingsDetailsDict(dict):
+    def __init__(self):
+        super().__init__()
+
+    def postingsByDRCR(self, drcr):
+        tempDict = GLPostingsDetailsDict()
+        for key, glDet in self.items():
+            if glDet.debitCredit == drcr:
+                tempDict[key] = glDet
+        return tempDict
+
+    def balance(self):
+        balance = 0
+        for key, glDet in self.items():
+            balance += glDet.amount
+        return balance
+    
 class GLPostingsDict(dict):
     def __init__(self):
         super().__init__()
 
     def postingsByGLAcct(self, glAcctNum):
-        tempDict = {}
+        tempDict = GLPostingsDetailsDict()
         for key in self:
             for detailKey in self[key].details:
                 if self[key].details[detailKey].glAccount.idNum == glAcctNum:
@@ -289,9 +306,13 @@ class InvoicePayment:
         self.invoicePaid = None
         self.datePaid = datePaid
         self.amountPaid = amountPaid
+        self.glPosting = None
 
     def addInvoice(self, invoice):
         self.invoicePaid = invoice
+
+    def addGLPosting(self, glPosting):
+        self.glPosting = glPosting
 
 class InvoiceDetail:
     def __init__(self, description, amount, idNum):
@@ -578,6 +599,9 @@ class GLAccount:
     def addPosting(self, posting):
         self.postings[posting.idNum] = posting
 
+    def removePosting(self, posting):
+        self.postings.pop(posting.idNum)
+
     def balance(self):
         balance = 0
         if self.placeHolder == True:
@@ -585,8 +609,7 @@ class GLAccount:
                 balance += self.parentOf[childKey].balance()
         else:
             tempDict = self.postings.postingsByGLAcct(self.idNum)
-            for postingKey in tempDict:
-                balance += tempDict[postingKey].amount
+            balance = tempDict.postingsByDRCR("DR").balance() - tempDict.postingsByDRCR("CR").balance()
         return balance
 
 class GLPosting:
@@ -636,6 +659,6 @@ class CorporateStructure:
         self.assetTypes = {}
         self.projects = ProjectsDict()
         self.glAccounts = GLAccountsDict()
-        self.glPostings = {}
+        self.glPostings = GLPostingsDict()
         self.glPostingsDetails = {}
         self.paymentTypes = {}

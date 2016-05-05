@@ -837,7 +837,7 @@ class InvoicePaymentDialog(QDialog):
         cancelButton.clicked.connect(self.reject)
         buttonLayout.addWidget(cancelButton)
 
-        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        self.layout.addLayout(buttonLayout, 5, 0, 1, 2)
         self.setLayout(self.layout)
 
         self.setWindowTitle("Pay Invoice")

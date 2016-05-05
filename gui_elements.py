@@ -781,6 +781,7 @@ class InvoiceWidget(QWidget):
     updateProjectTree = pyqtSignal()
     updateAssetTree = pyqtSignal()
     postToGL = pyqtSignal(str, str, list)
+    deleteGLPost = pyqtSignal(object)
     
     def __init__(self, invoicesDict, paymentTypesDict, parent):
         super().__init__()
@@ -865,9 +866,9 @@ class InvoiceWidget(QWidget):
                 item.invoice.addPayment(newPayment)
 
                 # Create GL posting for this payment
-                paymentTypeId = self.stripAllButNumbers(self.paymentTypeBox.currentText())
+                paymentTypeId = self.stripAllButNumbers(dialog.paymentTypeBox.currentText())
                 date = dialog.datePaidText.text()
-                description = str("Post payment for invoice %d from vendor %d on %s" % (dialog.invoiceText.text(), item.invoice.vendor.idNum, date))
+                description = str("Post payment for invoice %d from vendor %d on %s" % (int(dialog.invoiceText.text()), item.invoice.vendor.idNum, date))
                 details = []
                 details.append((float(dialog.amountText.text()), "CR", self.paymentTypesDict[paymentTypeId].glAccount.idNum, newPayment, "invoicesPayments"))
                 details.append((float(dialog.amountText.text()), "DR", item.invoice.vendor.glAccount.idNum, None, None))
@@ -1213,7 +1214,8 @@ class InvoiceWidget(QWidget):
                 invoiceDetail = self.parent.dataConnection.invoicesDetails.pop(invoiceDetId)
                 if invoiceDetail.proposalDetail:
                     self.parent.dataConnection.proposalsDetails[invoiceDetail.proposalDetail.idNum].removeInvoiceDetail(invoiceDetail)
-            
+
+            # Remove invoice<->data connections
             self.parent.parent.dbConnection.commit()
             self.parent.dataConnection.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
             self.parent.dataConnection.companies[item.invoice.company.idNum].removeInvoice(item.invoice)
@@ -1224,6 +1226,12 @@ class InvoiceWidget(QWidget):
                 self.parent.dataConnection.projects[item.invoice.assetProj[1].idNum].removeInvoice(item.invoice)
                 
             self.invoicesDict.pop(item.invoice.idNum)
+
+            # Delete GL Postings
+            glDet = item.invoice.glPosting
+            glPost = glDet.detailOf
+            self.deleteGLPost.emit(glPost)
+            
             self.updateInvoicesCount()
 
             self.updateVendorTree.emit()
@@ -1261,6 +1269,7 @@ class APView(QWidget):
         self.invoiceWidget.updateProjectTree.connect(self.emitUpdateProjectTree)
         self.invoiceWidget.updateAssetTree.connect(self.emitUpdateAssetTree)
         self.invoiceWidget.postToGL.connect(self.postToGL)
+        self.invoiceWidget.deleteGLPost.connect(self.deleteGLPost)
         
         layout.addWidget(self.vendorWidget)
         layout.addWidget(self.invoiceWidget)
@@ -1285,6 +1294,30 @@ class APView(QWidget):
     def emitUpdateAssetTree(self):
         self.updateAssetTree.emit()
 
+    def deleteGLPost(self, GLPost):
+        print(GLPost.idNum)
+        self.dataConnection.glPostings.pop(GLPost.idNum)
+        self.parent.dbCursor.execute("DELETE FROM GLPostings WHERE idNum=?",
+                                     (GLPost.idNum,))
+        self.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='glPostings' AND ObjectIdToAddLinkTo=?",
+                                     (GLPost.idNum,))
+        self.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='glPostings' AND ObjectIdBeingLinked=?",
+                                     (GLPost.idNum,))
+        for glDetKey, glDet in GLPost.details.items():
+            print(glDetKey)
+            self.dataConnection.glPostingsDetails.pop(glDetKey)
+            glAccount = glDet.glAccount
+            glAccount.removePosting(GLPost)
+            self.parent.dbCursor.execute("DELETE FROM GLPostingsDetails WHERE idNum=?",
+                                         (glDetKey,))
+            self.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='glPostingsDetails' AND ObjectIdToAddLinkTo=?",
+                                         (glDetKey,))
+            self.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='glPostingsDetails' AND ObjectIdBeingLinked=?",
+                                         (glDetKey,))
+
+        self.parent.dbConnection.commit()
+        self.updateGLTree.emit()
+
     def postToGL(self, date, description, listOfDetails):
         glPostingIdNum = self.nextIdNum("GLPostings")
         glPostingDetailIdNum = self.nextIdNum("GLPostingsDetails")
@@ -1305,7 +1338,7 @@ class APView(QWidget):
             if detail[3]:
                 detail[3].addGLPosting(glPostingDetail)
                 self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                             (detail[4], detail[3].idNum, "addGLPosting", "glPostings", glPosting.idNum))
+                                             (detail[4], detail[3].idNum, "addGLPosting", "glPostingsDetails", glPostingDetail.idNum))
             
             self.dataConnection.glPostingsDetails[glPostingDetail.idNum] = glPostingDetail
 
