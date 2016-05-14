@@ -780,13 +780,17 @@ class InvoiceWidget(QWidget):
     updateVendorTree = pyqtSignal()
     updateProjectTree = pyqtSignal()
     updateAssetTree = pyqtSignal()
+    updateCompanyTree = pyqtSignal()
     postToGL = pyqtSignal(str, str, list)
+    updateGLPost = pyqtSignal(object, str, str)
+    updateGLDet = pyqtSignal(object, float, str)
     deleteGLPost = pyqtSignal(object)
     
-    def __init__(self, invoicesDict, paymentTypesDict, parent):
+    def __init__(self, invoicesDict, paymentTypesDict, invoicePaymentsDict, parent):
         super().__init__()
         self.invoicesDict = invoicesDict
         self.paymentTypesDict = paymentTypesDict
+        self.invoicePaymentsDict = invoicePaymentsDict
         self.parent = parent
 
         mainLayout = QVBoxLayout()
@@ -842,38 +846,42 @@ class InvoiceWidget(QWidget):
 
     def refreshOpenInvoiceTree(self):
         self.openInvoicesTreeWidget.refreshData()
+
+    def refreshPaidInvoicesTreeWidget(self):
+        self.paidInvoicesTreeWidget.refreshData()
     
     def payInvoice(self):
         idxToShow = self.openInvoicesTreeWidget.indexFromItem(self.openInvoicesTreeWidget.currentItem())
         item = self.openInvoicesTreeWidget.itemFromIndex(idxToShow)
         
         if item:
-            dialog = InvoicePaymentDialog(self.paymentTypesDict, self, item.invoice)
+            dialog = InvoicePaymentDialog("New", self.paymentTypesDict, self, item.invoice)
             if dialog.exec_():
                 nextId = self.nextIdNum("InvoicesPayments")
+                datePd = dialog.datePaidText.text()
+                amtPd = float(dialog.amountText.text())
                 
                 # Create new payment
-                newPayment = InvoicePayment(dialog.datePaidText.text(),
-                                            float(dialog.amountText.text()),
-                                            nextId)
+                newPayment = InvoicePayment(datePd, amtPd, nextId)
                 
                 # Add to database and to data structure
                 self.insertIntoDatabase("InvoicesPayments", "(DatePaid, AmountPaid)", "('" + newPayment.datePaid + "', " + str(newPayment.amountPaid) + ")")
                 self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoices', " + str(item.invoice.idNum) + ", 'addPayment', 'invoicesPayments', " + str(nextId) + ")")
+                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoicesPayments', " + str(newPayment.idNum) + ", 'addInvoice', 'invoices', " + str(item.invoice.idNum) + ")")
                 self.parent.parent.dbConnection.commit()
                 
                 newPayment.addInvoice(item.invoice)
                 item.invoice.addPayment(newPayment)
+                self.invoicePaymentsDict[newPayment.idNum] = newPayment
 
                 # Create GL posting for this payment
                 paymentTypeId = self.stripAllButNumbers(dialog.paymentTypeBox.currentText())
-                date = dialog.datePaidText.text()
-                description = str("Post payment for invoice %d from vendor %d on %s" % (int(dialog.invoiceText.text()), item.invoice.vendor.idNum, date))
+                description = constants.GL_POST_PYMT_DESC % (int(dialog.invoiceText.text()), item.invoice.vendor.idNum, datePd)
                 details = []
-                details.append((float(dialog.amountText.text()), "CR", self.paymentTypesDict[paymentTypeId].glAccount.idNum, newPayment, "invoicesPayments"))
-                details.append((float(dialog.amountText.text()), "DR", item.invoice.vendor.glAccount.idNum, None, None))
+                details.append((amtPd, "CR", self.paymentTypesDict[paymentTypeId].glAccount.idNum, newPayment, "invoicesPayments"))
+                details.append((amtPd, "DR", item.invoice.vendor.glAccount.idNum, None, None))
             
-                self.postToGL.emit(date, description, details)
+                self.postToGL.emit(datePd, description, details)
                 
                 # Refresh AP info
                 self.updateVendorTree.emit()
@@ -909,7 +917,7 @@ class InvoiceWidget(QWidget):
         self.parent.parent.dbCursor.execute(sql)
 
     def showNewInvoiceDialog(self):
-        dialog = InvoiceDialog("New", self)
+        dialog = InvoiceDialog("New", None, self)
         if dialog.exec_():
             nextId = self.nextIdNum("Invoices")
             
@@ -1007,6 +1015,7 @@ class InvoiceWidget(QWidget):
             self.updateVendorTree.emit()
             self.updateProjectTree.emit()
             self.updateAssetTree.emit()
+            self.updateCompanyTree.emit()
             
     def showViewInvoiceDialog(self):
         # Determine which invoice tree (if any) has been selected
@@ -1018,7 +1027,7 @@ class InvoiceWidget(QWidget):
 
         # Only show dialog if an item has been selected
         if item:
-            dialog = InvoiceDialog("View", self, item.invoice)
+            dialog = InvoiceDialog("View", self.paymentTypesDict, self, item.invoice)
             if dialog.exec_():
                 if dialog.hasChanges == True:
                     listOfInvPropDetailKeysFromItem = list(item.invoice.details.keys())
@@ -1183,6 +1192,8 @@ class InvoiceWidget(QWidget):
 
                     self.updateVendorTree.emit()
                     self.updateProjectTree.emit()
+                    self.updateAssetTree.emit()
+                    self.updateCompanyTree.emit()
                     
     def deleteSelectedInvoiceFromList(self):
         # Check to see if the item to delete is in the open invoices tree widget
@@ -1236,7 +1247,9 @@ class InvoiceWidget(QWidget):
 
             self.updateVendorTree.emit()
             self.updateProjectTree.emit()
-        
+            self.updateAssetTree.emit()
+            self.updateCompanyTree.emit()
+
     def updateInvoicesCount(self):
         self.openInvoicesLabel.setText("Open Invoices: %d" % len(self.invoicesDict.openInvoices()))
         self.paidInvoicesLabel.setText("Paid Invoices: %d" % len(self.invoicesDict.paidInvoices()))
@@ -1254,6 +1267,7 @@ class InvoiceWidget(QWidget):
 class APView(QWidget):
     updateProjectTree = pyqtSignal()
     updateAssetTree = pyqtSignal()
+    updateCompanyTree = pyqtSignal()
     updateGLTree = pyqtSignal()
     
     def __init__(self, dataConnection, parent):
@@ -1264,11 +1278,14 @@ class APView(QWidget):
         layout = QVBoxLayout()
         
         self.vendorWidget = VendorWidget(self.dataConnection.vendors, self)
-        self.invoiceWidget = InvoiceWidget(self.dataConnection.invoices, self.dataConnection.paymentTypes, self)
+        self.invoiceWidget = InvoiceWidget(self.dataConnection.invoices, self.dataConnection.paymentTypes, self.dataConnection.invoicesPayments, self)
         self.invoiceWidget.updateVendorTree.connect(self.updateVendorWidget)
         self.invoiceWidget.updateProjectTree.connect(self.emitUpdateProjectTree)
         self.invoiceWidget.updateAssetTree.connect(self.emitUpdateAssetTree)
+        self.invoiceWidget.updateCompanyTree.connect(self.emitUpdateCompanyTree)
         self.invoiceWidget.postToGL.connect(self.postToGL)
+        self.invoiceWidget.updateGLPost.connect(self.updateGLPost)
+        self.invoiceWidget.updateGLDet.connect(self.updateGLDet)
         self.invoiceWidget.deleteGLPost.connect(self.deleteGLPost)
         
         layout.addWidget(self.vendorWidget)
@@ -1294,8 +1311,24 @@ class APView(QWidget):
     def emitUpdateAssetTree(self):
         self.updateAssetTree.emit()
 
+    def emitUpdateCompanyTree(self):
+        self.updateCompanyTree.emit()
+
+    def updateGLPost(self, glPost, description, postingDate):
+        glPost.description = description
+        glPost.date = postingDate
+        self.parent.dbCursor.execute("UPDATE GLPostings SET Date=?, Description=? WHERE idNum=?",
+                                     (postingDate, description, glPost.idNum))
+        self.parent.dbConnection.commit()
+
+    def updateGLDet(self, glDet, amtPd, debitCredit):
+        glDet.amount = amtPd
+        glDet.debitCredit = debitCredit
+        self.parent.dbCursor.execute("UPDATE GLPostingsDetails SET Amount=?, DebitCredit=? WHERE idNum=?",
+                                     (amtPd, debitCredit, glDet.idNum))
+        self.parent.dbConnection.commit()
+
     def deleteGLPost(self, GLPost):
-        print(GLPost.idNum)
         self.dataConnection.glPostings.pop(GLPost.idNum)
         self.parent.dbCursor.execute("DELETE FROM GLPostings WHERE idNum=?",
                                      (GLPost.idNum,))
@@ -1304,7 +1337,6 @@ class APView(QWidget):
         self.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='glPostings' AND ObjectIdBeingLinked=?",
                                      (GLPost.idNum,))
         for glDetKey, glDet in GLPost.details.items():
-            print(glDetKey)
             self.dataConnection.glPostingsDetails.pop(glDetKey)
             glAccount = glDet.glAccount
             glAccount.removePosting(GLPost)
@@ -2372,6 +2404,9 @@ class CompanyWidget(QWidget):
     def updateCompaniesCount(self):
         self.companiesLabel.setText("Companies: %d" % len(self.companiesDict))
 
+    def refreshCompanyTree(self):
+        self.companiesTreeWidget.refreshData()
+        
     def showNewCompanyDialog(self):
         dialog = CompanyDialog("New", self)
         if dialog.exec_():
@@ -2860,7 +2895,6 @@ class AssetWidget(QWidget):
                                 
                                 childrenIterator = QTreeWidgetItemIterator(newItem)
                                 while childrenIterator.value():
-                                    print(childrenIterator.value().asset.description)
                                     self.currentAssetsTreeWidget.addItem(childrenIterator.value())
                                     childrenIterator += 1
                                 
@@ -3046,7 +3080,6 @@ class GLWidget(QWidget):
         while iterator.value():
             for childKey in iterator.value().glAccount.parentOf:
                 if glNum == childKey:
-                    print(True)
                     return iterator.value()
             iterator += 1
 

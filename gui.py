@@ -38,6 +38,7 @@ class Window(QMainWindow):
         self.projectOverview.addAssetToAssetView.connect(self.addAssetToAssetModule)
         self.APOverview.updateProjectTree.connect(self.projectOverview.projectWidget.refreshOpenProjectTree)
         self.APOverview.updateAssetTree.connect(self.assetOverview.assetWidget.refreshAssetTree)
+        self.APOverview.updateCompanyTree.connect(self.companyOverview.companyWidget.refreshCompanyTree)
         self.APOverview.updateGLTree.connect(self.glOverview.refreshGL)
 
         # Build menus
