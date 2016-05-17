@@ -28,3 +28,4 @@ DEP_METHODS = [DEP_STRAIGHT, DEP_PRODUCTION, DEP_DEPLETION, DEP_DIGITS]
 
 # Strings
 GL_POST_PYMT_DESC = "Post payment for invoice %d from vendor %d on %s"
+GL_POST_INV_DESC = "Post invoice %d from vendor %d on %s"

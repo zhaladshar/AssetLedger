@@ -26,7 +26,7 @@ class GLPostingsDetailsDict(dict):
         return tempDict
 
     def balance(self):
-        balance = 0
+        balance = 0.0
         for key, glDet in self.items():
             balance += glDet.amount
         return balance
@@ -585,7 +585,7 @@ class GLAccount:
             self.placeHolder = True
         self.childOf = None
         self.parentOf = GLAccountsDict()
-        self.postings = GLPostingsDict()
+        self.postings = GLPostingsDetailsDict()
 
     def addChild(self, child):
         self.parentOf[child.idNum] = child
@@ -608,8 +608,7 @@ class GLAccount:
             for childKey in self.parentOf:
                 balance += self.parentOf[childKey].balance()
         else:
-            tempDict = self.postings.postingsByGLAcct(self.idNum)
-            balance = tempDict.postingsByDRCR("DR").balance() - tempDict.postingsByDRCR("CR").balance()
+            balance = self.postings.postingsByDRCR("DR").balance() - self.postings.postingsByDRCR("CR").balance()
         return balance
 
 class GLPosting:
@@ -617,7 +616,7 @@ class GLPosting:
         self.idNum = idNum
         self.date = date
         self.description = description
-        self.details = {}
+        self.details = GLPostingsDetailsDict()
 
     def addDetail(self, detail):
         self.details[detail.idNum] = detail

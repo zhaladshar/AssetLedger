@@ -998,10 +998,10 @@ class InvoiceWidget(QWidget):
             item = InvoiceTreeWidgetItem(newInvoice, self.openInvoicesTreeWidget)
             self.openInvoicesTreeWidget.addItem(item)
             self.updateInvoicesCount()
-
+            
             # Create GL posting.
             date = newInvoice.invoiceDate
-            description = str("Post invoice %d from vendor %d on %s" % (newInvoice.idNum, newInvoice.vendor.idNum, date))
+            description = constants.GL_POST_INV_DESC % (newInvoice.idNum, newInvoice.vendor.idNum, date)
             details = [(newInvoice.amount(), "CR", newInvoice.vendor.glAccount.idNum, newInvoice, "invoices")]
             if newInvoice.assetProj[0] == "projects":
                 details.append((newInvoice.amount(), "DR", newInvoice.assetProj[1].glAccount.idNum, None, None))
@@ -1238,6 +1238,20 @@ class InvoiceWidget(QWidget):
                 
             self.invoicesDict.pop(item.invoice.idNum)
 
+            # Delete payments if invoice has any
+            for paymentId, payment in item.invoice.payments.items():
+                self.invoicePaymentsDict.pop(paymentId)
+                self.parent.parent.dbCursor.execute("DELETE FROM InvoicesPayments WHERE idNum=?",
+                                                    (paymentId,))
+                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='invoicesPayments' AND ObjectIdBeingLinked=?",
+                                                    (paymentId,))
+                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='invoicesPayments' AND ObjectIdToAddLinkTo=?",
+                                                    (paymentId,))
+                self.parent.parent.dbConnection.commit()
+                glDet = payment.glPosting
+                glPost = glDet.detailOf
+                self.deleteGLPost.emit(glPost)
+                
             # Delete GL Postings
             glDet = item.invoice.glPosting
             glPost = glDet.detailOf
@@ -1339,7 +1353,7 @@ class APView(QWidget):
         for glDetKey, glDet in GLPost.details.items():
             self.dataConnection.glPostingsDetails.pop(glDetKey)
             glAccount = glDet.glAccount
-            glAccount.removePosting(GLPost)
+            glAccount.removePosting(glDet)
             self.parent.dbCursor.execute("DELETE FROM GLPostingsDetails WHERE idNum=?",
                                          (glDetKey,))
             self.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='glPostingsDetails' AND ObjectIdToAddLinkTo=?",
@@ -1365,7 +1379,7 @@ class APView(QWidget):
             glPosting.addDetail(glPostingDetail)
             glPostingDetail.addDetailOf(glPosting)
             glPostingDetail.addGLAccount(self.dataConnection.glAccounts[detail[2]])
-            glPostingDetail.glAccount.addPosting(glPosting)
+            glPostingDetail.glAccount.addPosting(glPostingDetail)
 
             if detail[3]:
                 detail[3].addGLPosting(glPostingDetail)
@@ -1383,7 +1397,7 @@ class APView(QWidget):
             self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
                                          ("glPostingsDetails", glPostingDetail.idNum, "addGLAccount", "glAccounts", glPostingDetail.glAccount.idNum))
             self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                         ("glAccounts", glPostingDetail.glAccount.idNum, "addPosting", "glPostings", glPosting.idNum))
+                                         ("glAccounts", glPostingDetail.glAccount.idNum, "addPosting", "glPostingsDetails", glPostingDetail.idNum))
             
             self.parent.dbConnection.commit()
 

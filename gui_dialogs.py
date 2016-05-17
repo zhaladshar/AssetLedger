@@ -239,6 +239,7 @@ class InvoiceDialog(QDialog):
             self.paymentHistory.setHeaderHidden(True)
             self.paymentHistory.setMinimumWidth(500)
             self.paymentHistory.setMaximumHeight(200)
+            self.paymentHistory.setCurrentItem(self.paymentHistory.invisibleRootItem())
             
             paymentButtonLayout = gui_elements.StandardButtonWidget()
             paymentButtonLayout.newButton.clicked.connect(self.newPayment)
