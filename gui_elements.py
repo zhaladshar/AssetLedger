@@ -7,6 +7,23 @@ from classes import *
 import sys
 import constants
 
+class NewTreeWidget(QTreeWidget):
+    def __init__(self, headerList, widthList):
+        super().__init__()
+        self.setIndentation(0)
+        self.setMinimumWidth(constants.TREE_WIDGET_MIN_WIDTH)
+        self.setMaximumHeight(constants.TREE_WIDGET_MAX_HEIGHT)
+        self.setSortingEnabled(True)
+        self.setHeaderLabels(headerList)
+        self.setColumnSizes(constants.TREE_WIDGET_MIN_WIDTH, widthList)
+
+    def setColumnSizes(self, width, columnSizePercentList):
+        index = 0
+        for percent in columnSizePercentList:
+            size = int(percent * width)
+            self.header().resizeSection(index, size)
+            index += 1
+        
 class ClickableLabel(QLabel):
     released = pyqtSignal()
 
@@ -536,45 +553,34 @@ class VendorTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, vendorItem, parent):
         super().__init__(parent)
         self.vendor = vendorItem
-        self.main = QWidget()
 
-        idLabel = QLabel(str(self.vendor.idNum))
-        self.nameLabel = QLabel(self.vendor.name)
-        self.bidsLabel = QLabel("Bids: %d / %d" % (len(self.vendor.proposals.proposalsByStatus("Open")),
-                                                   len(self.vendor.proposals)))
-        self.invoicesLabel = QLabel("Invoices: %d / %d" % (self.vendor.openInvoiceCount(),
-                                                           len(self.vendor.invoices)))
-        self.balanceLabel = QLabel(str(self.vendor.balance()))
-
-        layout = QHBoxLayout()
-        layout.addWidget(idLabel)
-        layout.addWidget(self.nameLabel)
-        layout.addWidget(self.bidsLabel)
-        layout.addWidget(self.invoicesLabel)
-        layout.addWidget(self.balanceLabel)
-
-        self.main.setLayout(layout)
+        self.setText(0, str(self.vendor.idNum))
+        self.setText(1, self.vendor.name)
+        self.setText(2, "%d / %d" % (len(self.vendor.proposals.proposalsByStatus("Open")),
+                                     len(self.vendor.proposals)))
+        self.setText(3, "%d / %d" % (self.vendor.openInvoiceCount(),
+                                     len(self.vendor.invoices)))
+        self.setText(4, "{:,.2f}".format(self.vendor.balance()))
 
     def refreshData(self):
-        self.nameLabel.setText(self.vendor.name)
-        self.bidsLabel.setText("Bids: %d / %d" % (len(self.vendor.proposals.proposalsByStatus("Open")),
-                                                   len(self.vendor.proposals)))
-        self.invoicesLabel.setText("Invoices: %d / %d" % (self.vendor.openInvoiceCount(),
-                                                           len(self.vendor.invoices)))
-        self.balanceLabel.setText(str(self.vendor.balance()))
-
-class VendorTreeWidget(QTreeWidget):
-    def __init__(self, vendorsDict):
-        super().__init__()
+        self.setText(1, self.vendor.name)
+        self.setText(2, "%d / %d" % (len(self.vendor.proposals.proposalsByStatus("Open")),
+                                     len(self.vendor.proposals)))
+        self.setText(3, "%d / %d" % (self.vendor.openInvoiceCount(),
+                                     len(self.vendor.invoices)))
+        self.setText(4, "{:,.2f}".format(self.vendor.balance()))
+        
+class VendorTreeWidget(NewTreeWidget):
+    def __init__(self, vendorsDict, headerList, widthList):
+        super().__init__(headerList, widthList)
         self.buildItems(self, vendorsDict)
-
+        self.setColumnCount(5)
+        self.sortItems(0, Qt.AscendingOrder)
+        
     def buildItems(self, parent, vendorsDict):
         for vendorKey in vendorsDict:
             item = VendorTreeWidgetItem(vendorsDict[vendorKey], parent)
-            self.addItem(item)
-
-    def addItem(self, widgetItem):
-        self.setItemWidget(widgetItem, 0, widgetItem.main)
+            self.addTopLevelItem(item)
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
@@ -594,12 +600,10 @@ class VendorWidget(QWidget):
         # Piece together the vendor layout
         subLayout = QHBoxLayout()
 
-        self.vendorTreeWidget = VendorTreeWidget(self.vendorsDict)
-        self.vendorTreeWidget.setIndentation(0)
-        self.vendorTreeWidget.setHeaderHidden(True)
-        self.vendorTreeWidget.setMinimumWidth(500)
-        self.vendorTreeWidget.setMaximumHeight(200)
-
+        self.vendorTreeWidget = VendorTreeWidget(self.vendorsDict,
+                                                 constants.VENDOR_HDR_LIST,
+                                                 constants.VENDOR_HDR_WDTH)
+        
         buttonWidget = StandardButtonWidget()
         buttonWidget.newButton.clicked.connect(self.showNewVendorDialog)
         buttonWidget.viewButton.clicked.connect(self.showViewVendorDialog)
@@ -611,7 +615,7 @@ class VendorWidget(QWidget):
         mainLayout.addLayout(subLayout)
 
         self.setLayout(mainLayout)
-
+        
     def stripAllButNumbers(self, string):
         if string == "":
             return None
@@ -720,52 +724,38 @@ class VendorWidget(QWidget):
 class InvoiceTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, invoiceItem, parent):
         super().__init__(parent)
-        self.parent = parent
         self.invoice = invoiceItem
-        self.main = QWidget()
 
-        idLabel = QLabel(str(self.invoice.idNum))
-        self.vendorLabel = QLabel(self.invoice.vendor.name)
-        self.invoiceDateLabel = QLabel(self.invoice.invoiceDate)
-        self.dueDateLabel = QLabel(self.invoice.dueDate)
-        self.invoiceAmountLabel = QLabel(str(self.invoice.amount()))
-        self.invoicePaidLabel = QLabel(str(self.invoice.paid()))
-        self.invoiceBalanceLabel = QLabel(str(self.invoice.balance()))
-
-        layout = QHBoxLayout()
-        layout.addWidget(idLabel)
-        layout.addWidget(self.vendorLabel)
-        layout.addWidget(self.invoiceDateLabel)
-        layout.addWidget(self.dueDateLabel)
-        layout.addWidget(self.invoiceAmountLabel)
-        layout.addWidget(self.invoicePaidLabel)
-        layout.addWidget(self.invoiceBalanceLabel)
-
-        self.main.setLayout(layout)
+        self.setText(0, str(self.invoice.idNum))
+        self.setText(1, self.invoice.vendor.name)
+        self.setText(2, self.invoice.invoiceDate)
+        self.setText(3, self.invoice.dueDate)
+        self.setText(4, "{:,.2f}".format(self.invoice.amount()))
+        self.setText(5, "{:,.2f}".format(self.invoice.paid()))
+        self.setText(6, "{:,.2f}".format(self.invoice.balance()))
 
     def refreshData(self):
-        self.vendorLabel.setText(self.invoice.vendor.name)
-        self.invoiceDateLabel.setText(self.invoice.invoiceDate)
-        self.dueDateLabel.setText(self.invoice.dueDate)
-        self.invoiceAmountLabel.setText(str(self.invoice.amount()))
-        self.invoicePaidLabel.setText(str(self.invoice.paid()))
-        self.invoiceBalanceLabel.setText(str(self.invoice.balance()))
+        self.setText(1, self.invoice.vendor.name)
+        self.setText(2, self.invoice.invoiceDate)
+        self.setText(3, self.invoice.dueDate)
+        self.setText(4, "{:,.2f}".format(self.invoice.amount()))
+        self.setText(5, "{:,.2f}".format(self.invoice.paid()))
+        self.setText(6, "{:,.2f}".format(self.invoice.balance()))
 
-class InvoiceTreeWidget(QTreeWidget):
+class InvoiceTreeWidget(NewTreeWidget):
     balanceZero = pyqtSignal(int)
     balanceNotZero = pyqtSignal(int)
     
-    def __init__(self, invoicesDict):
-        super().__init__()
+    def __init__(self, invoicesDict, headerList, widthList):
+        super().__init__(headerList, widthList)
         self.buildItems(self, invoicesDict)
+        self.setColumnCount(7)
+        self.sortItems(0, Qt.AscendingOrder)
 
     def buildItems(self, parent, invoicesDict):
         for invoiceKey in invoicesDict:
             item = InvoiceTreeWidgetItem(invoicesDict[invoiceKey], parent)
-            self.addItem(item)
-
-    def addItem(self, widgetItem):
-        self.setItemWidget(widgetItem, 0, widgetItem.main)
+            self.addTopLevelItem(item)
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
@@ -802,19 +792,11 @@ class InvoiceWidget(QWidget):
         subLayout = QHBoxLayout()
         treeWidgetsLayout = QVBoxLayout()
 
-        self.openInvoicesTreeWidget = InvoiceTreeWidget(self.invoicesDict.openInvoices())
-        self.openInvoicesTreeWidget.setIndentation(0)
-        self.openInvoicesTreeWidget.setHeaderHidden(True)
-        self.openInvoicesTreeWidget.setMinimumWidth(500)
-        self.openInvoicesTreeWidget.setMaximumHeight(100)
+        self.openInvoicesTreeWidget = InvoiceTreeWidget(self.invoicesDict.openInvoices(), constants.INVOICE_HDR_LIST, constants.INVOICE_HDR_WDTH)
         self.openInvoicesTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
         self.openInvoicesTreeWidget.balanceZero.connect(self.moveOpenInvoiceToPaid)
 
-        self.paidInvoicesTreeWidget = InvoiceTreeWidget(self.invoicesDict.paidInvoices())
-        self.paidInvoicesTreeWidget.setIndentation(0)
-        self.paidInvoicesTreeWidget.setHeaderHidden(True)
-        self.paidInvoicesTreeWidget.setMinimumWidth(500)
-        self.paidInvoicesTreeWidget.setMaximumHeight(200)
+        self.paidInvoicesTreeWidget = InvoiceTreeWidget(self.invoicesDict.paidInvoices(), constants.INVOICE_HDR_LIST, constants.INVOICE_HDR_WDTH)
         self.paidInvoicesTreeWidget.balanceNotZero.connect(self.movePaidInvoiceToOpen)
         self.paidInvoicesTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
         
@@ -1408,49 +1390,34 @@ class ProposalTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, proposalItem, parent):
         super().__init__(parent)
         self.proposal = proposalItem
-        self.main = QWidget()
 
-        idLabel = QLabel(str(self.proposal.idNum))
-        self.vendorLabel = QLabel(self.proposal.vendor.name)
-        self.dateLabel = QLabel(self.proposal.date)
-        if self.proposal.proposalFor[0] == "projects":
-            self.description = QLabel(self.proposal.proposalFor[1].description)
-        elif self.proposal.proposalFor[0] == "assets":
-            self.description = QLabel(self.proposal.proposalFor[1].description)
-        else:
-            self.description = QLabel("ASSET/PROJECT ERROR")
-        self.proposalAmountLabel = QLabel(str(self.proposal.totalCost()))
-
-        layout = QHBoxLayout()
-        layout.addWidget(idLabel)
-        layout.addWidget(self.vendorLabel)
-        layout.addWidget(self.dateLabel)
-        layout.addWidget(self.description)
-        layout.addWidget(self.proposalAmountLabel)
-
-        self.main.setLayout(layout)
+        self.setText(0, str(self.proposal.idNum))
+        self.setText(1, self.proposal.vendor.name)
+        self.setText(2, self.proposal.date)
+        self.setText(3, self.proposal.proposalFor[1].description)
+        self.setText(4, "{:,.2f}".format(self.proposal.totalCost()))
 
     def refreshData(self):
-        self.vendorLabel.setText(self.proposal.vendor.name)
-        self.dateLabel.setText(self.proposal.date)
-        self.proposalAmountLabel.setText(str(self.proposal.totalCost()))
-    
-class ProposalTreeWidget(QTreeWidget):
+        self.setText(1, self.proposal.vendor.name)
+        self.setText(2, self.proposal.date)
+        self.setText(3, self.proposal.proposalFor[1].description)
+        self.setText(4, "{:,.2f}".format(self.proposal.totalCost()))
+        
+class ProposalTreeWidget(NewTreeWidget):
     openProposal = pyqtSignal(int)
     rejectedProposal = pyqtSignal(int)
     acceptedProposal = pyqtSignal(int)
     
-    def __init__(self, proposalsDict):
-        super().__init__()
+    def __init__(self, proposalsDict, headerList, widthList):
+        super().__init__(headerList, widthList)
         self.buildItems(self, proposalsDict)
-
+        self.setColumnCount(5)
+        self.sortItems(0, Qt.AscendingOrder)
+        
     def buildItems(self, parent, proposalsDict):
         for proposalKey in proposalsDict:
             item = ProposalTreeWidgetItem(proposalsDict[proposalKey], parent)
-            self.addItem(item)
-
-    def addItem(self, widgetItem):
-        self.setItemWidget(widgetItem, 0, widgetItem.main)
+            self.addTopLevelItem(item)
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
@@ -1487,29 +1454,17 @@ class ProposalWidget(QWidget):
         subLayout = QHBoxLayout()
         treeWidgetsLayout = QVBoxLayout()
 
-        self.openProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus("Open"))
-        self.openProposalsTreeWidget.setIndentation(0)
-        self.openProposalsTreeWidget.setHeaderHidden(True)
-        self.openProposalsTreeWidget.setMinimumWidth(500)
-        self.openProposalsTreeWidget.setMaximumHeight(100)
+        self.openProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus(constants.OPN_PROPOSAL_STATUS), constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
         self.openProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
         self.openProposalsTreeWidget.rejectedProposal.connect(self.moveOpenToRejected)
         self.openProposalsTreeWidget.acceptedProposal.connect(self.moveOpenToAccepted)
 
-        self.rejectedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus(constants.REJ_PROPOSAL_STATUS))
-        self.rejectedProposalsTreeWidget.setIndentation(0)
-        self.rejectedProposalsTreeWidget.setHeaderHidden(True)
-        self.rejectedProposalsTreeWidget.setMinimumWidth(500)
-        self.rejectedProposalsTreeWidget.setMaximumHeight(100)
+        self.rejectedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus(constants.REJ_PROPOSAL_STATUS), constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
         self.rejectedProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
         self.rejectedProposalsTreeWidget.openProposal.connect(self.moveRejectedToOpen)
         self.rejectedProposalsTreeWidget.acceptedProposal.connect(self.moveRejectedToAccepted)
         
-        self.acceptedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus(constants.ACC_PROPOSAL_STATUS))
-        self.acceptedProposalsTreeWidget.setIndentation(0)
-        self.acceptedProposalsTreeWidget.setHeaderHidden(True)
-        self.acceptedProposalsTreeWidget.setMinimumWidth(500)
-        self.acceptedProposalsTreeWidget.setMaximumHeight(100)
+        self.acceptedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus(constants.ACC_PROPOSAL_STATUS), constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
         self.acceptedProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(3))
         self.acceptedProposalsTreeWidget.openProposal.connect(self.moveAcceptedToOpen)
         self.acceptedProposalsTreeWidget.rejectedProposal.connect(self.moveAcceptedToRejected)
@@ -1932,47 +1887,35 @@ class ProjectTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, projectItem, parent):
         super().__init__(parent)
         self.project = projectItem
-        self.main = QWidget()
         
-        idLabel = QLabel(str(self.project.idNum))
-        self.descLabel = QLabel(self.project.description)
-        self.startDateLabel = QLabel(self.project.dateStart)
-        self.endDateLabel = QLabel(self.project.dateEnd)
-        self.durationLabel = QLabel("<Duration>")
-        self.CIPLabel = QLabel("CIP: %.02f" % self.project.calculateCIP())
-        
-        layout = QHBoxLayout()
-        layout.addWidget(idLabel)
-        layout.addWidget(self.descLabel)
-        layout.addWidget(self.startDateLabel)
-        layout.addWidget(self.endDateLabel)
-        layout.addWidget(self.durationLabel)
-        layout.addWidget(self.CIPLabel)
-        
-        self.main.setLayout(layout)
+        self.setText(0, str(self.project.idNum))
+        self.setText(1, self.project.description)
+        self.setText(2, self.project.dateStart)
+        self.setText(3, self.project.dateEnd)
+        self.setText(4, "<Duration>")
+        self.setText(5, "{:,.2f}".format(self.project.calculateCIP()))
 
     def refreshData(self):
-        self.descLabel.setText(self.project.description)
-        self.startDateLabel.setText(self.project.dateStart)
-        self.endDateLabel.setText(self.project.dateEnd)
-        self.durationLabel.setText("<Duration>")
-        self.CIPLabel.setText("CIP: %.02f" % self.project.calculateCIP())
-
-class ProjectTreeWidget(QTreeWidget):
+        self.setText(1, self.project.description)
+        self.setText(2, self.project.dateStart)
+        self.setText(3, self.project.dateEnd)
+        self.setText(4, "<Duration>")
+        self.setText(5, "{:,.2f}".format(self.project.calculateCIP()))
+        
+class ProjectTreeWidget(NewTreeWidget):
     projectAbandoned = pyqtSignal(int)
     projectCompleted = pyqtSignal(int)
     
-    def __init__(self, projectsDict):
-        super().__init__()
+    def __init__(self, projectsDict, headerList, widthList):
+        super().__init__(headerList, widthList)
         self.buildItems(self, projectsDict)
+        self.setColumnCount(6)
+        self.sortItems(0, Qt.AscendingOrder)
 
     def buildItems(self, parent, projectsDict):
         for projectKey in projectsDict:
             item = ProjectTreeWidgetItem(projectsDict[projectKey], parent)
-            self.addItem(item)
-
-    def addItem(self, widgetItem):
-        self.setItemWidget(widgetItem, 0, widgetItem.main)
+            self.addTopLevelItem(item)
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
@@ -2003,26 +1946,14 @@ class ProjectWidget(QWidget):
         subLayout = QHBoxLayout()
         treeWidgetsLayout = QVBoxLayout()
 
-        self.openProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.OPN_PROJECT_STATUS))
-        self.openProjectsTreeWidget.setIndentation(0)
-        self.openProjectsTreeWidget.setHeaderHidden(True)
-        self.openProjectsTreeWidget.setMinimumWidth(500)
-        self.openProjectsTreeWidget.setMaximumHeight(100)
+        self.openProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.OPN_PROJECT_STATUS), constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
         self.openProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
         self.openProjectsTreeWidget.projectAbandoned.connect(self.moveOpenToAbandoned)
 
-        self.abandonedProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.ABD_PROJECT_STATUS))
-        self.abandonedProjectsTreeWidget.setIndentation(0)
-        self.abandonedProjectsTreeWidget.setHeaderHidden(True)
-        self.abandonedProjectsTreeWidget.setMinimumWidth(500)
-        self.abandonedProjectsTreeWidget.setMaximumHeight(100)
+        self.abandonedProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.ABD_PROJECT_STATUS), constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
         self.abandonedProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
 
-        self.completedProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.CMP_PROJECT_STATUS))
-        self.completedProjectsTreeWidget.setIndentation(0)
-        self.completedProjectsTreeWidget.setHeaderHidden(True)
-        self.completedProjectsTreeWidget.setMinimumWidth(500)
-        self.completedProjectsTreeWidget.setMaximumHeight(100)
+        self.completedProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.CMP_PROJECT_STATUS), constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
         self.completedProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(3))
 
         self.abandonedProjectsLabel = QLabel("%s: %d" % (constants.ABD_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.ABD_PROJECT_STATUS))))
@@ -2325,41 +2256,30 @@ class CompanyTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, companyItem, parent):
         super().__init__(parent)
         self.company = companyItem
-        self.main = QWidget()
         
-        idLabel = QLabel(str(self.company.idNum))
-        self.nameLabel = QLabel(self.company.name)
-        self.shortNameLabel = QLabel(self.company.shortName)
-        self.assetsAmountLabel = QLabel("Assets: %.02f" % self.company.assetsAmount())
-        self.CIPLabel = QLabel("CIP: %.02f" % self.company.CIPAmount())
+        self.setText(0, str(self.company.idNum))
+        self.setText(1, self.company.name)
+        self.setText(2, self.company.shortName)
+        self.setText(3, "{:,.2f}".format(self.company.assetsAmount()))
+        self.setText(4, "{:,.2f}".format(self.company.CIPAmount()))
         
-        layout = QHBoxLayout()
-        layout.addWidget(idLabel)
-        layout.addWidget(self.nameLabel)
-        layout.addWidget(self.shortNameLabel)
-        layout.addWidget(self.assetsAmountLabel)
-        layout.addWidget(self.CIPLabel)
-        
-        self.main.setLayout(layout)
-
     def refreshData(self):
-        self.nameLabel.setText(self.company.name)
-        self.shortNameLabel.setText(self.company.shortName)
-        self.assetsAmountLabel.setText("Assets: %.02f" % self.company.assetsAmount())
-        self.CIPLabel.setText("CIP: %.02f" % self.company.CIPAmount())
+        self.setText(1, self.company.name)
+        self.setText(2, self.company.shortName)
+        self.setText(3, "{:,.2f}".format(self.company.assetsAmount()))
+        self.setText(4, "{:,.2f}".format(self.company.CIPAmount()))
         
-class CompanyTreeWidget(QTreeWidget):
-    def __init__(self, companiesDict):
-        super().__init__()
+class CompanyTreeWidget(NewTreeWidget):
+    def __init__(self, companiesDict, headerList, widthList):
+        super().__init__(headerList, widthList)
         self.buildItems(self, companiesDict)
+        self.setColumnCount(5)
+        self.sortItems(0, Qt.AscendingOrder)
 
     def buildItems(self, parent, companiesDict):
         for companyKey in companiesDict:
             item = CompanyTreeWidgetItem(companiesDict[companyKey], parent)
-            self.addItem(item)
-
-    def addItem(self, widgetItem):
-        self.setItemWidget(widgetItem, 0, widgetItem.main)
+            self.addTopLevelItem(item)
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
@@ -2383,11 +2303,7 @@ class CompanyWidget(QWidget):
         subLayout = QHBoxLayout()
         treeWidgetsLayout = QVBoxLayout()
 
-        self.companiesTreeWidget = CompanyTreeWidget(self.companiesDict)
-        self.companiesTreeWidget.setIndentation(0)
-        self.companiesTreeWidget.setHeaderHidden(True)
-        self.companiesTreeWidget.setMinimumWidth(500)
-        self.companiesTreeWidget.setMaximumHeight(100)
+        self.companiesTreeWidget = CompanyTreeWidget(self.companiesDict, constants.COMPANY_HDR_LIST, constants.COMPANY_HDR_WDTH)
 
         treeWidgetsLayout.addWidget(self.companiesTreeWidget)
         treeWidgetsLayout.addStretch(1)
@@ -2522,37 +2438,20 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, assetItem, parent):
         super().__init__(parent)
         self.asset = assetItem
-        self.main = QWidget()
-        layout = QHBoxLayout()
-        
-        for depth in range(self.depth(self.asset)):
-            bufferLabel = QLabel("")
-            bufferLabel.setStyleSheet("QLabel { background-color: rgba(255, 255, 255, 0) }")
-            bufferLabel.setFixedWidth(15)
-            layout.addWidget(bufferLabel)
 
-        idLabel = QLabel(str(self.asset.idNum))
-        self.descLabel = QLabel(self.asset.description)
-        self.costLabel = QLabel(str(self.asset.cost()))
-        self.depAmtLabel = QLabel(str(self.asset.depreciatedAmount()))
-        self.botDateLabel = QLabel(self.asset.acquireDate)
-        self.inSvcDateLabel = QLabel(self.asset.inSvcDate)
+        self.setText(0, str(self.asset.idNum))
+        self.setText(1, self.asset.description)
+        self.setText(2, "{:,.2f}".format(self.asset.cost()))
+        self.setText(3, "{:,.2f}".format(self.asset.depreciatedAmount()))
+        self.setText(4, self.asset.acquireDate)
+        self.setText(5, self.asset.inSvcDate)
         
-        layout.addWidget(idLabel)
-        layout.addWidget(self.descLabel)
-        layout.addWidget(self.costLabel)
-        layout.addWidget(self.depAmtLabel)
-        layout.addWidget(self.botDateLabel)
-        layout.addWidget(self.inSvcDateLabel)
-        
-        self.main.setLayout(layout)
-
     def refreshData(self):
-        self.descLabel.setText(self.asset.description)
-        self.costLabel.setText(str(self.asset.cost()))
-        self.depAmtLabel.setText(str(self.asset.depreciatedAmount()))
-        self.botDateLabel.setText(self.asset.acquireDate)
-        self.inSvcDateLabel.setText(self.asset.inSvcDate)
+        self.setText(1, self.asset.description)
+        self.setText(2, "{:,.2f}".format(self.asset.cost()))
+        self.setText(3, "{:,.2f}".format(self.asset.depreciatedAmount()))
+        self.setText(4, self.asset.acquireDate)
+        self.setText(5, self.asset.inSvcDate)
 
     def depth(self, asset):
         if asset.subAssetOf == None:
@@ -2567,14 +2466,16 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
             if item.childCount() > 0:
                 self.assignChildren(item.takeChildren(), newItem)
         
-class AssetTreeWidget(QTreeWidget):
+class AssetTreeWidget(NewTreeWidget):
     disposeAsset = pyqtSignal(int)
     
-    def __init__(self, assetsDict, inSvcFg=True):
-        super().__init__()
+    def __init__(self, assetsDict, headerList, widthList, inSvcFg=True):
+        super().__init__(headerList, widthList)
         self.inSvcFg = inSvcFg
         self.itemsInTree = []
         self.buildItems(self, assetsDict)
+        self.setColumnCount(6)
+        self.sortItems(0, Qt.AscendingOrder)
 
     def buildItems(self, parent, assetsDict):
         # This function will check to make sure the asset's service status
@@ -2592,18 +2493,23 @@ class AssetTreeWidget(QTreeWidget):
             if assetsDict[assetKey].inSvc() == self.inSvcFg:
                 if assetKey not in self.itemsInTree:
                     item = AssetTreeWidgetItem(assetsDict[assetKey], parent)
-                    self.addItem(item)
+                    self.addTopLevelItem(item)
 
                     if assetsDict[assetKey].subAssets:
-                        self.buildItems(item, assetsDict[assetKey].subAssets)
+                        self.buildChildren(item, assetsDict[assetKey].subAssets)
 
-    def addItem(self, widgetItem):
-        self.setItemWidget(widgetItem, 0, widgetItem.main)
-        self.itemsInTree.append(widgetItem.asset.idNum)
+    def buildChildren(self, parent, assetsDict):
+        for assetKey in assetsDict:
+            item = parent
 
-    def addItems(self, listOfItems):
-        for item in listOfItems:
-            self.addItem(item)
+            if assetsDict[assetKey].inSvc() == self.inSvcFg:
+                if assetKey not in self.itemsInTree:
+                    item = AssetTreeWidgetItem(assetsDict[assetKey], parent)
+                    parent.addChild(item)
+                    self.itemsInTree.append(assetKey)
+
+                    if assetsDict[assetKey].subAssets:
+                        self.buildChildren(item, assetsDict[assetKey].subAssets)
 
     def refreshChildren(self, parentItem):
         for idx in range(parentItem.childCount()):
@@ -2643,19 +2549,11 @@ class AssetWidget(QWidget):
         subLayout = QHBoxLayout()
         assetWidgetsLayout = QVBoxLayout()
 
-        self.currentAssetsTreeWidget = AssetTreeWidget(self.assetsDict.currentAssets(True))
-        self.currentAssetsTreeWidget.setIndentation(0)
-        self.currentAssetsTreeWidget.setHeaderHidden(True)
-        self.currentAssetsTreeWidget.setMinimumWidth(500)
-        self.currentAssetsTreeWidget.setMaximumHeight(100)
+        self.currentAssetsTreeWidget = AssetTreeWidget(self.assetsDict.currentAssets(True), constants.ASSET_HDR_LIST, constants.ASSET_HDR_WDTH)
         self.currentAssetsTreeWidget.disposeAsset.connect(self.moveCurrentAssetToDisposed)
         self.currentAssetsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
 
-        self.disposedAssetsTreeWidget = AssetTreeWidget(self.assetsDict.disposedAssets(), False)
-        self.disposedAssetsTreeWidget.setIndentation(0)
-        self.disposedAssetsTreeWidget.setHeaderHidden(True)
-        self.disposedAssetsTreeWidget.setMinimumWidth(500)
-        self.disposedAssetsTreeWidget.setMaximumHeight(100)
+        self.disposedAssetsTreeWidget = AssetTreeWidget(self.assetsDict.disposedAssets(), constants.ASSET_HDR_LIST, constants.ASSET_HDR_WDTH, False)
         self.disposedAssetsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
 
         self.disposedAssetsLabel = QLabel("Disposed Assets: %d / %.02f" % (len(self.assetsDict.disposedAssets()), self.assetsDict.disposedCost()))
@@ -2974,35 +2872,30 @@ class GLTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, glAccount, parent):
         super().__init__(parent)
         self.glAccount = glAccount
-        self.main = QWidget()
         
-        self.idLabel = QLabel(str(self.glAccount.idNum))
-        self.descLabel = QLabel(self.glAccount.description)
-        self.balanceLabel = QLabel(str(self.glAccount.balance()))
+        self.setText(0, str(self.glAccount.idNum))
+        self.setText(1, self.glAccount.description)
+        self.setText(2, "{:,.2f}".format(self.glAccount.balance()))
 
-        if glAccount.placeHolder == True:
-            self.idLabel.setStyleSheet(" QLabel { font-weight: bold } ")
-            self.descLabel.setStyleSheet(" QLabel { font-weight: bold } ")
-            self.balanceLabel.setStyleSheet(" QLabel { font-weight: bold } ")
-        
-        layout = QHBoxLayout()
-        layout.addWidget(self.idLabel)
-        layout.addWidget(self.descLabel)
-        layout.addWidget(self.balanceLabel)
-        
-        self.main.setLayout(layout)
+        if self.glAccount.placeHolder == True:
+            for n in range(3):
+                font = self.font(n)
+                font.setBold(True)
+                self.setFont(n, font)
 
     def refreshData(self):
-        self.idLabel.setText(str(self.glAccount.idNum))
-        self.descLabel.setText(self.glAccount.description)
-        self.balanceLabel.setText(str(self.glAccount.balance()))
+        self.setText(0, str(self.glAccount.idNum))
+        self.setText(1, self.glAccount.description)
+        self.setText(2, "{:,.2f}".format(self.glAccount.balance()))
         
-class GLTreeWidget(QTreeWidget):
+class GLTreeWidget(NewTreeWidget):
     moveGLAcctXToYFromZ = pyqtSignal(int, int, int)
     
-    def __init__(self, glAccountsDict):
-        super().__init__()
+    def __init__(self, glAccountsDict, headerList, widthList):
+        super().__init__(headerList, widthList)
         self.buildItems(self, glAccountsDict)
+        self.setColumnCount(3)
+        self.sortItems(0, Qt.AscendingOrder)
 
     def buildItems(self, parent, glAccountsDict):
         tempDict = glAccountsDict.accountGroups()
@@ -3012,12 +2905,9 @@ class GLTreeWidget(QTreeWidget):
             if item.glAccount.parentOf:
                 for subAccountKey in item.glAccount.parentOf.sortedListOfKeys():
                     subItem = GLTreeWidgetItem(item.glAccount.parentOf[subAccountKey], item)
-                    self.addItem(subItem)
+                    subItem.addChild(subItem)
             
-            self.addItem(item)
-
-    def addItem(self, widgetItem):
-        self.setItemWidget(widgetItem, 0, widgetItem.main)
+            self.addTopLevelItem(item)
 
     def refreshChildren(self, parentItem):
         for idx in range(parentItem.childCount()):
@@ -3034,6 +2924,8 @@ class GLTreeWidget(QTreeWidget):
                 self.refreshChildren(self.topLevelItem(idx))
             
 class GLWidget(QWidget):
+    displayGLAcct = pyqtSignal(int)
+    
     def __init__(self, glAccountsDict, parent):
         super().__init__()
         self.glAccountsDict = glAccountsDict
@@ -3048,11 +2940,8 @@ class GLWidget(QWidget):
         subLayout = QHBoxLayout()
         treeWidgetsLayout = QVBoxLayout()
 
-        self.chartOfAccountsTreeWidget = GLTreeWidget(self.glAccountsDict)
-        self.chartOfAccountsTreeWidget.setIndentation(0)
-        self.chartOfAccountsTreeWidget.setHeaderHidden(True)
-        self.chartOfAccountsTreeWidget.setMinimumWidth(500)
-        self.chartOfAccountsTreeWidget.setMaximumHeight(100)
+        self.chartOfAccountsTreeWidget = GLTreeWidget(self.glAccountsDict, constants.GL_HDR_LIST, constants.GL_HDR_WDTH)
+        self.chartOfAccountsTreeWidget.currentItemChanged.connect(self.displayGLDetails)
         self.chartOfAccountsTreeWidget.moveGLAcctXToYFromZ.connect(self.moveAcctXToGrpY)
 
         treeWidgetsLayout.addWidget(self.chartOfAccountsTreeWidget)
@@ -3069,6 +2958,9 @@ class GLWidget(QWidget):
         
         self.setLayout(mainLayout)
 
+    def displayGLDetails(self, newItem, oldItem):
+        self.displayGLAcct.emit(newItem.glAccount.idNum)
+        
     def moveAcctXToGrpY(self, acctId, newParentId, oldParentId):
         oldParentItem = self.getItem(oldParentId)
         newParentItem = self.getItem(newParentId)
@@ -3177,6 +3069,76 @@ class GLWidget(QWidget):
             self.parent.parent.dbConnection.commit()
             self.glAccountsDict.pop(item.glAccount.idNum)
 
+class GLPostingsTreeWidgetItem(QTreeWidgetItem):
+    def __init__(self, postingItem, parent):
+        super().__init__(parent)
+        self.glPosting = postingItem
+        
+        self.setText(0, self.glPosting.detailOf.date)
+        self.setText(1, self.glPosting.detailOf.description)
+        self.setText(2, "{:,.2f}".format(self.glPosting.amount))
+        
+    def refreshData(self):
+        self.setText(0, self.glPosting.detailOf.date)
+        self.setText(1, self.glPosting.detailOf.description)
+        self.setText(2, "{:,.2f}".format(self.glPosting.amount))
+        
+class GLPostingsTreeWidget(NewTreeWidget):
+    def __init__(self, headerList, widthList):
+        super().__init__(headerList, widthList)
+        self.setColumnCount(3)
+        self.sortItems(0, Qt.AscendingOrder)
+
+    def buildItems(self, parent, glPostingsDetDict):
+        for glKey in glPostingsDetDict:
+            item = GLPostingsTreeWidgetItem(glPostingsDetDict[glKey], parent)
+            self.addTopLevelItem(item)
+
+    def refreshData(self):
+        for idx in range(self.topLevelItemCount()):
+            self.topLevelItem(idx).refreshData()
+
+class GLPostingsWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        mainLayout = QVBoxLayout()
+
+        self.glPostingsLabel = QLabel("Details")
+        mainLayout.addWidget(self.glPostingsLabel)
+
+        # Piece together the GL layout
+        subLayout = QHBoxLayout()
+        treeWidgetsLayout = QVBoxLayout()
+
+        self.glPostingsTreeWidget = GLPostingsTreeWidget(constants.GL_HDR_LIST, constants.GL_HDR_WDTH)
+
+        treeWidgetsLayout.addWidget(self.glPostingsTreeWidget)
+        treeWidgetsLayout.addStretch(1)
+
+        buttonWidget = StandardButtonWidget()
+        buttonWidget.newButton.clicked.connect(self.showNewGLPostingDialog)
+        buttonWidget.viewButton.clicked.connect(self.showViewGLPostingDialog)
+        buttonWidget.deleteButton.clicked.connect(self.deleteGLPostingAccount)
+        
+        subLayout.addLayout(treeWidgetsLayout)
+        subLayout.addWidget(buttonWidget)
+        mainLayout.addLayout(subLayout)
+
+        self.setLayout(mainLayout)
+
+    def showDetail(self, glAcctNum, glPostingsDetDict):
+        self.glPostingsTreeWidget.clear()
+        self.glPostingsTreeWidget.buildItems(self.glPostingsTreeWidget, glPostingsDetDict)
+        
+    def showNewGLPostingDialog(self):
+        pass
+
+    def showViewGLPostingDialog(self):
+        pass
+
+    def deleteGLPostingAccount(self):
+        pass
+        
 class GLView(QWidget):
     def __init__(self, dataConnection, parent):
         super().__init__(parent)
@@ -3184,11 +3146,17 @@ class GLView(QWidget):
         self.parent = parent
 
         self.glWidget = GLWidget(self.dataConnection.glAccounts, self)
+        self.glWidget.displayGLAcct.connect(self.displayGLDetails)
+        self.glPostingsWidget = GLPostingsWidget()
 
         layout = QVBoxLayout()
         layout.addWidget(self.glWidget)
+        layout.addWidget(self.glPostingsWidget)
 
         self.setLayout(layout)
 
     def refreshGL(self):
         self.glWidget.chartOfAccountsTreeWidget.refreshData()
+
+    def displayGLDetails(self, glAcctNum):
+        self.glPostingsWidget.showDetail(glAcctNum, self.dataConnection.glAccounts[glAcctNum].postings)

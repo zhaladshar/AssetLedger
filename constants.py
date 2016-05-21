@@ -29,3 +29,31 @@ DEP_METHODS = [DEP_STRAIGHT, DEP_PRODUCTION, DEP_DEPLETION, DEP_DIGITS]
 # Strings
 GL_POST_PYMT_DESC = "Post payment for invoice %d from vendor %d on %s"
 GL_POST_INV_DESC = "Post invoice %d from vendor %d on %s"
+
+#############################
+##
+## Tree Widget Constants
+##
+#############################
+
+# Tree Widget Constants
+TREE_WIDGET_MIN_WIDTH = 500
+TREE_WIDGET_MAX_HEIGHT = 200
+
+# Tree Widget Header
+VENDOR_HDR_LIST = ["ID", "Name", "Bids (O / T)", "Invoices (O / T)", "Balance"]
+VENDOR_HDR_WDTH = [ .08,   .396,            .14,                .18,        .2]
+INVOICE_HDR_LIST = ["ID", "Vendor", "Date", "Due", "Amount", "Paid", "Balance"]
+INVOICE_HDR_WDTH = [ .08,     .396,     .1,    .1,     .108,   .108,      .108]
+COMPANY_HDR_LIST = ["ID", "Name", "Short Name", "Assets", "CIP"]
+COMPANY_HDR_WDTH = [ .08,     .5,           .2,      .11,   .11]
+PROPOSAL_HDR_LIST = ["ID", "Vendor", "Date", "Asset/Project", "Amount"]
+PROPOSAL_HDR_WDTH = [ .08,      .25,     .1,             .46,      .11]
+PROJECT_HDR_LIST = ["ID", "Description", "Started", "Ended", "Duration", "CIP"]
+PROJECT_HDR_WDTH = [ .08,           .45,        .1,      .1,        .15,   .12]
+ASSET_HDR_LIST = ["ID", "Description", "Cost", "Deprec.", "Bought", "In Use"]
+ASSET_HDR_WDTH = [ .08,           .47,    .11,       .11,      .11,      .11]
+GL_HDR_LIST = ["Acct #", "Description", "Balance"]
+GL_HDR_WDTH = [      .2,            .6,        .2]
+GL_POST_HDR_LIST = ["Date", "Description", "Balance"]
+GL_POST_HDR_WDTH = [    .1,            .7,        .2]
