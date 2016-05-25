@@ -65,6 +65,13 @@ class GLAccountsDict(dict):
         sortedList = sorted(list(self), key=lambda x: x)
         return sortedList
 
+    def sortedListOfKeysAndNames(self):
+        sortedListOfKeys = self.sortedListOfKeys()
+        sortedListOfKeysAndNames = []
+        for key in sortedListOfKeys:
+            sortedListOfKeysAndNames.append("%d - %s" % (key, self[key].description))
+        return sortedListOfKeysAndNames
+
 class InvoicesDict(dict):
     def __init__(self):
         super().__init__()
@@ -448,6 +455,7 @@ class Company:
         self.projects = {}
         self.assets = AssetsDict()
         self.invoices = {}
+        self.glPostings = GLPostingsDict()
 
     def assetsAmount(self):
         return self.assets.currentCost()
@@ -482,6 +490,12 @@ class Company:
 
     def removeAsset(self, asset):
         self.assets.pop(asset.idNum)
+
+    def addPosting(self, posting):
+        self.glPostings[posting.idNum] = posting
+
+    def removePosting(self, posting):
+        self.glPostings.pop(posting.idNum)
 
 class Asset:
     def __init__(self, desc, acqDate, inSvcDate, disposeDate, disposeAmount, usefulLife, salvageAmt, depMethod, idNum):
@@ -617,9 +631,13 @@ class GLPosting:
         self.date = date
         self.description = description
         self.details = GLPostingsDetailsDict()
+        self.company = None
 
     def addDetail(self, detail):
         self.details[detail.idNum] = detail
+
+    def addCompany(self, company):
+        self.company = company
 
 class GLPostingDetail:
     def __init__(self, amount, debitCredit, idNum):

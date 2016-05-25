@@ -36,6 +36,7 @@ class Window(QMainWindow):
         self.companyOverview.deleteCompany.connect(self.deleteCompanyButton)
         self.proposalOverview.updateVendorWidgetTree.connect(self.APOverview.vendorWidget.refreshVendorTree)
         self.projectOverview.addAssetToAssetView.connect(self.addAssetToAssetModule)
+        self.glOverview.updateGLTree.connect(self.glOverview.refreshGL)
         self.APOverview.updateProjectTree.connect(self.projectOverview.projectWidget.refreshOpenProjectTree)
         self.APOverview.updateAssetTree.connect(self.assetOverview.assetWidget.refreshAssetTree)
         self.APOverview.updateCompanyTree.connect(self.companyOverview.companyWidget.refreshCompanyTree)

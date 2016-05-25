@@ -1584,3 +1584,63 @@ class PaymentTypeDialog(QDialog):
         self.parent.parent.parent.dbCursor.execute("DELETE FROM PaymentTypes WHERE idNum=?", (paymentTypeId,))
         self.parent.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectIdToAddLinkTo=? AND ObjectToAddLinkTo='paymentTypes'", (paymentTypeId,))
         self.parent.parent.parent.dbConnection.commit()
+        
+class NewGLPostingDialog(QDialog):
+    def __init__(self, mode, companiesDict, glAcctsDict, parent=None, glPosting=None):
+        super().__init__(parent)
+        self.glValuesAsList = glAcctsDict.sortedListOfKeysAndNames()
+        self.layout = QGridLayout()
+
+        companyLbl = QLabel("Company:")
+        dateLbl = QLabel("Date")
+        memoLbl = QLabel("Memo:")
+
+        self.companyBox = QComboBox()
+        for companyId, company in companiesDict.items():
+            self.companyBox.addItem("%4s - %s" % (companyId, company.shortName))
+        self.postingsWidget = gui_elements.GLPostingsSection(self.glValuesAsList)
+        
+        if mode == "View":
+            self.dateText = QLabel(glPosting.date)
+            self.memoText = QLabel(glPosting.description)
+        else:
+            self.dateText = QLineEdit()
+            self.memoText = QLineEdit()
+        
+        self.layout.addWidget(companyLbl, 0, 0)
+        self.layout.addWidget(self.companyBox, 0, 1)
+        self.layout.addWidget(dateLbl, 1, 0)
+        self.layout.addWidget(self.dateText, 1, 1)
+        self.layout.addWidget(memoLbl, 2, 0)
+        self.layout.addWidget(self.memoText, 2, 1)
+        self.layout.addWidget(self.postingsWidget, 3, 1, 1, 2)
+
+        buttonLayout = QHBoxLayout()
+        saveBtn = QPushButton("Save")
+        saveBtn.clicked.connect(self.accept)
+        buttonLayout.addWidget(saveBtn)
+        
+        if mode == "View":
+            editBtn = QPushButton("Edit")
+            editBtn.clicked.connect(self.makeLabelsEditable)
+            buttonLayout.addWidget(editBtn)
+
+        cancelBtn = QPushButton("Cancel")
+        cancelBtn.clicked.connect(self.reject)
+        buttonLayout.addWidget(cancelBtn)
+        
+        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        
+        self.setLayout(self.layout)
+
+        if mode == "View":
+            self.setWindowTitle("View Edit GL Posting")
+        else:
+            self.setWindowTitle("New GL Posting")
+
+    def makeLabelsEditable(self):
+        pass
+
+    def accept(self):
+        if self.postingsWidget.inBalance() == True:
+            super().accept()
