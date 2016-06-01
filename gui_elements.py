@@ -7,6 +7,22 @@ from classes import *
 import sys
 import constants
 
+class SaveViewCancelButtonWidget(QWidget):
+    def __init__(self, mode):
+        super().__init__()
+        layout = QHBoxLayout()
+        
+        self.saveButton = QPushButton("Save")
+        self.editButton = QPushButton("Edit")
+        self.cancelButton = QPushButton("Cancel")
+
+        layout.addWidget(self.saveButton)
+        if mode == "View":
+            layout.addWidget(self.editButton)
+        layout.addWidget(self.cancelButton)
+        
+        self.setLayout(layout)
+        
 class GLPostingLineItem(QWidget):
     deleteRow = pyqtSignal(int)
     validateRow = pyqtSignal(int)
@@ -137,35 +153,23 @@ class InvoicePaymentTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, invoicePaymentItem, parent):
         super().__init__(parent)
         self.invoicePayment = invoicePaymentItem
-        self.main = QWidget()
-
-        idLabel = QLabel(str(self.invoicePayment.idNum))
-        self.datePaidLabel = QLabel(self.invoicePayment.datePaid)
-        self.amountLabel = QLabel(str(self.invoicePayment.amountPaid))
-
-        layout = QHBoxLayout()
-        layout.addWidget(idLabel)
-        layout.addWidget(self.datePaidLabel)
-        layout.addWidget(self.amountLabel)
-
-        self.main.setLayout(layout)
+        self.setText(0, str(self.invoicePayment.idNum))
+        self.setText(1, self.invoicePayment.datePaid)
+        self.setText(2, str(self.invoicePayment.amountPaid))
 
     def refreshData(self):
-        self.datePaidLabel.setText(self.invoicePayment.datePaid)
-        self.amountLabel.setText(str(self.invoicePayment.amountPaid))
+        self.setText(1, self.invoicePayment.datePaid)
+        self.setText(2, str(self.invoicePayment.amountPaid))
 
-class InvoicePaymentTreeWidget(QTreeWidget):
-    def __init__(self, invoicePaymentsDict):
-        super().__init__()
+class InvoicePaymentTreeWidget(NewTreeWidget):
+    def __init__(self, invoicePaymentsDict, headerList, widthList):
+        super().__init__(headerList, widthList)
         self.buildItems(self, invoicePaymentsDict)
 
     def buildItems(self, parent, invoicePaymentsDict):
         for invoicePaymentKey in invoicePaymentsDict:
             item = InvoicePaymentTreeWidgetItem(invoicePaymentsDict[invoicePaymentKey], parent)
-            self.addItem(item)
-
-    def addItem(self, widgetItem):
-        self.setItemWidget(widgetItem, 0, widgetItem.main)
+            self.addTopLevelItem(item)
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
@@ -201,6 +205,29 @@ class StandardButtonWidget(QWidget):
         self.layout.removeItem(self.layout.itemAt(self.layout.count() - 1))
         self.layout.addWidget(button)
         self.layout.addStretch(1)
+        
+class DateLineEdit(QLineEdit):
+    def __init__(self, text=None):
+        super().__init__(text)
+
+    def focusOutEvent(self, event):
+        self.setText(self.formatStringAsDate(self.text()))
+        super().focusOutEvent(event)
+        
+    def formatStringAsDate(self, string):
+        regex = re.fullmatch(r"[0-9]+", string)
+        if regex and len(string) == 6:
+            return string[0:2] + "/" + string[2:4] + "/20" + string[4:6]
+        elif regex and len(string) == 8:
+            return string[0:2] + "/" + string[2:4] + "/" + string[4:8]
+
+        regex = re.fullmatch(r"([0-9]+)/([0-9]+)/([0-9]+)", string)
+        if regex and len(regex.groups()[2]) == 2:
+            return "{:>02}".format(regex.groups()[0]) + "/" + "{:>02}".format(regex.groups()[1]) + "/20" + regex.groups()[2]
+        elif regex and len(regex.groups()[2]) == 4:
+            return "{:>02}".format(regex.groups()[0]) + "/" + "{:>02}".format(regex.groups()[1]) + "/" + regex.groups()[2]
+        else:
+            return string
         
 class NewLineEdit(QLineEdit):
     lostFocus = pyqtSignal()
@@ -250,8 +277,8 @@ class AssetProjSelector(QGroupBox):
             self.clear()
             
             newList = []
-            for assetKey in self.company.assets.keys():
-                newList.append(str("%4s" % assetKey) + " - " + self.company.assets[assetKey].description)
+            for assetKey, asset in self.company.assets.currentAssets().items():
+                newList.append("%4s - %s" % (assetKey, asset.description))
             
             self.selector.addItems(newList)
             self.selector.show()
@@ -265,8 +292,8 @@ class AssetProjSelector(QGroupBox):
             self.clear()
             
             newList = []
-            for projectKey in self.company.projects.keys():
-                newList.append(str("%4s" % projectKey) + " - " + self.company.projects[projectKey].description)
+            for projectKey, project in self.company.projects.projectsByStatus(constants.OPN_PROJECT_STATUS).items():
+                newList.append("%4s - %s" % (projectKey, project.description))
 
             self.selector.addItems(newList)
             self.selector.show()
@@ -317,10 +344,10 @@ class AssetProjSelector(QGroupBox):
 class InvoiceDetailWidget(QWidget):
     detailsHaveChanged = pyqtSignal()
     
-    def __init__(self, detailsDict=None, proposal=None):
+    def __init__(self, detailsDict=None, proposals=None):
         super().__init__()
         self.details = {}
-        self.proposal = proposal
+        self.proposals = proposals
         
         self.layout = QVBoxLayout()
         self.gridLayout = QGridLayout()
@@ -353,7 +380,6 @@ class InvoiceDetailWidget(QWidget):
     def resetProposalBoxes(self):
         for detailKey in self.details:
             rowToUse = self.details[detailKey][4]
-            
             newProposalBox = self.makeProposalDetComboBox("")
             newProposalBox.currentIndexChanged.connect(lambda: self.validateInput(rowToUse))
             newProposalBox.currentIndexChanged.connect(self.emitChange)
@@ -369,16 +395,17 @@ class InvoiceDetailWidget(QWidget):
             self.gridLayout.addWidget(newProposalBox, rowToUse, 2)
             oldWidget.deleteLater()
         
-    def addProposal(self, proposal):
-        self.proposal = proposal
+    def addProposals(self, proposals):
+        self.proposals = proposals
         self.resetProposalBoxes()
 
     def makeProposalDetComboBox(self, proposalDet):
         proposalDetList = [""]
 
-        if self.proposal:
-            for detailKey in self.proposal.details:
-                proposalDetList.append(str("%4s - " % detailKey) + self.proposal.details[detailKey].description)
+        if self.proposals:
+            for proposal in self.proposals:
+                for detailKey, detail in proposal.details.items():
+                    proposalDetList.append("%4s - %s" % (detailKey, detail.description))
         proposalBox = QComboBox()
         proposalBox.addItems(proposalDetList)
         proposalBox.setCurrentIndex(proposalBox.findText(proposalDet))
@@ -435,7 +462,7 @@ class InvoiceDetailWidget(QWidget):
     def validateInput(self, row):
         if self.gridLayout.itemAtPosition(row, 0).widget().text() != "" and \
            self.gridLayout.itemAtPosition(row, 1).widget().text() != "":
-            if self.proposal:
+            if self.proposals:
                 if self.gridLayout.itemAtPosition(row, 2).widget().currentText() != "":
                     if row == self.gridLayout.rowCount() - 1:
                         self.addNewLine()
@@ -1638,32 +1665,32 @@ class ProposalWidget(QWidget):
     def moveOpenToRejected(self, idx):
         item = self.openProposalsTreeWidget.takeTopLevelItem(idx)
         newItem = ProposalTreeWidgetItem(item.proposal, self.rejectedProposalsTreeWidget)
-        self.rejectedProposalsTreeWidget.addItem(newItem)
+        self.rejectedProposalsTreeWidget.addTopLevelItem(newItem)
 
     def moveOpenToAccepted(self, idx):
         item = self.openProposalsTreeWidget.takeTopLevelItem(idx)
         newItem = ProposalTreeWidgetItem(item.proposal, self.acceptedProposalsTreeWidget)
-        self.acceptedProposalsTreeWidget.addItem(newItem)
+        self.acceptedProposalsTreeWidget.addTopLevelItem(newItem)
 
     def moveRejectedToOpen(self, idx):
         item = self.rejectedProposalsTreeWidget.takeTopLevelItem(idx)
         newItem = ProposalTreeWidgetItem(item.proposal, self.openProposalsTreeWidget)
-        self.openProposalsTreeWidget.addItem(newItem)
+        self.openProposalsTreeWidget.addTopLevelItem(newItem)
 
     def moveRejectedToAccepted(self, idx):
         item = self.rejectedProposalsTreeWidget.takeTopLevelItem(idx)
         newItem = ProposalTreeWidgetItem(item.proposal, self.acceptedProposalsTreeWidget)
-        self.acceptedProposalsTreeWidget.addItem(newItem)
+        self.acceptedProposalsTreeWidget.addTopLevelItem(newItem)
 
     def moveAcceptedToOpen(self, idx):
         item = self.acceptedProposalsTreeWidget.takeTopLevelItem(idx)
         newItem = ProposalTreeWidgetItem(item.proposal, self.openProposalsTreeWidget)
-        self.openProposalsTreeWidget.addItem(newItem)
+        self.openProposalsTreeWidget.addTopLevelItem(newItem)
 
     def moveAcceptedToRejected(self, idx):
         item = self.acceptedProposalsTreeWidget.takeTopLevelItem(idx)
         newItem = ProposalTreeWidgetItem(item.proposal, self.rejectedProposalsTreeWidget)
-        self.rejectedProposalsTreeWidget.addItem(newItem)
+        self.rejectedProposalsTreeWidget.addTopLevelItem(newItem)
 
     def removeSelectionsFromAllBut(self, but):
         if but == 1:
@@ -1759,7 +1786,7 @@ class ProposalWidget(QWidget):
 
             # Make proposal into a ProposalTreeWidgetItem and add it to ProposalTree
             item = ProposalTreeWidgetItem(newProposal, self.openProposalsTreeWidget)
-            self.openProposalsTreeWidget.addItem(item)
+            self.openProposalsTreeWidget.addTopLevelItem(item)
             self.updateProposalsCount()
             self.updateVendorWidgetTree.emit()
             
@@ -2095,7 +2122,7 @@ class ProjectWidget(QWidget):
     def moveOpenToAbandoned(self, idx):
         item = self.openProjectsTreeWidget.takeTopLevelItem(idx)
         newItem = ProjectTreeWidgetItem(item.project, self.abandonedProjectsTreeWidget)
-        self.abandonedProjectsTreeWidget.addItem(newItem)
+        self.abandonedProjectsTreeWidget.addTopLevelItem(newItem)
         
     def completeProject(self):
         idxToComplete = self.openProjectsTreeWidget.indexFromItem(self.openProjectsTreeWidget.currentItem())
@@ -2156,7 +2183,7 @@ class ProjectWidget(QWidget):
                 
                 self.openProjectsTreeWidget.takeTopLevelItem(idxToComplete.row())
                 newItem = ProjectTreeWidgetItem(item.project, self.completedProjectsTreeWidget)
-                self.completedProjectsTreeWidget.addItem(newItem)
+                self.completedProjectsTreeWidget.addTopLevelItem(newItem)
                 
                 self.addAssetToAssetView.emit(assetId)
                 self.refreshOpenProjectTree()
@@ -2623,22 +2650,22 @@ class AssetTreeWidget(NewTreeWidget):
         for idx in range(parentItem.childCount()):
             parentItem.child(idx).refreshData()
 
-            if parentItem.child(idx).childCount() > 0:
-                self.refreshChildren(parentItem.child(idx))
-
             if parentItem.child(idx).asset.inSvc() != True:
                 self.disposeAsset.emit(parentItem.child(idx).asset.idNum)
+                
+            if parentItem.child(idx).childCount() > 0:
+                self.refreshChildren(parentItem.child(idx))
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
             try:
                 self.topLevelItem(idx).refreshData()
 
-                if self.topLevelItem(idx).childCount() > 0:
-                    self.refreshChildren(self.topLevelItem(idx))
-                    
                 if self.topLevelItem(idx).asset.inSvc() != True:
                     self.disposeAsset.emit(self.topLevelItem(idx).asset.idNum)
+                    
+                if self.topLevelItem(idx).childCount() > 0:
+                    self.refreshChildren(self.topLevelItem(idx))
             except:
                 pass
             
@@ -2726,16 +2753,53 @@ class AssetWidget(QWidget):
             self.currentAssetsTreeWidget.setCurrentItem(self.currentAssetsTreeWidget.invisibleRootItem())
 
     def moveCurrentAssetToDisposed(self, assetId):
-        # Need to get the parent item whose child is an asset given by assetId.
-        # Then, need to cycle through the children of that parent and take the child whose
-        # asset is assetId.  Then need to reassign it to disposedAssetsTreeWidget.
-        parentItem = self.getParentItem(assetId)
-        for idx in range(parentItem.childCount()):
-            if parentItem.child(idx).asset.idNum == assetId:
-                item = parentItem.takeChild(idx)
+        item = self.getItem(assetId)
         newItem = AssetTreeWidgetItem(item.asset, self.disposedAssetsTreeWidget)
-        self.disposedAssetsTreeWidget.addItem(newItem)
-    
+        # If disposed asset has subassets, we must dispose of them and move them over to newItem
+        if item.childCount() > 0:
+            self.moveChildren(item, newItem)
+
+        # If disposed asset already has a subasset that has been disposed, we want to merge the newly
+        # disposed asset into the tree rather than create a new entry.  Otherwise, make it a top level
+        # item in the disposed asset tree
+        if item.asset.partiallyDisposed == True:
+            pass
+        else:
+            self.disposedAssetsTreeWidget.addTopLevelItem(newItem)
+
+        # Remove the top-most disposed item from the list.  If it is a subasset, we must remove it as
+        # a child of its parent.  If it is not, we can remove it through the takeTopLevelItem() method.
+        if item.asset.subAssetOf:
+            parentItem = self.getParentItem(item.asset.idNum)
+            for idx in range(parentItem.childCount()):
+                if parentItem.child(idx).asset.idNum == item.asset.idNum:
+                    childToTake = idx
+            parentItem.takeChild(childToTake)
+        else:
+            idx = self.currentAssetsTreeWidget.indexOfTopLevelItem(item)
+            self.currentAssetsTreeWidget.takeTopLevelItem(idx)
+        
+        # Make all asset disposal indicator changes
+        item.asset.markDisposals(self.parent.parent.dbCursor, self.parent.parent.dbConnection)
+
+    def moveChildren(self, oldParentItem, newParentItem):
+        while oldParentItem.childCount() > 0:
+            child = oldParentItem.takeChild(0)
+            newChild = AssetTreeWidgetItem(child.asset, newParentItem)
+            newParentItem.addChild(newChild)
+
+            if child.childCount() > 0:
+                self.moveChildren(child, newChild)
+                
+    def getItem(self, assetNum):
+        iterator = QTreeWidgetItemIterator(self.currentAssetsTreeWidget)
+
+        while iterator.value():
+            if iterator.value().asset.idNum == assetNum:
+                return iterator.value()
+
+            iterator += 1
+            
     def getParentItem(self, assetNum):
         iterator = QTreeWidgetItemIterator(self.currentAssetsTreeWidget)
         
@@ -2781,6 +2845,7 @@ class AssetWidget(QWidget):
             nextId = self.nextIdNum("Assets")
             companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
             assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
+            
             if dialog.childOfAssetBox.currentText() == "":
                 subAssetOfId = None
             else:
@@ -2790,17 +2855,19 @@ class AssetWidget(QWidget):
             newAsset = Asset(dialog.descriptionText.text(),
                              dialog.dateAcquiredText.text(),
                              dialog.dateInSvcText.text(),
-                             "",
                              None,
-                             dialog.usefulLifeText.text(),
+                             None,
+                             float(dialog.usefulLifeText.text()),
+                             float(dialog.salvageValueText.text()),
+                             dialog.depMethodBox.currentText(),
                              nextId)
             
             self.assetsDict[newAsset.idNum] = newAsset
             newAsset.addCompany(self.parent.dataConnection.companies[companyId])
             newAsset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])
             self.parent.dataConnection.companies[companyId].addAsset(newAsset)
-
-            self.insertIntoDatabase("Assets", "(Description, AcquireDate, InSvcDate, UsefulLife)", "('" + newAsset.description + "', '" + newAsset.acquireDate + "', '" + newAsset.inSvcDate + "', " + str(newAsset.usefulLife) + ")")
+            
+            self.insertIntoDatabase("Assets", "(Description, AcquireDate, InSvcDate, UsefulLife, SalvageAmount, DepreciationMethod, PartiallyDisposed)", "('" + newAsset.description + "', '" + newAsset.acquireDate + "', '" + newAsset.inSvcDate + "', " + str(newAsset.usefulLife) + ", " + str(newAsset.salvageAmount) + ", '" + newAsset.depMethod + "', " + str(int(newAsset.partiallyDisposed)) + ")")
             self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('companies', " + str(companyId) + ", 'addAsset', 'assets', " + str(nextId) + ")")
             self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
             self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addAssetType', 'assetTypes', " + str(assetTypeId) + ")")
@@ -2820,8 +2887,8 @@ class AssetWidget(QWidget):
             else:
                 parentItem = self.getParentItem(subAssetOfId)
                 item = AssetTreeWidgetItem(newAsset, parentItem)
-
-            self.currentAssetsTreeWidget.addItem(item)
+            
+            self.currentAssetsTreeWidget.addTopLevelItem(item)
             self.updateAssetsCount()
             
     def showViewAssetDialog(self):
@@ -3229,7 +3296,7 @@ class GLPostingsWidget(QWidget):
         subLayout = QHBoxLayout()
         treeWidgetsLayout = QVBoxLayout()
 
-        self.glPostingsTreeWidget = GLPostingsTreeWidget(constants.GL_HDR_LIST, constants.GL_HDR_WDTH)
+        self.glPostingsTreeWidget = GLPostingsTreeWidget(constants.GL_POST_HDR_LIST, constants.GL_POST_HDR_WDTH)
 
         treeWidgetsLayout.addWidget(self.glPostingsTreeWidget)
         treeWidgetsLayout.addStretch(1)

@@ -45,7 +45,7 @@ class VendorDialog(QDialog):
             self.stateText = QLineEdit()
             self.zipText = QLineEdit()
             self.phoneText = QLineEdit()
-
+        
         self.layout.addWidget(nameLbl, 0, 0)
         self.layout.addWidget(self.nameText, 0, 1)
         self.layout.addWidget(addressLbl, 1, 0)
@@ -63,33 +63,20 @@ class VendorDialog(QDialog):
         nextRow = 7
         
         if mode == "View":
-            invoicesWidget = gui_elements.InvoiceTreeWidget(self.vendor.invoices)
-            invoicesWidget.setIndentation(0)
-            invoicesWidget.setHeaderHidden(True)
+            invoicesWidget = gui_elements.InvoiceTreeWidget(self.vendor.invoices, constants.INVOICE_HDR_LIST, constants.INVOICE_HDR_WDTH)
             self.layout.addWidget(invoicesWidget, nextRow, 0, 1, 2)
             nextRow += 1
             
-            proposalsWidget = gui_elements.ProposalTreeWidget(self.vendor.proposals)
-            proposalsWidget.setIndentation(0)
-            proposalsWidget.setHeaderHidden(True)
+            proposalsWidget = gui_elements.ProposalTreeWidget(self.vendor.proposals, constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
             self.layout.addWidget(proposalsWidget, nextRow, 0, 1, 2)
             nextRow += 1
         
-        buttonLayout = QHBoxLayout()
-        saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveButton)
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
 
-        if mode == "View":
-            editButton = QPushButton("Edit")
-            editButton.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editButton)
-
-        cancelButton = QPushButton("Cancel")
-        cancelButton.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelButton)
-
-        self.layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
@@ -194,8 +181,8 @@ class InvoiceDialog(QDialog):
             self.invoiceDateText = QLabel(invoice.invoiceDate)
             self.dueDateText = QLabel(invoice.dueDate)
         else:
-            self.invoiceDateText = QLineEdit()
-            self.dueDateText = QLineEdit()
+            self.invoiceDateText = gui_elements.DateLineEdit()
+            self.dueDateText = gui_elements.DateLineEdit()
 
         self.layout.addWidget(companyLbl, 0, 0)
         self.layout.addWidget(self.companyBox, 0, 1)
@@ -208,37 +195,23 @@ class InvoiceDialog(QDialog):
         self.layout.addWidget(self.dueDateText, 4, 1)
         
         if self.mode == "View":
-            proposal = self.getAcceptedProposalOfAssetProject()
+            proposal = self.getAcceptedProposalsOfAssetProject()
             self.detailsWidget = gui_elements.InvoiceDetailWidget(invoice.details, proposal)
         else:
             self.detailsWidget = gui_elements.InvoiceDetailWidget()
         self.detailsWidget.detailsHaveChanged.connect(self.invoicePropDetailsChange)
         self.layout.addWidget(self.detailsWidget, 5, 0, 1, 2)
         
-        buttonLayout = QHBoxLayout()
-
-        saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveButton)
-
-        if self.mode == "View":
-            editButton = QPushButton("Edit")
-            editButton.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editButton)
-
-        cancelButton = QPushButton("Cancel")
-        cancelButton.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelButton)
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
 
         nextRow = 6
         if self.mode == "View":
             subLayout = QHBoxLayout()
             
-            self.paymentHistory = gui_elements.InvoicePaymentTreeWidget(invoice.payments)
-            self.paymentHistory.setIndentation(0)
-            self.paymentHistory.setHeaderHidden(True)
-            self.paymentHistory.setMinimumWidth(500)
-            self.paymentHistory.setMaximumHeight(200)
+            self.paymentHistory = gui_elements.InvoicePaymentTreeWidget(invoice.payments, constants.INVOICE_PYMT_HDR_LIST, constants.INVOICE_PYMT_HDR_WDTH)
             self.paymentHistory.setCurrentItem(self.paymentHistory.invisibleRootItem())
             
             paymentButtonLayout = gui_elements.StandardButtonWidget()
@@ -252,7 +225,7 @@ class InvoiceDialog(QDialog):
             self.layout.addLayout(subLayout, nextRow, 0, 1, 2)
             nextRow += 1
             
-        self.layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
@@ -359,31 +332,31 @@ class InvoiceDialog(QDialog):
             self.parent.refreshPaidInvoicesTreeWidget()
             self.parent.updateVendorTree.emit()
     
-    def getAcceptedProposalOfAssetProject(self):
+    def getAcceptedProposalsOfAssetProject(self):
         selection = self.assetProjSelector.selector.currentText()
         selectionId = self.parent.stripAllButNumbers(selection)
 
         if selectionId:
             if self.assetProjSelector.assetSelected() == True:
-                acceptedProposal = self.parent.parent.dataConnection.assets[selectionId].proposals.proposalsByStatus(constants.ACC_PROPOSAL_STATUS)
+                acceptedProposals = self.parent.parent.dataConnection.assets[selectionId].proposals.proposalsByStatus(constants.ACC_PROPOSAL_STATUS)
                 
-                if acceptedProposal:
-                    return list(acceptedProposal.values())[0]
+                if acceptedProposals:
+                    return list(acceptedProposals.values())
                 else:
                     return None
             else:
-                acceptedProposal = self.parent.parent.dataConnection.projects[selectionId].proposals.proposalsByStatus(constants.ACC_PROPOSAL_STATUS)
+                acceptedProposals = self.parent.parent.dataConnection.projects[selectionId].proposals.proposalsByStatus(constants.ACC_PROPOSAL_STATUS)
 
-                if acceptedProposal:
-                    return list(acceptedProposal.values())[0]
+                if acceptedProposals:
+                    return list(acceptedProposals.values())
                 else:
                     return None
         else:
             return None
 
     def updateDetailInvoiceWidget(self):
-        proposal = self.getAcceptedProposalOfAssetProject()
-        self.detailsWidget.addProposal(proposal)
+        proposals = self.getAcceptedProposalsOfAssetProject()
+        self.detailsWidget.addProposals(proposals)
 
     def makeLabelsEditable(self):
         self.companyBox.setEnabled(True)
@@ -393,9 +366,9 @@ class InvoiceDialog(QDialog):
         self.assetProjSelector.setEnabled(True)
         self.assetProjSelector.rdoBtnChanged.connect(self.projectAssetChange)
         self.assetProjSelector.selectorChanged.connect(self.projectAssetChange)
-        self.invoiceDateText_edit = QLineEdit(self.invoiceDateText.text())
+        self.invoiceDateText_edit = gui_elements.DateLineEdit(self.invoiceDateText.text())
         self.invoiceDateText_edit.textEdited.connect(self.changed)
-        self.dueDateText_edit = QLineEdit(self.dueDateText.text())
+        self.dueDateText_edit = gui_elements.DateLineEdit(self.dueDateText.text())
         self.dueDateText_edit.textEdited.connect(self.changed)
         self.detailsWidget.makeEditable()
         self.detailsWidget.detailsHaveChanged.connect(self.invoicePropDetailsChange)
@@ -492,7 +465,7 @@ class ProposalDialog(QDialog):
             
             self.dateText = QLabel(proposal.date)
         else:
-            self.dateText = QLineEdit()
+            self.dateText = gui_elements.DateLineEdit()
 
         self.layout.addWidget(companyLbl, 0, 0)
         self.layout.addWidget(self.companyBox, 0, 1)
@@ -517,22 +490,12 @@ class ProposalDialog(QDialog):
         self.layout.addWidget(self.detailsWidget, nextRow, 0, 1, 2)
         nextRow += 1
         
-        buttonLayout = QHBoxLayout()
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
 
-        saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveButton)
-
-        if self.mode == "View":
-            editButton = QPushButton("Edit")
-            editButton.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editButton)
-
-        cancelButton = QPushButton("Cancel")
-        cancelButton.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelButton)
-
-        self.layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
@@ -564,20 +527,21 @@ class ProposalDialog(QDialog):
         
         self.vendorBox.setEnabled(True)
         self.vendorBox.currentIndexChanged.connect(self.vendorChange)
-
+        
         self.assetProjSelector.setEnabled(True)
-        self.assetProjSelector.changed.connect(self.projectAssetChange)
+        self.assetProjSelector.rdoBtnChanged.connect(self.projectAssetChange)
+        self.assetProjSelector.selectorChanged.connect(self.projectAssetChange)
         
         self.statusBox.setEnabled(True)
         self.statusBox.currentIndexChanged.connect(self.changed)
         
-        self.dateText_edit = QLineEdit(self.dateText.text())
+        self.dateText_edit = gui_elements.DateLineEdit(self.dateText.text())
         self.dateText_edit.textEdited.connect(self.changed)
         self.layout.addWidget(self.dateText_edit, 4, 1)
-
+        
         self.detailsWidget.makeEditable()
         self.detailsWidget.detailsHaveChanged.connect(self.changed)
-
+        
     def updateAssetProjSelector(self):
         companyId = self.parent.stripAllButNumbers(self.companyBox.currentText())
         self.assetProjSelector.updateCompany(self.parent.parent.dataConnection.companies[companyId])
@@ -616,13 +580,13 @@ class ProjectDialog(QDialog):
             self.companyBox.setEnabled(False)
             self.descriptionText = QLabel(project.description)
             self.startDateText = QLabel(project.dateStart)
-            self.endDateText = QLineEdit()
+            self.endDateText = gui_elements.DateLineEdit()
             self.glAccountsBox.setCurrentIndex(self.glAccountsBox.findText(str("%4d - %s" % (project.glAccount.idNum, project.glAccount.description))))
             self.glAccountsBox.setEnabled(False)
         else:
             self.descriptionText = QLineEdit()
-            self.startDateText = QLineEdit()
-            self.endDateText = QLineEdit()
+            self.startDateText = gui_elements.DateLineEdit()
+            self.endDateText = gui_elements.DateLineEdit()
         
         self.layout.addWidget(companyLbl, 0, 0)
         self.layout.addWidget(self.companyBox, 0, 1)
@@ -640,20 +604,12 @@ class ProjectDialog(QDialog):
 
         buttonLayout = QHBoxLayout()
         
-        saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveButton)
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
         
-        if mode == "View":
-            editButton = QPushButton("Edit")
-            editButton.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editButton)
-        
-        cancelButton = QPushButton("Cancel")
-        cancelButton.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelButton)
-        
-        self.layout.addLayout(buttonLayout, 5, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, 5, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
@@ -677,7 +633,7 @@ class ProjectDialog(QDialog):
         self.companyBox.currentIndexChanged.connect(self.companyChange)
         self.descriptionText_edit = QLineEdit(self.descriptionText.text())
         self.descriptionText_edit.textEdited.connect(self.changed)
-        self.startDateText_edit = QLineEdit(self.startDateText.text())
+        self.startDateText_edit = gui_elements.DateLineEdit(self.startDateText.text())
         self.startDateText_edit.textEdited.connect(self.changed)
         self.glAccountsBox.setEnabled(True)
         self.glAccountsBox.currentIndexChanged.connect(self.glAccountChange)
@@ -709,22 +665,12 @@ class CompanyDialog(QDialog):
         self.layout.addWidget(shortNameLbl, 1, 0)
         self.layout.addWidget(self.shortNameText, 1, 1)
 
-        buttonLayout = QHBoxLayout()
-        
-        saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveButton)
-        
-        if mode == "View":
-            editButton = QPushButton("Edit")
-            editButton.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editButton)
-        
-        cancelButton = QPushButton("Cancel")
-        cancelButton.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelButton)
-        
-        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
+
+        self.layout.addWidget(buttonWidget, 4, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
@@ -808,11 +754,14 @@ class AssetDialog(QDialog):
             self.costText = QLabel(str(asset.cost()))
         else:
             self.descriptionText = QLineEdit()
-            self.dateAcquiredText = QLineEdit()
-            self.dateInSvcText = QLineEdit()
+            self.dateAcquiredText = gui_elements.DateLineEdit()
+            self.dateInSvcText = gui_elements.DateLineEdit()
             self.usefulLifeText = QLineEdit()
             self.salvageValueText = QLineEdit()
             self.costText = QLabel()
+
+            costLbl.hide()
+            self.costText.hide()
 
         #########
         ## Add a history tree widget
@@ -843,22 +792,12 @@ class AssetDialog(QDialog):
         self.layout.addWidget(costLbl, 9, 0)
         self.layout.addWidget(self.costText, 9, 1)
         
-        buttonLayout = QHBoxLayout()
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
         
-        saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveButton)
-        
-        if mode == "View":
-            editButton = QPushButton("Edit")
-            editButton.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editButton)
-        
-        cancelButton = QPushButton("Cancel")
-        cancelButton.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelButton)
-        
-        self.layout.addLayout(buttonLayout, 10, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, 10, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
@@ -890,9 +829,9 @@ class AssetDialog(QDialog):
         self.assetTypeBox.currentIndexChanged.connect(self.assetTypeChange)
         self.childOfAssetBox.setEnabled(True)
         self.childOfAssetBox.currentIndexChanged.connect(self.parentAssetChange)
-        self.dateAcquiredText_edit = QLineEdit(self.dateAcquiredText.text())
+        self.dateAcquiredText_edit = gui_elements.DateLineEdit(self.dateAcquiredText.text())
         self.dateAcquiredText_edit.textEdited.connect(self.changed)
-        self.dateInSvcText_edit = QLineEdit(self.dateInSvcText.text())
+        self.dateInSvcText_edit = gui_elements.DateLineEdit(self.dateInSvcText.text())
         self.dateInSvcText_edit.textEdited.connect(self.changed)
         self.usefulLifeText_edit = QLineEdit(self.usefulLifeText.text())
         self.usefulLifeText_edit.textEdited.connect(self.changed)
@@ -931,7 +870,7 @@ class InvoicePaymentDialog(QDialog):
             self.amountText = QLabel(str(invoicePayment.amountPaid))
             self.paymentTypeBox.setEnabled(False)
         else:
-            self.datePaidText = QLineEdit()
+            self.datePaidText = gui_elements.DateLineEdit()
             self.amountText = QLineEdit()
         
         self.layout = QGridLayout()
@@ -946,22 +885,12 @@ class InvoicePaymentDialog(QDialog):
         self.layout.addWidget(amountLbl, 4, 0)
         self.layout.addWidget(self.amountText, 4, 1)
         
-        buttonLayout = QHBoxLayout()
-        
-        saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveButton)
-        
-        if mode == "View":
-            editButton = QPushButton("Edit")
-            editButton.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editButton)
-        
-        cancelButton = QPushButton("Cancel")
-        cancelButton.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelButton)
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
 
-        self.layout.addLayout(buttonLayout, 5, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, 5, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
@@ -973,7 +902,7 @@ class InvoicePaymentDialog(QDialog):
         self.hasChanges = True
 
     def makeLabelsEditable(self):
-        self.datePaidText_edit = QLineEdit(self.datePaidText.text())
+        self.datePaidText_edit = gui_elements.DateLineEdit(self.datePaidText.text())
         self.datePaidText_edit.textEdited.connect(self.changed)
         self.amountText_edit = QLineEdit(self.amountText.text())
         self.amountText_edit.textEdited.connect(self.changed)
@@ -987,22 +916,19 @@ class ChangeProposalStatusDialog(QDialog):
 
         statusLbl = QLabel("Reason:")
         self.statusTxt = QLineEdit()
-        saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.accept)
-        cancelButton = QPushButton("Cancel")
-        cancelButton.clicked.connect(self.reject)
+
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget("New")
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
         
         layout = QVBoxLayout()
         subLayout = QHBoxLayout()
-        buttonLayout = QHBoxLayout()
         
         subLayout.addWidget(statusLbl)
         subLayout.addWidget(self.statusTxt)
-        buttonLayout.addWidget(saveButton)
-        buttonLayout.addWidget(cancelButton)
 
         layout.addLayout(subLayout)
-        layout.addLayout(buttonLayout)
+        layout.addWidget(buttonWidget)
         
         self.setLayout(layout)
 
@@ -1015,7 +941,7 @@ class CloseProjectDialog(QDialog):
         layout = QGridLayout()
         
         dateLbl = QLabel("Date:")
-        self.dateTxt = QLineEdit()
+        self.dateTxt = gui_elements.DateLineEdit()
 
         layout.addWidget(dateLbl, 0, 0)
         layout.addWidget(self.dateTxt, 0, 1)
@@ -1058,16 +984,11 @@ class CloseProjectDialog(QDialog):
             layout.addWidget(self.assetTypeBox, nextRow, 1)
             nextRow += 1
 
-        buttonLayout = QHBoxLayout()
-        saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.accept)
-        cancelButton = QPushButton("Cancel")
-        cancelButton.clicked.connect(self.reject)
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget("New")
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
 
-        buttonLayout.addWidget(saveButton)
-        buttonLayout.addWidget(cancelButton)
-
-        layout.addLayout(buttonLayout, nextRow, 0, 1, 2)
+        layout.addWidget(buttonWidget, nextRow, 0, 1, 2)
 
         self.setLayout(layout)
 
@@ -1122,18 +1043,10 @@ class NewAssetTypeDialog(QDialog):
             
         buttonLayout = QHBoxLayout()
         
-        saveBtn = QPushButton("Save")
-        saveBtn.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveBtn)
-        
-        if mode == "View":
-            editBtn = QPushButton("Edit")
-            editBtn.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editBtn)
-
-        cancelBtn = QPushButton("Cancel")
-        cancelBtn.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelBtn)
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
         
         layout = QGridLayout()
         layout.addWidget(nameLbl, 0, 0)
@@ -1146,7 +1059,7 @@ class NewAssetTypeDialog(QDialog):
         layout.addWidget(self.glExpenseAccountsBox, 3, 1)
         layout.addWidget(self.accumExpenseGLLbl, 4, 0)
         layout.addWidget(self.glAccumExpenseAccountsBox, 4, 1)
-        layout.addLayout(buttonLayout, 5, 0, 1, 2)
+        layout.addWidget(buttonWidget, 5, 0, 1, 2)
         
         self.setLayout(layout)
 
@@ -1310,7 +1223,7 @@ class DisposeAssetDialog(QDialog):
 
         dispDateLbl = QLabel("Dispose Date:")
         dispAmtLbl = QLabel("Disposal Amount:")
-        self.dispDateTxt = QLineEdit()
+        self.dispDateTxt = gui_elements.DateLineEdit()
         self.dispAmtTxt = QLineEdit()
 
         layout = QGridLayout()
@@ -1319,16 +1232,11 @@ class DisposeAssetDialog(QDialog):
         layout.addWidget(dispAmtLbl, 1, 0)
         layout.addWidget(self.dispAmtTxt, 1, 1)
         
-        saveBtn = QPushButton("Save")
-        saveBtn.clicked.connect(self.accept)
-        cancelBtn = QPushButton("Cancel")
-        cancelBtn.clicked.connect(self.reject)
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget("New")
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
         
-        buttonLayout = QHBoxLayout()
-        buttonLayout.addWidget(saveBtn)
-        buttonLayout.addWidget(cancelBtn)
-        
-        layout.addLayout(buttonLayout, 2, 0, 1, 2)
+        layout.addWidget(buttonWidget, 2, 0, 1, 2)
         self.setLayout(layout)
 
         self.setWindowTitle("Dispose of Asset")
@@ -1385,22 +1293,12 @@ class GLAccountDialog(QDialog):
         self.layout.addWidget(self.listOfAcctGrpsLbl, 3, 0)
         self.layout.addWidget(self.acctGrpsBox, 3, 1)
         
-        buttonLayout = QHBoxLayout()
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
         
-        saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveButton)
-        
-        if mode == "View":
-            editButton = QPushButton("Edit")
-            editButton.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editButton)
-        
-        cancelButton = QPushButton("Cancel")
-        cancelButton.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelButton)
-        
-        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, 4, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
@@ -1458,27 +1356,17 @@ class NewPaymentTypeDialog(QDialog):
         else:
             self.nameTxt = QLineEdit()
             
-        buttonLayout = QHBoxLayout()
-        
-        saveBtn = QPushButton("Save")
-        saveBtn.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveBtn)
-        
-        if mode == "View":
-            editBtn = QPushButton("Edit")
-            editBtn.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editBtn)
-
-        cancelBtn = QPushButton("Cancel")
-        cancelBtn.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelBtn)
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
         
         layout = QGridLayout()
         layout.addWidget(nameLbl, 0, 0)
         layout.addWidget(self.nameTxt, 0, 1)
         layout.addWidget(glLbl, 2, 0)
         layout.addWidget(self.glAccountsBox, 2, 1)
-        layout.addLayout(buttonLayout, 5, 0, 1, 2)
+        layout.addWidget(buttonWidget, 5, 0, 1, 2)
         
         self.setLayout(layout)
 
@@ -1615,21 +1503,12 @@ class NewGLPostingDialog(QDialog):
         self.layout.addWidget(self.memoText, 2, 1)
         self.layout.addWidget(self.postingsWidget, 3, 1, 1, 2)
 
-        buttonLayout = QHBoxLayout()
-        saveBtn = QPushButton("Save")
-        saveBtn.clicked.connect(self.accept)
-        buttonLayout.addWidget(saveBtn)
+        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        buttonWidget.saveButton.clicked.connect(self.accept)
+        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        buttonWidget.cancelButton.clicked.connect(self.reject)
         
-        if mode == "View":
-            editBtn = QPushButton("Edit")
-            editBtn.clicked.connect(self.makeLabelsEditable)
-            buttonLayout.addWidget(editBtn)
-
-        cancelBtn = QPushButton("Cancel")
-        cancelBtn.clicked.connect(self.reject)
-        buttonLayout.addWidget(cancelBtn)
-        
-        self.layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, 4, 0, 1, 2)
         
         self.setLayout(self.layout)
 

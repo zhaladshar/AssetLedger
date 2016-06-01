@@ -181,7 +181,7 @@ class AssetsDict(dict):
         return assetDict
 
     def disposedAssets(self):
-        assetDict = {}
+        assetDict = AssetsDict()
         for assetKey in self:
             if self[assetKey].disposeDate != "" and self[assetKey].disposeDate != None:
                 assetDict[assetKey] = self[assetKey]
@@ -452,7 +452,7 @@ class Company:
         self.shortName = shortName
         self.active = active
         self.proposals = {}
-        self.projects = {}
+        self.projects = ProjectsDict()
         self.assets = AssetsDict()
         self.invoices = {}
         self.glPostings = GLPostingsDict()
@@ -498,7 +498,7 @@ class Company:
         self.glPostings.pop(posting.idNum)
 
 class Asset:
-    def __init__(self, desc, acqDate, inSvcDate, disposeDate, disposeAmount, usefulLife, salvageAmt, depMethod, idNum):
+    def __init__(self, desc, acqDate, inSvcDate, disposeDate, disposeAmount, usefulLife, salvageAmt, depMethod, partiallyDisposed, idNum):
         self.idNum = idNum
         self.description = desc
         self.acquireDate = acqDate
@@ -508,6 +508,7 @@ class Asset:
         self.usefulLife = usefulLife
         self.salvageAmount = salvageAmt
         self.depMethod = depMethod
+        self.partiallyDisposed = partiallyDisposed
         self.assetType = None
         self.company = None
         self.fromProject = None
@@ -515,7 +516,7 @@ class Asset:
         self.invoices = {}
         self.costs = {}
         self.history = {}
-        self.subAssets = {}
+        self.subAssets = AssetsDict()
         self.proposals = ProposalsDict()
 
     def addAssetType(self, assetType):
@@ -567,6 +568,22 @@ class Asset:
             return True
         else:
             return False
+
+    def markDisposals(self, dbCursor, dbConnection):
+        # Mark all subassets as fully disposed
+        for subAsset in self.subAssets.values():
+            subAsset.partiallyDisposed = False
+            dbCursor.execute("UPDATE Assets SET PartiallyDisposed=? WHERE idNum=?",
+                             (int(False), subAsset.idNum))
+
+        parentAsset = self.subAssetOf
+        while parentAsset != None:
+            parentAsset.partiallyDisposed = True
+            dbCursor.execute("UPDATE Assets SET PartiallyDisposed=? WHERE idNum=?",
+                             (int(True), parentAsset.idNum))
+            parentAsset = parentAsset.subAssetOf
+
+        dbConnection.commit()
 
 class AssetType:
     def __init__(self, description, depreciable, idNum):
