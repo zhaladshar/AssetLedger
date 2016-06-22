@@ -20,6 +20,7 @@ PROPOSAL_STATUSES = [OPN_PROPOSAL_STATUS, REJ_PROPOSAL_STATUS, ACC_PROPOSAL_STAT
 OPN_PROJECT_STATUS = "Ongoing"
 ABD_PROJECT_STATUS = "Abandoned"
 CMP_PROJECT_STATUS = "Completed"
+PROJECT_STATUSES = [OPN_PROJECT_STATUS, ABD_PROJECT_STATUS, CMP_PROJECT_STATUS]
 DEP_STRAIGHT = "Straight-line"
 DEP_PRODUCTION = "Units of production"
 DEP_DEPLETION = "Depletion"
@@ -27,10 +28,16 @@ DEP_DIGITS = "Years' digits"
 DEP_METHODS = [DEP_STRAIGHT, DEP_PRODUCTION, DEP_DEPLETION, DEP_DIGITS]
 DEBIT = "DR"
 CREDIT = "CR"
+POSITIVE = "Positive"
+NEGATIVE = "Negative"
 
 # Strings
 GL_POST_PYMT_DESC = "Post payment for invoice %d from vendor %d on %s"
 GL_POST_INV_DESC = "Post invoice %d from vendor %d on %s"
+ASSET_HIST_INV = "Invoice %d posted"
+ASSET_HIST_PROJ_COMP = "Project %d completed"
+ASSET_HIST_DEP = "Depreciation"
+ASSET_HIST_DISP = "Disposed"
 
 #############################
 ##
@@ -61,3 +68,5 @@ GL_HDR_LIST = ["Acct #", "Description", "Balance"]
 GL_HDR_WDTH = [      .2,            .6,        .2]
 GL_POST_HDR_LIST = ["Date", "Description", "Balance"]
 GL_POST_HDR_WDTH = [    .1,            .7,        .2]
+ASSET_HIST_HDR_LIST = ["Date", "Description", "Dollars"]
+ASSET_HIST_HDR_WDTH = [    .1,            .8,        .1]

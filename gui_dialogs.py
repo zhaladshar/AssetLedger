@@ -22,12 +22,8 @@ class VendorDialog(QDialog):
         phoneLbl = QLabel("Phone:")
         glAccountLbl = QLabel("GL Account:")
         
-        glAccountsList = []
-        glAccountsDict = GLDict.accounts()
-        for glKey in glAccountsDict:
-            glAccountsList.append(str("%4d - %s" % (glAccountsDict[glKey].idNum, glAccountsDict[glKey].description)))
         self.glAccountsBox = QComboBox()
-        self.glAccountsBox.addItems(glAccountsList)
+        self.glAccountsBox.addItems(GLDict.accounts().sortedListOfKeysAndNames())
 
         if mode == "View":
             self.nameText = QLabel(self.vendor.name)
@@ -135,17 +131,11 @@ class InvoiceDialog(QDialog):
         dueDateLabel = QLabel("Due Date:")
         
         self.companyBox = QComboBox()
-        companyList = []
-        for company in parent.parent.dataConnection.companies.values():
-            companyList.append(str("%4s" % company.idNum) + " - " + company.shortName)
-        self.companyBox.addItems(companyList)
+        self.companyBox.addItems(parent.parent.dataConnection.companies.sortedListOfKeysAndNames())
         self.companyBox.currentIndexChanged.connect(self.updateAssetProjSelector)
-        
+
         self.vendorBox = QComboBox()
-        vendorList = []
-        for vendor in parent.parent.dataConnection.vendors.values():
-            vendorList.append(str("%4s" % vendor.idNum) + " - " + vendor.name)
-        self.vendorBox.addItems(vendorList)
+        self.vendorBox.addItems(parent.parent.dataConnection.vendors.sortedListOfKeysAndNames())
         
         companyId = parent.stripAllButNumbers(self.companyBox.currentText())
         self.assetProjSelector = gui_elements.AssetProjSelector(parent.parent.dataConnection.companies[companyId])
@@ -153,10 +143,10 @@ class InvoiceDialog(QDialog):
         self.assetProjSelector.selectorChanged.connect(self.updateDetailInvoiceWidget)
         
         if self.mode == "View":
-            self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % invoice.company.idNum) + " - " + invoice.company.shortName))
+            self.companyBox.setCurrentIndex(self.companyBox.findText("%4d - %s" % (invoice.company.idNum, invoice.company.shortName)))
             self.companyBox.setEnabled(False)
             
-            self.vendorBox.setCurrentIndex(self.vendorBox.findText(str("%4s" % invoice.vendor.idNum) + " - " + invoice.vendor.name))
+            self.vendorBox.setCurrentIndex(self.vendorBox.findText("%4d - %s" % (invoice.vendor.idNum, invoice.vendor.name)))
             self.vendorBox.setEnabled(False)
             
             companyId = parent.stripAllButNumbers(self.companyBox.currentText())
@@ -178,7 +168,7 @@ class InvoiceDialog(QDialog):
             self.assetProjSelector.setEnabled(False)
             self.assetProjSelector.show()
             
-            self.invoiceDateText = QLabel(invoice.invoiceDate)
+            self.invoiceDateText = QLabel(invoice.date)
             self.dueDateText = QLabel(invoice.dueDate)
         else:
             self.invoiceDateText = gui_elements.DateLineEdit()
@@ -232,7 +222,7 @@ class InvoiceDialog(QDialog):
             self.setWindowTitle("View/Edit Invoice")
         else:
             self.setWindowTitle("New Invoice")
-
+            
     def newPayment(self):
         dialog = InvoicePaymentDialog("New", self.paymentTypesDict, self, self.invoice)
         if dialog.exec_():
@@ -423,17 +413,11 @@ class ProposalDialog(QDialog):
         dateLbl = QLabel("Date:")
         
         self.companyBox = QComboBox()
-        companyList = []
-        for company in parent.parent.dataConnection.companies.values():
-            companyList.append(str("%4s" % company.idNum) + " - " + company.shortName)
-        self.companyBox.addItems(companyList)
+        self.companyBox.addItems(parent.parent.dataConnection.companies.sortedListOfKeysAndNames())
         self.companyBox.currentIndexChanged.connect(self.updateAssetProjSelector)
         
         self.vendorBox = QComboBox()
-        vendorList = []
-        for vendor in parent.parent.dataConnection.vendors.values():
-            vendorList.append(str("%4s" % vendor.idNum) + " - " + vendor.name)
-        self.vendorBox.addItems(vendorList)
+        self.vendorBox.addItems(parent.parent.dataConnection.vendors.sortedListOfKeysAndNames())
 
         self.statusBox = QComboBox()
         self.statusBox.addItems(constants.PROPOSAL_STATUSES)
@@ -442,10 +426,10 @@ class ProposalDialog(QDialog):
         self.assetProjSelector = gui_elements.AssetProjSelector(parent.parent.dataConnection.companies[companyId])
         
         if self.mode == "View":
-            self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % proposal.company.idNum) + " - " + proposal.company.shortName))
+            self.companyBox.setCurrentIndex(self.companyBox.findText("%4d - %s" % (proposal.company.idNum, proposal.company.shortName)))
             self.companyBox.setEnabled(False)
             
-            self.vendorBox.setCurrentIndex(self.vendorBox.findText(str("%4s" % proposal.vendor.idNum) + " - " + proposal.vendor.name))
+            self.vendorBox.setCurrentIndex(self.vendorBox.findText("%4d - %s" % (proposal.vendor.idNum, proposal.vendor.name)))
             self.vendorBox.setEnabled(False)
             
             self.statusBox.setCurrentIndex(self.statusBox.findText(proposal.status))
@@ -550,6 +534,7 @@ class ProposalDialog(QDialog):
 class ProjectDialog(QDialog):
     def __init__(self, mode, GLDict, parent=None, project=None):
         super().__init__(parent)
+        self.project = project
         self.hasChanges = False
         self.companyChanged = False
         self.glAccountChanged = False
@@ -560,29 +545,30 @@ class ProjectDialog(QDialog):
         descriptionLbl = QLabel("Description:")
         startDateLbl = QLabel("Start Date:")
         self.endDateLbl = QLabel("End Date:")
+        statusLbl = QLabel("Status:")
+        statusReasonLbl = QLabel("Reason:")
         glAccountLbl = QLabel("GL Account:")
         
         self.companyBox = QComboBox()
-        companyList = []
-        for company in parent.parent.dataConnection.companies.values():
-            companyList.append(str("%4s" % company.idNum) + " - " + company.shortName)
-        self.companyBox.addItems(companyList)
+        self.companyBox.addItems(parent.parent.dataConnection.companies.sortedListOfKeysAndNames())
         
-        glAccountsList = []
-        glAccountsDict = GLDict.accounts().sortedListOfKeys()
-        for glKey in glAccountsDict:
-            glAccountsList.append(str("%4d - %s" % (GLDict[glKey].idNum, GLDict[glKey].description)))
         self.glAccountsBox = QComboBox()
-        self.glAccountsBox.addItems(glAccountsList)
+        self.glAccountsBox.addItems(GLDict.accounts().sortedListOfKeysAndNames())
         
         if mode == "View":
-            self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % project.company.idNum) + " - " + project.company.shortName))
+            self.companyBox.setCurrentIndex(self.companyBox.findText("%4d - %s" % (project.company.idNum, project.company.shortName)))
             self.companyBox.setEnabled(False)
             self.descriptionText = QLabel(project.description)
             self.startDateText = QLabel(project.dateStart)
             self.endDateText = gui_elements.DateLineEdit()
-            self.glAccountsBox.setCurrentIndex(self.glAccountsBox.findText(str("%4d - %s" % (project.glAccount.idNum, project.glAccount.description))))
+            self.statusBox = QComboBox()
+            self.statusBox.addItems(constants.PROJECT_STATUSES)
+            self.statusBox.setCurrentIndex(self.statusBox.findText(self.project.status()))
+            self.statusBox.setEnabled(False)
+            self.statusReasonText = QLabel(self.project.notes)
+            self.glAccountsBox.setCurrentIndex(self.glAccountsBox.findText("%4d - %s" % (project.glAccount.idNum, project.glAccount.description)))
             self.glAccountsBox.setEnabled(False)
+            self.invoicesTreeWidget = gui_elements.InvoiceTreeWidget(project.invoices, constants.INVOICE_HDR_LIST, constants.INVOICE_HDR_WDTH)
         else:
             self.descriptionText = QLineEdit()
             self.startDateText = gui_elements.DateLineEdit()
@@ -598,7 +584,29 @@ class ProjectDialog(QDialog):
         self.layout.addWidget(self.endDateText, 3, 1)
         self.layout.addWidget(glAccountLbl, 4, 0)
         self.layout.addWidget(self.glAccountsBox, 4, 1)
+        nextRow = 5
         
+        if mode == "View":
+            self.layout.addWidget(statusLbl, nextRow, 0)
+            self.layout.addWidget(self.statusBox, nextRow, 1)
+            nextRow += 1
+            
+            self.layout.addWidget(statusReasonLbl, nextRow, 0)
+            self.layout.addWidget(self.statusReasonText, nextRow, 1)
+            nextRow += 1
+            
+            subLayout = QHBoxLayout()
+
+            buttonWidget = gui_elements.StandardButtonWidget()
+            buttonWidget.newButton.clicked.connect(self.newInvoice)
+            buttonWidget.viewButton.clicked.connect(self.viewInvoice)
+            buttonWidget.deleteButton.clicked.connect(self.deleteInvoice)
+            
+            subLayout.addWidget(self.invoicesTreeWidget)
+            subLayout.addWidget(buttonWidget)
+            self.layout.addLayout(subLayout, nextRow, 0, 1, 2)
+            nextRow += 1
+
         self.endDateLbl.hide()
         self.endDateText.hide()
 
@@ -609,14 +617,23 @@ class ProjectDialog(QDialog):
         buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
         buttonWidget.cancelButton.clicked.connect(self.reject)
         
-        self.layout.addWidget(buttonWidget, 5, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
             self.setWindowTitle("View/Edit Project")
         else:
             self.setWindowTitle("New Project")
-        
+
+    def newInvoice(self):
+        pass
+
+    def viewInvoice(self):
+        pass
+
+    def deleteInvoice(self):
+        pass
+    
     def changed(self):
         self.hasChanges = True
 
@@ -713,22 +730,14 @@ class AssetDialog(QDialog):
         costLbl = QLabel("Cost:")
 
         self.companyBox = QComboBox()
-        companyList = []
-        for company in parent.parent.dataConnection.companies.values():
-            companyList.append(str("%4s" % company.idNum) + " - " + company.shortName)
-        self.companyBox.addItems(companyList)
+        self.companyBox.addItems(parent.parent.dataConnection.companies.sortedListOfKeysAndNames())
 
         self.assetTypeBox = QComboBox()
-        assetTypeList = []
-        for assetType in parent.parent.dataConnection.assetTypes.values():
-            assetTypeList.append(str("%4s" % assetType.idNum) + " - " + assetType.description)
-        self.assetTypeBox.addItems(assetTypeList)
+        self.assetTypeBox.addItems(parent.parent.dataConnection.assetTypes.sortedListOfKeysAndNames())
 
         self.childOfAssetBox = QComboBox()
-        assetList = [""]
-        for assetKey in parent.parent.dataConnection.assets:
-            assetList.append(str("%4d - %s" % (parent.parent.dataConnection.assets[assetKey].idNum, parent.parent.dataConnection.assets[assetKey].description)))
-        self.childOfAssetBox.addItems(assetList)
+        self.childOfAssetBox.addItem("")
+        self.childOfAssetBox.addItems(parent.parent.dataConnection.assets.sortedListOfKeysAndNames())
         
         self.depMethodBox = QComboBox()
         self.depMethodBox.addItems(constants.DEP_METHODS)
@@ -762,14 +771,6 @@ class AssetDialog(QDialog):
 
             costLbl.hide()
             self.costText.hide()
-
-        #########
-        ## Add a history tree widget
-        #########
-
-        #########
-        ## Add a list of proposal (tree widget)
-        #########
             
         self.layout.addWidget(companyLbl, 0, 0)
         self.layout.addWidget(self.companyBox, 0, 1)
@@ -791,13 +792,23 @@ class AssetDialog(QDialog):
         self.layout.addWidget(self.salvageValueText, 8, 1)
         self.layout.addWidget(costLbl, 9, 0)
         self.layout.addWidget(self.costText, 9, 1)
-        
+        nextRow = 10
+
+        if mode == "View":
+            self.historyTreeWidget = gui_elements.AssetHistoryTreeWidget(asset.history, constants.ASSET_HIST_HDR_LIST, constants.ASSET_HIST_HDR_WDTH)
+            self.layout.addWidget(self.historyTreeWidget, nextRow, 0, 1, 2)
+            nextRow += 1
+
+        #########
+        ## Add a list of proposal (tree widget)
+        #########
+
         buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
         buttonWidget.saveButton.clicked.connect(self.accept)
         buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
         buttonWidget.cancelButton.clicked.connect(self.reject)
         
-        self.layout.addWidget(buttonWidget, 10, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
@@ -857,11 +868,8 @@ class InvoicePaymentDialog(QDialog):
         datePaidLbl = QLabel("Date Paid:")
         amountLbl = QLabel("Amount:")
 
-        paymentTypeList = []
-        for paymentTypeId, paymentType in paymentTypeDict.items():
-            paymentTypeList.append("%4d - %s" % (paymentTypeId, paymentType.description))
         self.paymentTypeBox = QComboBox()
-        self.paymentTypeBox.addItems(paymentTypeList)
+        self.paymentTypeBox.addItems(paymentTypeDict.sortedListOfKeysAndNames())
         self.vendorText = QLabel(invoice.vendor.name)
         self.invoiceText = QLabel(str(invoice.idNum))
         
@@ -957,19 +965,39 @@ class CloseProjectDialog(QDialog):
         elif status == constants.CMP_PROJECT_STATUS:
             assetNameLbl = QLabel("Asset Name:")
             self.assetNameTxt = QLineEdit()
+
             inSvcLbl = QLabel("In Use:")
             self.inSvcChk = QCheckBox()
+
+            childOfLbl = QLabel("Child of:")
+            self.childOfAssetBox = QComboBox()
+            self.childOfAssetBox.addItem("")
+            self.childOfAssetBox.addItems(parent.parent.dataConnection.assets.sortedListOfKeysAndNames())
+
             usefulLifeLbl = QLabel("Useful Life:")
             self.usefulLifeTxt = QLineEdit()
+
             assetTypeLbl = QLabel("Asset Type:")
             self.assetTypeBox = QComboBox()
-            assetList = []
-            for assetType in parent.parent.dataConnection.assetTypes.values():
-                assetList.append(str("%4s" % assetType.idNum) + " - " + assetType.description)
-            self.assetTypeBox.addItems(assetList)
+            self.assetTypeBox.addItems(parent.parent.dataConnection.assetTypes.sortedListOfKeysAndNames())
 
+            depMethodLbl = QLabel("Depreciation Method:")
+            self.depMethodBox = QComboBox()
+            self.depMethodBox.addItems(constants.DEP_METHODS)
+        
+            salvageValueLbl = QLabel("Salvage Amount:")
+            self.salvageValueText = QLineEdit()
+            
             layout.addWidget(assetNameLbl, nextRow, 0)
             layout.addWidget(self.assetNameTxt, nextRow, 1)
+            nextRow += 1
+
+            layout.addWidget(assetTypeLbl, nextRow, 0)
+            layout.addWidget(self.assetTypeBox, nextRow, 1)
+            nextRow += 1
+
+            layout.addWidget(childOfLbl, nextRow, 0)
+            layout.addWidget(self.childOfAssetBox, nextRow, 1)
             nextRow += 1
 
             layout.addWidget(inSvcLbl, nextRow, 0)
@@ -980,8 +1008,12 @@ class CloseProjectDialog(QDialog):
             layout.addWidget(self.usefulLifeTxt, nextRow, 1)
             nextRow += 1
 
-            layout.addWidget(assetTypeLbl, nextRow, 0)
-            layout.addWidget(self.assetTypeBox, nextRow, 1)
+            layout.addWidget(depMethodLbl, nextRow, 0)
+            layout.addWidget(self.depMethodBox, nextRow, 1)
+            nextRow += 1
+
+            layout.addWidget(salvageValueLbl, nextRow, 0)
+            layout.addWidget(self.salvageValueText, nextRow, 1)
             nextRow += 1
 
         buttonWidget = gui_elements.SaveViewCancelButtonWidget("New")
@@ -1008,18 +1040,14 @@ class NewAssetTypeDialog(QDialog):
         self.depChk = QCheckBox()
         self.depChk.stateChanged.connect(self.showHideGLBoxes)
         
-        glFormattedAccountsList = []
-        glAccountsDict = GLDict.accounts().sortedListOfKeys()
-        for glKey in glAccountsDict:
-            glFormattedAccountsList.append(str("%4d - %s" % (GLDict[glKey].idNum, GLDict[glKey].description)))
-            
         self.glAssetAccountsBox = QComboBox()
-        self.glAssetAccountsBox.addItems(glFormattedAccountsList)
-        glFormattedAccountsList.insert(0, "")
+        self.glAssetAccountsBox.addItems(GLDict.accounts().sortedListOfKeysAndNames())
         self.glExpenseAccountsBox = QComboBox()
-        self.glExpenseAccountsBox.addItems(glFormattedAccountsList)
+        self.glExpenseAccountsBox.addItem("")
+        self.glExpenseAccountsBox.addItems(GLDict.accounts().sortedListOfKeysAndNames())
         self.glAccumExpenseAccountsBox = QComboBox()
-        self.glAccumExpenseAccountsBox.addItems(glFormattedAccountsList)
+        self.glAccumExpenseAccountsBox.addItem("")
+        self.glAccumExpenseAccountsBox.addItems(GLDict.accounts().sortedListOfKeysAndNames())
         
         if mode == "View":
             self.nameTxt = QLabel(assetType.description)
@@ -1108,14 +1136,10 @@ class AssetTypeDialog(QDialog):
         self.GLDict = GLDict
         self.parent = parent
         
-        valuesAsList = []
-        for assetTypeKey, assetType in self.assetTypeDict.items():
-            valuesAsList.append("%4d - %s" % (assetTypeKey, assetType.description))
-
         layout = QHBoxLayout()
 
         self.listWidget = QListWidget()
-        self.listWidget.addItems(valuesAsList)
+        self.listWidget.addItems(self.assetTypeDict.sortedListOfKeysAndNames())
         self.listWidget.setCurrentRow(0)
 
         buttonLayout = gui_elements.StandardButtonWidget()
@@ -1255,11 +1279,7 @@ class GLAccountDialog(QDialog):
         self.listOfAcctGrpsLbl = QLabel("Group under...")
         
         self.acctGrpsBox = QComboBox()
-        valueAsList = []
-        tempDict = parent.parent.dataConnection.glAccounts.accountGroups()
-        for acctGroupKey in tempDict.sortedListOfKeys():
-            valueAsList.append(str("%4d - %s" %  (tempDict[acctGroupKey].idNum, tempDict[acctGroupKey].description)))
-        self.acctGrpsBox.addItems(valueAsList)
+        self.acctGrpsBox.addItems(parent.parent.dataConnection.glAccounts.accountGroups().sortedListOfKeysAndNames())
         
         if mode == "View":
             self.accountNumText = QLabel(str(glAccount.idNum))
@@ -1341,13 +1361,8 @@ class NewPaymentTypeDialog(QDialog):
         nameLbl = QLabel("Name:")
         glLbl = QLabel("GL Account:")
         
-        glFormattedAccountsList = []
-        glAccountsDict = GLDict.accounts().sortedListOfKeys()
-        for glKey in glAccountsDict:
-            glFormattedAccountsList.append(str("%4d - %s" % (GLDict[glKey].idNum, GLDict[glKey].description)))
-            
         self.glAccountsBox = QComboBox()
-        self.glAccountsBox.addItems(glFormattedAccountsList)
+        self.glAccountsBox.addItems(GLDict.accounts().sortedListOfKeysAndNames())
         
         if mode == "View":
             self.nameTxt = QLabel(paymentType.description)
@@ -1396,14 +1411,10 @@ class PaymentTypeDialog(QDialog):
         self.GLDict = GLDict
         self.parent = parent
         
-        valuesAsList = []
-        for paymentTypeKey, paymentType in self.paymentTypeDict.items():
-            valuesAsList.append("%4d - %s" % (paymentTypeKey, paymentType.description))
-
         layout = QHBoxLayout()
 
         self.listWidget = QListWidget()
-        self.listWidget.addItems(valuesAsList)
+        self.listWidget.addItems(self.paymentTypeDict.sortedListOfKeysAndNames())
         self.listWidget.setCurrentRow(0)
 
         buttonLayout = gui_elements.StandardButtonWidget()
@@ -1484,8 +1495,7 @@ class NewGLPostingDialog(QDialog):
         memoLbl = QLabel("Memo:")
 
         self.companyBox = QComboBox()
-        for companyId, company in companiesDict.items():
-            self.companyBox.addItem("%4s - %s" % (companyId, company.shortName))
+        self.companyBox.addItems(companiesDict.sortedListOfKeysAndNames())
         self.postingsWidget = gui_elements.GLPostingsSection(self.glValuesAsList)
         
         if mode == "View":

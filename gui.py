@@ -90,7 +90,7 @@ class Window(QMainWindow):
 
             self.dbCursor.execute("SELECT * FROM Projects")
             for each in self.dbCursor:
-                self.data.projects[each[0]] = Project(each[1], each[2], each[3], each[0], each[3])
+                self.data.projects[each[0]] = Project(each[1], each[2], each[4], each[0], each[3])
 
             self.dbCursor.execute("SELECT * FROM Assets")
             for each in self.dbCursor:
@@ -100,9 +100,13 @@ class Window(QMainWindow):
             for each in self.dbCursor:
                 self.data.assetTypes[each[0]] = AssetType(each[1], each[2], each[0])
 
-            self.dbCursor.execute("SELECT * FROM Costs")
+            self.dbCursor.execute("SELECT * FROM AssetCosts")
             for each in self.dbCursor:
-                self.data.costs[each[0]] = Cost(each[2], each[1], each[0])
+                self.data.assetCosts[each[0]] = AssetCost(each[1], each[0])
+
+            self.dbCursor.execute("SELECT * FROM AssetHistory")
+            for each in self.dbCursor:
+                self.data.assetsHistory[each[0]] = AssetHistory(each[1], each[2], each[3], each[4], each[0])
 
             self.dbCursor.execute("SELECT * FROM GLPostings")
             for each in self.dbCursor:
@@ -130,6 +134,19 @@ class Window(QMainWindow):
                      "(" + "self.data." + each[3] + "[" + str(each[4]) + "])")
         else:
             # Need to put in db creation routine
+            self.dbCursor.execute("""CREATE TABLE AssetCosts
+                                    (idNum INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Cost  REAL
+                                    )""")
+            
+            self.dbCursor.execute("""CREATE TABLE AssetHistory
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Date        TEXT,
+                                     Description TEXT,
+                                     Dollars     REAL,
+                                     PosNeg      TEXT
+                                    )""")
+
             self.dbCursor.execute("""CREATE TABLE AssetTypes
                                     (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
                                      AssetType   TEXT,
@@ -156,12 +173,6 @@ class Window(QMainWindow):
                                      Active    TEXT
                                     )""")
 
-            self.dbCursor.execute("""CREATE TABLE Costs
-                                    (idNum INTEGER PRIMARY KEY AUTOINCREMENT,
-                                     Date  TEXT,
-                                     Cost  REAL
-                                    )""")
-
             self.dbCursor.execute("""CREATE TABLE GLAccounts
                                     (idNum      INTEGER,
                                      Description TEXT,
@@ -172,10 +183,7 @@ class Window(QMainWindow):
             self.dbCursor.execute("""CREATE TABLE GLPostings
                                     (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
                                      Date        TEXT,
-                                     Amount      REAL,
-                                     DebitCredit TEXT,
                                      Description TEXT,
-                                     Reference   INTEGER
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE GLPostingsDetails
@@ -200,6 +208,11 @@ class Window(QMainWindow):
                                     (idNum      INTEGER PRIMARY KEY AUTOINCREMENT,
                                      DatePaid   TEXT,
                                      AmountPaid REAL
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE PaymentTypes
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     Description TEXT
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE Projects
@@ -239,11 +252,6 @@ class Window(QMainWindow):
                                      Method              TEXT,
                                      ObjectBeingLinked   TEXT,
                                      ObjectIdBeingLinked INTEGER
-                                    )""")
-
-            self.dbCursor.execute("""CREATE TABLE PaymentTypes
-                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
-                                     Description TEXT
                                     )""")
 
             self.dbConnection.commit()
@@ -377,9 +385,15 @@ class Window(QMainWindow):
         button = [shortName]
         self.companyLayout.deleteButtons(button)
 
-    def addAssetToAssetModule(self, assetId):
-        assetItem = AssetTreeWidgetItem(self.data.assets[assetId], self.assetOverview.assetWidget.currentAssetsTreeWidget)
-        self.assetOverview.assetWidget.currentAssetsTreeWidget.addItem(assetItem)
+    def addAssetToAssetModule(self, asset):
+        if asset.subAssetOf:
+            parentItem = self.assetOverview.assetWidget.getParentItem(asset.idNum)
+            assetItem = AssetTreeWidgetItem(asset, parentItem)
+            parentItem.addChild(assetItem)
+        else:
+            assetItem = AssetTreeWidgetItem(asset, self.assetOverview.assetWidget.currentAssetsTreeWidget)
+            self.assetOverview.assetWidget.currentAssetsTreeWidget.addTopLevelItem(assetItem)
+                    
         self.assetOverview.assetWidget.updateAssetsCount()
 
     def changeCompanySelection(self, companyChanged):

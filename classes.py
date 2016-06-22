@@ -1,6 +1,37 @@
 import constants
 
-class VendorsDict(dict):
+class SortableDict(dict):
+    def __init__(self):
+        super().__init__()
+
+    def sortedListOfKeys(self):
+        sortedList = sorted(list(self), key=lambda x: x)
+        return sortedList
+
+    def sortedListOfKeysAndNames(self, attrName):
+        sortedListOfKeys = self.sortedListOfKeys()
+        sortedListOfKeysAndNames = []
+        for key in sortedListOfKeys:
+            sortedListOfKeysAndNames.append("%4d - %s" % (key, getattr(self[key], attrName)))
+        return sortedListOfKeysAndNames
+
+class AssetTypesDict(SortableDict):
+    def __init__(self):
+        super().__init__()
+
+    def sortedListOfKeysAndNames(self):
+        sortListOfKeysNames = super().sortedListOfKeysAndNames("description")
+        return sortListOfKeysNames        
+
+class PaymentTypesDict(SortableDict):
+    def __init__(self):
+        super().__init__()
+
+    def sortedListOfKeysAndNames(self):
+        sortListOfKeysNames = super().sortedListOfKeysAndNames("description")
+        return sortListOfKeysNames        
+
+class VendorsDict(SortableDict):
     def __init__(self):
         super().__init__()
 
@@ -13,6 +44,10 @@ class VendorsDict(dict):
             return newDict
         else:
             return self
+
+    def sortedListOfKeysAndNames(self):
+        sortListOfKeysNames = super().sortedListOfKeysAndNames("name")
+        return sortListOfKeysNames
 
 class GLPostingsDetailsDict(dict):
     def __init__(self):
@@ -43,7 +78,7 @@ class GLPostingsDict(dict):
                     tempDict[detailKey] = self[key].details[detailKey]
         return tempDict
     
-class GLAccountsDict(dict):
+class GLAccountsDict(SortableDict):
     def __init__(self):
         super().__init__()
 
@@ -61,32 +96,32 @@ class GLAccountsDict(dict):
                 tempDict[glKey] = self[glKey]
         return tempDict
 
-    def sortedListOfKeys(self):
-        sortedList = sorted(list(self), key=lambda x: x)
-        return sortedList
-
     def sortedListOfKeysAndNames(self):
-        sortedListOfKeys = self.sortedListOfKeys()
-        sortedListOfKeysAndNames = []
-        for key in sortedListOfKeys:
-            sortedListOfKeysAndNames.append("%d - %s" % (key, self[key].description))
-        return sortedListOfKeysAndNames
+        sortListOfKeysNames = super().sortedListOfKeysAndNames("description")
+        return sortListOfKeysNames
 
 class InvoicesDict(dict):
     def __init__(self):
         super().__init__()
 
     def openInvoices(self):
-        tempDict = {}
+        tempDict = InvoicesDict()
         for invoiceKey in self:
             if self[invoiceKey].balance() != 0:
                 tempDict[invoiceKey] = self[invoiceKey]
         return tempDict
 
     def paidInvoices(self):
-        tempDict = {}
+        tempDict = InvoicesDict()
         for invoiceKey in self:
             if self[invoiceKey].balance() == 0:
+                tempDict[invoiceKey] = self[invoiceKey]
+        return tempDict
+
+    def trueInvoices(self):
+        tempDict = InvoicesDict()
+        for invoiceKey in self:
+            if self[invoiceKey].vendor:
                 tempDict[invoiceKey] = self[invoiceKey]
         return tempDict
 
@@ -121,18 +156,22 @@ class ProposalsDict(dict):
         else:
             return self
 
-class ProjectsDict(dict):
+class ProjectsDict(SortableDict):
     def __init__(self):
         super().__init__()
 
     def projectsByStatus(self, status):
-        tempDict = {}
+        tempDict = ProjectsDict()
         for projectKey in self:
             if self[projectKey].status() == status:
                 tempDict[projectKey] = self[projectKey]
         return tempDict
 
-class AssetsDict(dict):
+    def sortedListOfKeysAndNames(self):
+        sortListOfKeysNames = super().sortedListOfKeysAndNames("description")
+        return sortListOfKeysNames
+
+class AssetsDict(SortableDict):
     def __init__(self):
         super().__init__()
 
@@ -186,8 +225,12 @@ class AssetsDict(dict):
             if self[assetKey].disposeDate != "" and self[assetKey].disposeDate != None:
                 assetDict[assetKey] = self[assetKey]
         return assetDict
+
+    def sortedListOfKeysAndNames(self):
+        sortListOfKeysNames= super().sortedListOfKeysAndNames("description")
+        return sortListOfKeysNames
             
-class CompanyDict(dict):
+class CompanyDict(SortableDict):
     def __init__(self):
         super().__init__()
 
@@ -197,6 +240,10 @@ class CompanyDict(dict):
             newList.append(each.shortName)
 
         return newList
+
+    def sortedListOfKeysAndNames(self):
+        sortListOfKeysNames= super().sortedListOfKeysAndNames("shortName")
+        return sortListOfKeysNames
 
 class ProposalDetail:
     def __init__(self, description, cost, idNum):
@@ -260,7 +307,7 @@ class Project:
         self.dateStart = dateStart
         self.dateEnd = dateEnd
         self.notes = notes
-        self.invoices = {}
+        self.invoices = InvoicesDict()
         self.proposals = ProposalsDict()
         self.glAccount = None
         self.company = None
@@ -338,7 +385,7 @@ class InvoiceDetail:
 class Invoice:
     def __init__(self, date, dueDate, idNum):
         self.idNum = idNum
-        self.invoiceDate = date
+        self.date = date
         self.dueDate = dueDate
         self.vendor = None
         self.company = None
@@ -388,20 +435,7 @@ class Invoice:
 
     def addGLPosting(self, glPosting):
         self.glPosting = glPosting
-
-class Cost:
-    def __init__(self, amount, date, idNum):
-        self.idNum = idNum
-        self.date = date
-        self.cost = amount
-        self.assetProj = None
-
-    def addProject(self, project):
-        self.assetProj = ("projects", project)
-
-    def addAsset(self, asset):
-        self.assetProj = ("assets", asset)
-
+ 
 class Vendor:
     def __init__(self, name, address, city, state, zipcode, phone, idNum):
         self.idNum = idNum
@@ -497,6 +531,40 @@ class Company:
     def removePosting(self, posting):
         self.glPostings.pop(posting.idNum)
 
+class AssetHistory:
+    def __init__(self, date, text, amount, posNeg, idNum):
+        self.idNum = idNum
+        self.date = date
+        self.text = text
+        self.amount = amount
+        self.posNeg = posNeg
+        self.asset = None
+        self.object = None
+
+    def addAsset(self, asset):
+        self.asset = asset
+
+    # object_ should be the AssetCost associated with this history transaction
+    def addObject(self, object_):
+        self.object = object_
+        
+class AssetCost:
+    def __init__(self, cost, idNum):
+        self.idNum = idNum
+        self.cost = cost
+        self.depExpenses = {}
+        self.invoice = None
+        self.asset = None
+
+    def addInvoice(self, invoice):
+        self.invoice = invoice
+
+    def addAsset(self, asset):
+        self.asset = asset
+
+    def addDepExpense(self, depExpense):
+        self.depExpenses[depExpense.idNum] = depExpense
+        
 class Asset:
     def __init__(self, desc, acqDate, inSvcDate, disposeDate, disposeAmount, usefulLife, salvageAmt, depMethod, partiallyDisposed, idNum):
         self.idNum = idNum
@@ -513,7 +581,7 @@ class Asset:
         self.company = None
         self.fromProject = None
         self.subAssetOf = None
-        self.invoices = {}
+        self.invoices = InvoicesDict()
         self.costs = {}
         self.history = {}
         self.subAssets = AssetsDict()
@@ -540,6 +608,14 @@ class Asset:
     def addCost(self, cost):
         self.costs[cost.idNum] = cost
 
+    def removeCost(self, cost):
+        self.costs.pop(cost.idNum)
+
+    def findCost(self, invoice):
+        for cost in self.costs.values():
+            if cost.invoice.idNum == invoice.idNum:
+                return cost
+
     def addSubAsset(self, asset):
         self.subAssets[asset.idNum] = asset
 
@@ -551,11 +627,15 @@ class Asset:
 
     def removeSubAssetOf(self):
         self.subAssetOf = None
+
+    def addHistory(self, history):
+        self.history[history.idNum] = history
+
+    def removeHistory(self, history):
+        self.history.pop(history.idNum)
         
     def cost(self):
         amount = 0.0
-        for invoiceKey in self.invoices:
-            amount += self.invoices[invoiceKey].amount()
         for costKey in self.costs:
             amount += self.costs[costKey].cost
         return amount
@@ -584,6 +664,12 @@ class Asset:
             parentAsset = parentAsset.subAssetOf
 
         dbConnection.commit()
+
+    def getHistoryByObject(self, object_):
+        for history in self.history.values():
+            if isinstance(history.object, type(object_)):
+                if history.object.idNum == object_.idNum:
+                    return history
 
 class AssetType:
     def __init__(self, description, depreciable, idNum):
@@ -686,13 +772,14 @@ class CorporateStructure:
         self.invoices = InvoicesDict()
         self.invoicesDetails = {}
         self.invoicesPayments = {}
-        self.costs = {}
+        self.assetCosts = {}
         self.proposals = ProposalsDict()
         self.proposalsDetails = {}
         self.assets = AssetsDict()
-        self.assetTypes = {}
+        self.assetsHistory = {}
+        self.assetTypes = AssetTypesDict()
         self.projects = ProjectsDict()
         self.glAccounts = GLAccountsDict()
         self.glPostings = GLPostingsDict()
         self.glPostingsDetails = {}
-        self.paymentTypes = {}
+        self.paymentTypes = PaymentTypesDict()
