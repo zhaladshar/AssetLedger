@@ -253,7 +253,7 @@ class InvoiceDialog(QDialog):
 
             # Add entry to payment tree
             item = gui_elements.InvoicePaymentTreeWidgetItem(newPayment, self.paymentHistory)
-            self.paymentHistory.addItem(item)
+            self.paymentHistory.addTopLevelItem(item)
             
             # Refresh AP info
             self.parent.updateVendorTree.emit()
@@ -311,12 +311,12 @@ class InvoiceDialog(QDialog):
             # Delete payment from corporate structure
             self.invoice.removePayment(item.invoicePayment)
             self.parent.parent.dataConnection.invoicesPayments.pop(item.invoicePayment.idNum)
-
+            
             # Delete GL posting
             glDet = item.invoicePayment.glPosting
             glPost = glDet.detailOf
             self.parent.deleteGLPost.emit(glPost)
-
+            
             # Refresh data
             self.parent.refreshOpenInvoiceTree()
             self.parent.refreshPaidInvoicesTreeWidget()
@@ -711,6 +711,7 @@ class CompanyDialog(QDialog):
 class AssetDialog(QDialog):
     def __init__(self, mode, parent=None, asset=None):
         super().__init__(parent)
+        self.parent = parent
         self.hasChanges = False
         self.companyChanged = False
         self.assetTypeChanged = False
@@ -724,9 +725,9 @@ class AssetDialog(QDialog):
         childOfLbl = QLabel("Child of:")
         dateAcquiredLbl = QLabel("Date Acquired:")
         dateInSvcLbl = QLabel("Date in Service:")
-        usefulLifeLbl = QLabel("Useful Life:")
-        depMethodLbl = QLabel("Depreciation Method:")
-        salvageValueLbl = QLabel("Salvage Amount:")
+        self.usefulLifeLbl = QLabel("Useful Life:")
+        self.depMethodLbl = QLabel("Depreciation Method:")
+        self.salvageValueLbl = QLabel("Salvage Amount:")
         costLbl = QLabel("Cost:")
 
         self.companyBox = QComboBox()
@@ -743,10 +744,10 @@ class AssetDialog(QDialog):
         self.depMethodBox.addItems(constants.DEP_METHODS)
         
         if mode == "View":
-            self.companyBox.setCurrentIndex(self.companyBox.findText(str("%4s" % asset.company.idNum) + " - " + asset.company.shortName))
+            self.companyBox.setCurrentIndex(self.companyBox.findText("%4d - %s" % (asset.company.idNum, asset.company.shortName)))
             self.companyBox.setEnabled(False)
             self.descriptionText = QLabel(asset.description)
-            self.assetTypeBox.setCurrentIndex(self.assetTypeBox.findText(str("%4s" % asset.assetType.idNum) + " - " + asset.assetType.description))
+            self.assetTypeBox.setCurrentIndex(self.assetTypeBox.findText("%4d - %s" % (asset.assetType.idNum, asset.assetType.description)))
             self.assetTypeBox.setEnabled(False)
             if asset.subAssetOf == None:
                 subAssetOfText = ""
@@ -771,7 +772,9 @@ class AssetDialog(QDialog):
 
             costLbl.hide()
             self.costText.hide()
-            
+
+        self.assetTypeBox.currentIndexChanged.connect(self.showHideDisposalInfo)
+
         self.layout.addWidget(companyLbl, 0, 0)
         self.layout.addWidget(self.companyBox, 0, 1)
         self.layout.addWidget(descriptionLbl, 1, 0)
@@ -784,11 +787,11 @@ class AssetDialog(QDialog):
         self.layout.addWidget(self.dateAcquiredText, 4, 1)
         self.layout.addWidget(dateInSvcLbl, 5, 0)
         self.layout.addWidget(self.dateInSvcText, 5, 1)
-        self.layout.addWidget(usefulLifeLbl, 6, 0)
+        self.layout.addWidget(self.usefulLifeLbl, 6, 0)
         self.layout.addWidget(self.usefulLifeText, 6, 1)
-        self.layout.addWidget(depMethodLbl, 7, 0)
+        self.layout.addWidget(self.depMethodLbl, 7, 0)
         self.layout.addWidget(self.depMethodBox, 7, 1)
-        self.layout.addWidget(salvageValueLbl, 8, 0)
+        self.layout.addWidget(self.salvageValueLbl, 8, 0)
         self.layout.addWidget(self.salvageValueText, 8, 1)
         self.layout.addWidget(costLbl, 9, 0)
         self.layout.addWidget(self.costText, 9, 1)
@@ -816,6 +819,28 @@ class AssetDialog(QDialog):
         else:
             self.setWindowTitle("New Asset")
         
+        self.showHideDisposalInfo()
+        
+    def showHideDisposalInfo(self):
+        assetTypeId = self.parent.stripAllButNumbers(self.assetTypeBox.currentText())
+        assetType = self.parent.parent.dataConnection.assetTypes[assetTypeId]
+        if assetType.depreciable == False:
+            self.usefulLifeLbl.hide()
+            self.usefulLifeText.hide()
+            self.depMethodLbl.hide()
+            self.depMethodBox.hide()
+            self.salvageValueLbl.hide()
+            self.salvageValueText.hide()
+        else:
+            self.usefulLifeLbl.show()
+            self.usefulLifeText.show()
+            self.depMethodLbl.show()
+            self.depMethodBox.show()
+            self.salvageValueLbl.show()
+            self.salvageValueText.show()
+
+        self.resize()
+
     def changed(self):
         self.hasChanges = True
 
@@ -857,6 +882,9 @@ class AssetDialog(QDialog):
         self.layout.addWidget(self.usefulLifeText_edit, 6, 1)
         self.layout.addWidget(self.salvageValueText_edit, 8, 1)
 
+    def resize(self):
+        self.setFixedSize(self.sizeHint())
+
 class InvoicePaymentDialog(QDialog):
     def __init__(self, mode, paymentTypeDict, parent=None, invoice=None, invoicePayment=None):
         super().__init__(parent)
@@ -876,10 +904,11 @@ class InvoicePaymentDialog(QDialog):
         if mode == "View":
             self.datePaidText = QLabel(invoicePayment.datePaid)
             self.amountText = QLabel(str(invoicePayment.amountPaid))
+            self.paymentTypeBox.setCurrentIndex(self.paymentTypeBox.findText("%4d - %s" % (invoicePayment.paymentType.idNum, invoicePayment.paymentType.description)))
             self.paymentTypeBox.setEnabled(False)
         else:
             self.datePaidText = gui_elements.DateLineEdit()
-            self.amountText = QLineEdit()
+            self.amountText = QLineEdit(str(invoice.balance()))
         
         self.layout = QGridLayout()
         self.layout.addWidget(vendorLbl, 0, 0)
@@ -1128,6 +1157,11 @@ class NewAssetTypeDialog(QDialog):
             self.accumExpenseGLLbl.hide()
             self.glExpenseAccountsBox.hide()
             self.glAccumExpenseAccountsBox.hide()
+
+        self.resize()
+        
+    def resize(self):
+        self.setFixedSize(self.sizeHint())
         
 class AssetTypeDialog(QDialog):
     def __init__(self, assetTypeDict, GLDict, parent=None):

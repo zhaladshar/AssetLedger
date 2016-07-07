@@ -183,7 +183,7 @@ class Window(QMainWindow):
             self.dbCursor.execute("""CREATE TABLE GLPostings
                                     (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
                                      Date        TEXT,
-                                     Description TEXT,
+                                     Description TEXT
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE GLPostingsDetails

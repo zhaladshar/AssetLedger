@@ -361,12 +361,16 @@ class InvoicePayment:
         self.datePaid = datePaid
         self.amountPaid = amountPaid
         self.glPosting = None
+        self.paymentType = None
 
     def addInvoice(self, invoice):
         self.invoicePaid = invoice
 
     def addGLPosting(self, glPosting):
         self.glPosting = glPosting
+
+    def addPaymentType(self, paymentType):
+        self.paymentType = paymentType
 
 class InvoiceDetail:
     def __init__(self, description, amount, idNum):
@@ -398,16 +402,16 @@ class Invoice:
         amount = 0.0
         for detailKey in self.details:
             amount += self.details[detailKey].cost
-        return amount
+        return round(amount, 2)
 
     def balance(self):
-        return self.amount() - self.paid()
+        return round(self.amount() - self.paid(), 2)
 
     def paid(self):
         amtPaid = 0.0
         for paymentKey in self.payments:
             amtPaid += self.payments[paymentKey].amountPaid
-        return amtPaid
+        return round(amtPaid, 2)
 
     def addVendor(self, vendor):
         self.vendor = vendor
@@ -630,6 +634,11 @@ class Asset:
 
     def addHistory(self, history):
         self.history[history.idNum] = history
+
+    def findHistory(self, cost):
+        for history in self.history.values():
+            if history.object == cost:
+                return history
 
     def removeHistory(self, history):
         self.history.pop(history.idNum)
