@@ -30,6 +30,7 @@ DEBIT = "DR"
 CREDIT = "CR"
 POSITIVE = "Positive"
 NEGATIVE = "Negative"
+DATE_FORMAT = "%m/%d/%Y"
 
 # Strings
 GL_POST_PYMT_DESC = "Post payment for invoice %d from vendor %d on %s"

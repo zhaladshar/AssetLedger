@@ -57,44 +57,58 @@ class Window(QMainWindow):
         self.dbCursor = self.dbConnection.cursor()
         if databaseExists:
             self.dbCursor.execute("SELECT * FROM Companies")
-            for each in self.dbCursor:
-                if each[3] == "Y":
-                    active = True
-                else:
-                    active = False
-                self.data.companies[each[0]] = Company(each[1], each[2], active, each[0])
+            for idNum, name, shortName, active in self.dbCursor:
+                self.data.companies[idNum] = Company(name, shortName, bool(active), idNum)
 
             self.dbCursor.execute("SELECT * FROM Vendors")
-            for each in self.dbCursor:
-                self.data.vendors[each[0]] = Vendor(each[1], each[2], each[3], each[4], each[5], each[6], each[0])
+            for idNum, name, address, city, state, zip_, phone in self.dbCursor:
+                self.data.vendors[idNum] = Vendor(name, address, city, state, zip_, phone, idNum)
 
             self.dbCursor.execute("SELECT * FROM Invoices")
-            for each in self.dbCursor:
-                self.data.invoices[each[0]] = Invoice(each[1], each[2], each[0])
+            for idNum, invoiceDateTxt, dueDateTxt in self.dbCursor:
+                invoiceDate = NewDate(invoiceDateTxt)
+                dueDate = NewDate(dueDateTxt)
+                self.data.invoices[idNum] = Invoice(invoiceDate, dueDate, idNum)
 
             self.dbCursor.execute("SELECT * FROM InvoicesDetails")
-            for each in self.dbCursor:
-                self.data.invoicesDetails[each[0]] = InvoiceDetail(each[1], each[2], each[0])
+            for idNum, desc, cost in self.dbCursor:
+                self.data.invoicesDetails[idNum] = InvoiceDetail(desc, cost, idNum)
 
             self.dbCursor.execute("SELECT * FROM InvoicesPayments")
-            for each in self.dbCursor:
-                self.data.invoicesPayments[each[0]] = InvoicePayment(each[1], each[2], each[0])
+            for idNum, dateTxt, amtPd in self.dbCursor:
+                datePd = NewDate(dateTxt)
+                self.data.invoicesPayments[idNum] = InvoicePayment(datePd, amtPd, idNum)
 
             self.dbCursor.execute("SELECT * FROM Proposals")
-            for each in self.dbCursor:
-                self.data.proposals[each[0]] = Proposal(each[1], each[2], each[3], each[0])
+            for idNum, propDate, status, statusReason in self.dbCursor:
+                date = NewDate(propDate)
+                self.data.proposals[idNum] = Proposal(date, status, statusReason, idNum)
 
             self.dbCursor.execute("SELECT * FROM ProposalsDetails")
             for each in self.dbCursor:
                 self.data.proposalsDetails[each[0]] = ProposalDetail(each[1], each[2], each[0])
 
             self.dbCursor.execute("SELECT * FROM Projects")
-            for each in self.dbCursor:
-                self.data.projects[each[0]] = Project(each[1], each[2], each[4], each[0], each[3])
+            for idNum, desc, ds, de, notes in self.dbCursor:
+                dateStart = classes.NewDate(ds)
+                if de == "" or de == None:
+                    dateEnd = ""
+                else:
+                    dateEnd = classes.NewDate(de)
+                self.data.projects[idNum] = Project(desc, dateStart, notes, idNum, dateEnd)
 
             self.dbCursor.execute("SELECT * FROM Assets")
-            for each in self.dbCursor:
-                self.data.assets[each[0]] = Asset(each[1], each[2], each[3], each[4], each[5], each[6], each[7], each[8], bool(each[9]), each[0])
+            for idNum, desc, acqD, inSvcD, dDate, dAmt, uLife, sAmt, dMeth, pDis in self.dbCursor:
+                dateAcq = classes.NewDate(acqD)
+                if inSvcD == "" or inSvcD == None:
+                    dateInSvc = ""
+                else:
+                    dateInSvc = classes.NewDate(inSvcD)
+                if dDate == "" or dDate == None:
+                    dateDis = ""
+                else:
+                    dateDis = classes.NewDate(dDate)
+                self.data.assets[idNum] = Asset(desc, dateAcq, dateInSvc, dateDis, dAmt, uLife, sAmt, dMeth, bool(pDis), idNum)
 
             self.dbCursor.execute("SELECT * FROM AssetTypes")
             for each in self.dbCursor:
@@ -109,12 +123,13 @@ class Window(QMainWindow):
                 self.data.assetsHistory[each[0]] = AssetHistory(each[1], each[2], each[3], each[4], each[0])
 
             self.dbCursor.execute("SELECT * FROM GLPostings")
-            for each in self.dbCursor:
-                self.data.glPostings[each[0]] = GLPosting(each[1], each[2], each[0])
+            for idNum, dateTxt, desc in self.dbCursor:
+                date = NewDate(dateTxt)
+                self.data.glPostings[idNum] = GLPosting(date, desc, idNum)
 
             self.dbCursor.execute("SELECT * FROM GLPostingsDetails")
-            for each in self.dbCursor:
-                self.data.glPostingsDetails[each[0]] = GLPostingDetail(each[1], each[2], each[0])
+            for idNum, amt, drCr in self.dbCursor:
+                self.data.glPostingsDetails[idNum] = GLPostingDetail(amt, drCr, idNum)
 
             self.dbCursor.execute("SELECT * FROM GLAccounts")
             for each in self.dbCursor:
@@ -170,7 +185,7 @@ class Window(QMainWindow):
                                     (idNum     INTEGER PRIMARY KEY AUTOINCREMENT,
                                      Name      TEXT NOT NULL,
                                      ShortName TEXT NOT NULL,
-                                     Active    TEXT
+                                     Active    INTEGER
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE GLAccounts
@@ -393,7 +408,7 @@ class Window(QMainWindow):
         else:
             assetItem = AssetTreeWidgetItem(asset, self.assetOverview.assetWidget.currentAssetsTreeWidget)
             self.assetOverview.assetWidget.currentAssetsTreeWidget.addTopLevelItem(assetItem)
-                    
+        
         self.assetOverview.assetWidget.updateAssetsCount()
 
     def changeCompanySelection(self, companyChanged):

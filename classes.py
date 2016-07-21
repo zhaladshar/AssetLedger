@@ -1,5 +1,14 @@
+import datetime
 import constants
 
+class NewDate(datetime.date):
+    def __new__(cls, string):
+        dt = datetime.datetime.strptime(string, constants.DATE_FORMAT)
+        return super().__new__(cls, dt.year, dt.month, dt.day)
+    
+    def __str__(self):
+        return self.strftime(constants.DATE_FORMAT)
+    
 class SortableDict(dict):
     def __init__(self):
         super().__init__()

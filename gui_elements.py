@@ -3,9 +3,9 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from gui_dialogs import *
 import re
-from classes import *
 import sys
 import constants
+from classes import *
         
 class SaveViewCancelButtonWidget(QWidget):
     def __init__(self, mode):
@@ -154,11 +154,11 @@ class InvoicePaymentTreeWidgetItem(QTreeWidgetItem):
         super().__init__(parent)
         self.invoicePayment = invoicePaymentItem
         self.setText(0, str(self.invoicePayment.idNum))
-        self.setText(1, self.invoicePayment.datePaid)
+        self.setText(1, str(self.invoicePayment.datePaid))
         self.setText(2, str(self.invoicePayment.amountPaid))
 
     def refreshData(self):
-        self.setText(1, self.invoicePayment.datePaid)
+        self.setText(1, str(self.invoicePayment.datePaid))
         self.setText(2, str(self.invoicePayment.amountPaid))
 
 class InvoicePaymentTreeWidget(NewTreeWidget):
@@ -883,16 +883,16 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
 
         self.setText(0, str(self.invoice.idNum))
         self.setText(1, self.invoice.vendor.name)
-        self.setText(2, self.invoice.date)
-        self.setText(3, self.invoice.dueDate)
+        self.setText(2, str(self.invoice.date))
+        self.setText(3, str(self.invoice.dueDate))
         self.setText(4, "{:,.2f}".format(self.invoice.amount()))
         self.setText(5, "{:,.2f}".format(self.invoice.paid()))
         self.setText(6, "{:,.2f}".format(self.invoice.balance()))
 
     def refreshData(self):
         self.setText(1, self.invoice.vendor.name)
-        self.setText(2, self.invoice.date)
-        self.setText(3, self.invoice.dueDate)
+        self.setText(2, str(self.invoice.date))
+        self.setText(3, str(self.invoice.dueDate))
         self.setText(4, "{:,.2f}".format(self.invoice.amount()))
         self.setText(5, "{:,.2f}".format(self.invoice.paid()))
         self.setText(6, "{:,.2f}".format(self.invoice.balance()))
@@ -926,8 +926,8 @@ class InvoiceWidget(QWidget):
     updateProjectTree = pyqtSignal()
     updateAssetTree = pyqtSignal()
     updateCompanyTree = pyqtSignal()
-    postToGL = pyqtSignal(int, str, str, list)
-    updateGLPost = pyqtSignal(object, int, str, str, list)
+    postToGL = pyqtSignal(int, object, str, list)
+    updateGLPost = pyqtSignal(object, int, object, str, list)
     updateGLDet = pyqtSignal(object, float, str, object)
     deleteGLPost = pyqtSignal(object)
     
@@ -996,7 +996,7 @@ class InvoiceWidget(QWidget):
             if dialog.exec_():
                 nextId = self.nextIdNum("InvoicesPayments")
                 paymentTypeId = self.stripAllButNumbers(dialog.paymentTypeBox.currentText())
-                datePd = dialog.datePaidText.text()
+                datePd = NewDate(dialog.datePaidText.text())
                 amtPd = float(dialog.amountText.text())
                 
                 # Create new payment and get necessary objects
@@ -1004,7 +1004,7 @@ class InvoiceWidget(QWidget):
                 paymentType = self.paymentTypesDict[paymentTypeId]
                 
                 # Add to database and to data structure
-                self.insertIntoDatabase("InvoicesPayments", "(DatePaid, AmountPaid)", "('" + newPayment.datePaid + "', " + str(newPayment.amountPaid) + ")")
+                self.insertIntoDatabase("InvoicesPayments", "(DatePaid, AmountPaid)", "('" + str(newPayment.datePaid) + "', " + str(newPayment.amountPaid) + ")")
                 self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoices', " + str(item.invoice.idNum) + ", 'addPayment', 'invoicesPayments', " + str(nextId) + ")")
                 self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoicesPayments', " + str(newPayment.idNum) + ", 'addInvoice', 'invoices', " + str(item.invoice.idNum) + ")")
                 self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoicesPayments', " + str(newPayment.idNum) + ", 'addPaymentType', 'paymentTypes', " + str(paymentTypeId) + ")")
@@ -1018,7 +1018,7 @@ class InvoiceWidget(QWidget):
                 # Create GL posting for this payment
                 companyId = newPayment.invoicePaid.company.idNum
                 paymentTypeId = self.stripAllButNumbers(dialog.paymentTypeBox.currentText())
-                description = constants.GL_POST_PYMT_DESC % (int(dialog.invoiceText.text()), item.invoice.vendor.idNum, datePd)
+                description = constants.GL_POST_PYMT_DESC % (int(dialog.invoiceText.text()), item.invoice.vendor.idNum, str(datePd))
                 details = []
                 details.append((amtPd, "CR", paymentType.glAccount.idNum, newPayment, "invoicesPayments"))
                 details.append((amtPd, "DR", item.invoice.vendor.glAccount.idNum, None, None))
@@ -1065,8 +1065,10 @@ class InvoiceWidget(QWidget):
             nextId = self.nextIdNum("Invoices")
             
             # Create new invoice
-            newInvoice = Invoice(dialog.invoiceDateText.text(),
-                                 dialog.dueDateText.text(),
+            invoiceDate = NewDate(dialog.invoiceDateText.text())
+            dueDate = NewDate(dialog.dueDateText.text())
+            newInvoice = Invoice(invoiceDate,
+                                 dueDate,
                                  nextId)
             
             # Create invoice detail items
@@ -1125,7 +1127,7 @@ class InvoiceWidget(QWidget):
                 self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('assets', ?, 'addCost', 'assetCosts', ?)", (asset.idNum, cost.idNum))
                 self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('assetCosts', ?, 'addAsset', 'assets', ?)", (cost.idNum, asset.idNum))
                 self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('assetCosts', ?, 'addInvoice', 'invoices', ?)", (cost.idNum, newInvoice.idNum))
-
+                
                 # Create history entry for asset
                 histId = self.nextIdNum("AssetHistory")
                 history = AssetHistory(newInvoice.date, constants.ASSET_HIST_INV % newInvoice.idNum, newInvoice.amount(), constants.POSITIVE, histId)
@@ -1134,7 +1136,7 @@ class InvoiceWidget(QWidget):
                 history.addObject(cost)
                 self.parent.dataConnection.assetsHistory[histId] = history
                 self.parent.parent.dbCursor.execute("INSERT INTO AssetHistory (Date, Description, Dollars, PosNeg) VALUES (?, ?, ?, ?)",
-                                                    (history.date, history.text, history.amount, history.posNeg))
+                                                    (str(history.date), history.text, history.amount, history.posNeg))
                 self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
                                                     ('assetsHistory', histId, 'addAsset', 'assets', asset.idNum))
                 self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
@@ -1157,7 +1159,7 @@ class InvoiceWidget(QWidget):
             self.invoicesDict[newInvoice.idNum] = newInvoice
             
             self.parent.parent.dbCursor.execute("INSERT INTO Invoices (InvoiceDate, DueDate) VALUES (?, ?)",
-                                  (newInvoice.date, newInvoice.dueDate))
+                                  (str(newInvoice.date), str(newInvoice.dueDate)))
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, 'addVendor', 'vendors', ?)", (nextId, vendorId))
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('vendors', ?, 'addInvoice', 'invoices', ?)", (vendorId, nextId))
             self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, ?, ?, ?)", (nextId, type_action, type_, type_Id))
@@ -1291,9 +1293,9 @@ class InvoiceWidget(QWidget):
                             oldType.removeHistory(history)
                             item.invoice.assetProj[1].addHistory(history)
 
-                            oldGL = oldType.assetType.assetGLAccount
-                            newGL = item.invoice.assetProj[1].assetType.assetGLAccount
-                            if oldGL != newGL:
+                            oldDRGL = oldType.assetType.assetGLAccount
+                            newDRGL = item.invoice.assetProj[1].assetType.assetGLAccount
+                            if oldDRGL != newDRGL:
                                 needToUpdateGL = True
                             
                             self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='assetCosts' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='assets'",
@@ -1406,7 +1408,7 @@ class InvoiceWidget(QWidget):
                         glDetList = []
                         for detail in oldGLPost.details.values():
                             if detail.glAccount != item.invoice.vendor.glAccount:
-                                glDetList.append((detail, item.invoice.amount(), detail.debitCredit, newGL))
+                                glDetList.append((detail, item.invoice.amount(), detail.debitCredit, newDRGL))
                             else:
                                 glDetList.append((detail, item.invoice.amount(), detail.debitCredit, item.invoice.vendor.glAccount))
                         
@@ -1580,7 +1582,7 @@ class APView(QWidget):
             self.updateGLDet(glDet[0], glDet[1], glDet[2], glDet[3])
         
         self.parent.dbCursor.execute("UPDATE GLPostings SET Date=?, Description=? WHERE idNum=?",
-                                     (postingDate, description, glPost.idNum))
+                                     (str(postingDate), description, glPost.idNum))
         self.parent.dbConnection.commit()
         self.updateGLTree.emit()
 
@@ -1632,7 +1634,8 @@ class APView(QWidget):
         self.dataConnection.companies[companyNum].addPosting(glPosting)
         self.dataConnection.glPostings[glPosting.idNum] = glPosting
         self.parent.dbCursor.execute("INSERT INTO GLPostings (Date, Description) VALUES (?, ?)",
-                                            (glPosting.date, glPosting.description))
+                                            (str(glPosting.date), glPosting.description))
+        
         self.parent.dbCursor.execute("INSERT INTO Xref VALUES ('glPostings', ?, 'addCompany', 'companies', ?)",
                                      (glPosting.idNum, companyNum))
         self.parent.dbCursor.execute("INSERT INTO Xref VALUES ('companies', ?, 'addPosting', 'glPostings', ?)",
@@ -1676,13 +1679,13 @@ class ProposalTreeWidgetItem(QTreeWidgetItem):
 
         self.setText(0, str(self.proposal.idNum))
         self.setText(1, self.proposal.vendor.name)
-        self.setText(2, self.proposal.date)
+        self.setText(2, str(self.proposal.date))
         self.setText(3, self.proposal.proposalFor[1].description)
         self.setText(4, "{:,.2f}".format(self.proposal.totalCost()))
 
     def refreshData(self):
         self.setText(1, self.proposal.vendor.name)
-        self.setText(2, self.proposal.date)
+        self.setText(2, str(self.proposal.date))
         self.setText(3, self.proposal.proposalFor[1].description)
         self.setText(4, "{:,.2f}".format(self.proposal.totalCost()))
         
@@ -1870,7 +1873,8 @@ class ProposalWidget(QWidget):
             nextId = self.nextIdNum("Proposals")
             
             # Create proposal and add to database
-            newProposal = Proposal(dialog.dateText.text(),
+            date = classes.NewDate(dialog.dateText.text())
+            newProposal = Proposal(date,
                                    "Open",
                                    "",
                                    nextId)
@@ -1900,7 +1904,7 @@ class ProposalWidget(QWidget):
                 self.parent.dataConnection.projects[type_Id].addProposal(newProposal)
             
             # Add to database
-            self.insertIntoDatabase("Proposals", "(ProposalDate, Status)", "('" + newProposal.date + "', '" + newProposal.status + "')")
+            self.insertIntoDatabase("Proposals", "(ProposalDate, Status)", "('" + str(newProposal.date) + "', '" + newProposal.status + "')")
             self.insertIntoDatabase("Xref", "", "('proposals', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
             self.insertIntoDatabase("Xref", "", "('companies', " + str(companyId) + ", 'addProposal', 'proposals', " + str(nextId) + ")")
             self.insertIntoDatabase("Xref", "", "('proposals', " + str(nextId) + ", 'addVendor', 'vendors', " + str(vendorId) + ")")
@@ -2082,7 +2086,7 @@ class ProposalWidget(QWidget):
 
                     self.parent.parent.dbConnection.commit()
 
-                    item.proposal.date = dialog.dateText_edit.text()
+                    item.proposal.date = classes.NewDate(dialog.dateText_edit.text())
                     item.proposal.status = dialog.statusBox.currentText()
 
                     self.openProposalsTreeWidget.refreshData()
@@ -2160,7 +2164,7 @@ class ProposalView(QWidget):
         self.proposalWidget.updateVendorWidgetTree.connect(self.emitVendorWidgetUpdate)
         layout = QVBoxLayout()
         layout.addWidget(self.proposalWidget)
-
+        
         self.setLayout(layout)
 
     def emitVendorWidgetUpdate(self):
@@ -2173,15 +2177,15 @@ class ProjectTreeWidgetItem(QTreeWidgetItem):
         
         self.setText(0, str(self.project.idNum))
         self.setText(1, self.project.description)
-        self.setText(2, self.project.dateStart)
-        self.setText(3, self.project.dateEnd)
+        self.setText(2, str(self.project.dateStart))
+        self.setText(3, str(self.project.dateEnd))
         self.setText(4, "<Duration>")
         self.setText(5, "{:,.2f}".format(self.project.calculateCIP()))
 
     def refreshData(self):
         self.setText(1, self.project.description)
-        self.setText(2, self.project.dateStart)
-        self.setText(3, self.project.dateEnd)
+        self.setText(2, str(self.project.dateStart))
+        self.setText(3, str(self.project.dateEnd))
         self.setText(4, "<Duration>")
         self.setText(5, "{:,.2f}".format(self.project.calculateCIP()))
         
@@ -2283,15 +2287,15 @@ class ProjectWidget(QWidget):
                 assetId = self.nextIdNum("Assets")
                 costId = self.nextIdNum("AssetCosts")
                 histId = self.nextIdNum("AssetHistory")
-                
+                dateEnd = classes.NewDate(dialog.dateTxt.text())
                 if dialog.inSvcChk.isChecked() == True:
-                    inSvcDate = dialog.dateTxt.text()
+                    inSvcDate = dateEnd
                 else:
                     inSvcDate = ""
 
                 # Create new asset and cost
                 newAsset = Asset(dialog.assetNameTxt.text(),
-                                 dialog.dateTxt.text(),
+                                 dateEnd,
                                  inSvcDate,
                                  "",
                                  None,
@@ -2302,7 +2306,7 @@ class ProjectWidget(QWidget):
                                  assetId)
                 parentAssetTxt = dialog.childOfAssetBox.currentText()
                 cost = AssetCost(item.project.calculateCIP(), costId)
-                history = AssetHistory(dialog.dateTxt.text(),
+                history = AssetHistory(dateEnd,
                                        constants.ASSET_HIST_PROJ_COMP % item.project.idNum,
                                        cost.cost,
                                        constants.POSITIVE,
@@ -2336,7 +2340,7 @@ class ProjectWidget(QWidget):
                 item.project.dateEnd = dialog.dateTxt.text()
                 
                 # Add to database
-                self.insertIntoDatabase("Assets", "(idNum, Description, AcquireDate, InSvcDate, UsefulLife, SalvageAmount, DepreciationMethod, PartiallyDisposed)", "(" + str(newAsset.idNum) + ", '" + newAsset.description + "', '" + newAsset.acquireDate + "', '" + newAsset.inSvcDate + "', " + str(newAsset.usefulLife) + ", " + str(newAsset.salvageAmount) + ", '" + newAsset.depMethod + "', " + str(int(newAsset.partiallyDisposed)) + ")")
+                self.insertIntoDatabase("Assets", "(idNum, Description, AcquireDate, InSvcDate, UsefulLife, SalvageAmount, DepreciationMethod, PartiallyDisposed)", "(" + str(newAsset.idNum) + ", '" + newAsset.description + "', '" + str(newAsset.acquireDate) + "', '" + str(newAsset.inSvcDate) + "', " + str(newAsset.usefulLife) + ", " + str(newAsset.salvageAmount) + ", '" + newAsset.depMethod + "', " + str(int(newAsset.partiallyDisposed)) + ")")
                 self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addAssetType', 'assetTypes', " + str(newAsset.assetType.idNum) + ")")
                 self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addCompany', 'companies', " + str(newAsset.company.idNum) + ")")
                 self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addProject', 'projects', " + str(newAsset.fromProject.idNum) + ")")
@@ -2344,7 +2348,7 @@ class ProjectWidget(QWidget):
                 self.insertIntoDatabase("Xref", "", "('projects', " + str(newAsset.fromProject.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
                 self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addCost', 'assetCosts', " + str(cost.idNum) + ")")
                 self.parent.parent.dbCursor.execute("INSERT INTO AssetHistory (Date, Description, Dollars, PosNeg) VALUES (?, ?, ?, ?)",
-                                                    (history.date, history.text, history.amount, history.posNeg))
+                                                    (str(history.date), history.text, history.amount, history.posNeg))
                 self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
                                                     ('assetsHistory', histId, 'addAsset', 'assets', newAsset.idNum))
                 self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
@@ -2359,10 +2363,10 @@ class ProjectWidget(QWidget):
                 if parentAssetTxt != "":
                     self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addSubAssetOf', 'assets', " + str(parentAsset.idNum) + ")")
                     self.insertIntoDatabase("Xref", "", "('assets', " + str(parentAsset.idNum) + ", 'addSubAsset', 'assets', " + str(newAsset.idNum) + ")")
-                    
+                
                 self.parent.parent.dbConnection.commit()
                 
-                self.openProjectsTreeWidget.takeTopLevelItem(idxToComplete.row())                
+                self.openProjectsTreeWidget.takeTopLevelItem(idxToComplete.row())
                 newItem = ProjectTreeWidgetItem(item.project, self.completedProjectsTreeWidget)
                 self.completedProjectsTreeWidget.addTopLevelItem(newItem)
                 
@@ -2378,10 +2382,10 @@ class ProjectWidget(QWidget):
             dialog = CloseProjectDialog(constants.ABD_PROJECT_STATUS, self)
 
             if dialog.exec_():
-                item.project.dateEnd = dialog.dateTxt.text()
+                item.project.dateEnd = classes.NewDate(dialog.dateTxt.text())
                 item.project.notes = dialog.reasonTxt.text()
                 
-                self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=?, Notes=? WHERE idNum=?", (dialog.dateTxt.text(), dialog.reasonTxt.text(), item.project.idNum))
+                self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=?, Notes=? WHERE idNum=?", (str(dialog.dateTxt.text()), dialog.reasonTxt.text(), item.project.idNum))
                 self.parent.parent.dbConnection.commit()
 
         self.refreshOpenProjectTree()
@@ -2419,20 +2423,22 @@ class ProjectWidget(QWidget):
         if dialog.exec_():
             # Find current largest id and increment by one
             nextId = self.nextIdNum("Projects")
+            date = classes.NewDate(dialog.startDateText.text())
             glAccountNum = self.stripAllButNumbers(dialog.glAccountsBox.currentText())
             
             # Create project and add to database
             newProject = Project(dialog.descriptionText.text(),
-                                 dialog.startDateText.text(),
+                                 date,
                                  "",
-                                 nextId)
+                                 nextId,
+                                 "")
             newProject.addGLAccount(self.parent.dataConnection.glAccounts[glAccountNum])
             companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
             newProject.addCompany(self.parent.dataConnection.companies[companyId])
             self.parent.dataConnection.companies[companyId].addProject(newProject)
             self.projectsDict[newProject.idNum] = newProject
             
-            self.insertIntoDatabase("Projects", "(Description, DateStart)", "('" + newProject.description + "', '" + newProject.dateStart + "')")
+            self.insertIntoDatabase("Projects", "(Description, DateStart)", "('" + newProject.description + "', '" + str(newProject.dateStart) + "')")
             self.insertIntoDatabase("Xref", "", "('projects', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
             self.insertIntoDatabase("Xref", "", "('companies', " + str(companyId) + ", 'addProject', 'projects', " + str(nextId) + ")")
             self.insertIntoDatabase("Xref", "", "('projects', " + str(nextId) + ", 'addGLAccount', 'glAccounts', " + str(glAccountNum) + ")")
@@ -2464,10 +2470,16 @@ class ProjectWidget(QWidget):
             dialog.setWindowTitle("View Project")
             if dialog.exec_():
                 if dialog.hasChanges == True:
+                    dateStart = classes.NewDate(dialog.startDateText_edit.text())
+                    if dialog.endDateText.text() == "" or dialog.endDateText.text() == None:
+                        dateEnd = ""
+                    else:
+                        dateEnd = classes.NewDate(dialog.endDateText.text())
+                    
                     # Commit changes to database and to vendor entry
                     sql = ("UPDATE Projects SET Description = '" + dialog.descriptionText_edit.text() +
-                           "', DateStart = '" + dialog.startDateText_edit.text() +
-                           "', DateEnd = '" + dialog.endDateText.text() + 
+                           "', DateStart = '" + str(dateStart) +
+                           "', DateEnd = '" + str(dateEnd) + 
                            "' WHERE idNum = " + str(item.project.idNum))
                     self.parent.parent.dbCursor.execute(sql)
 
@@ -2503,8 +2515,8 @@ class ProjectWidget(QWidget):
                     self.parent.parent.dbConnection.commit()
                     
                     item.project.description = dialog.descriptionText_edit.text()
-                    item.project.dateStart = dialog.startDateText_edit.text()
-                    item.project.dateEnd = dialog.endDateText.text()
+                    item.project.dateStart = dateStart
+                    item.project.dateEnd = dateEnd
                     
                     self.openProjectsTreeWidget.refreshData()
                     
@@ -2666,7 +2678,7 @@ class CompanyWidget(QWidget):
                                  nextId)
             self.companiesDict[newCompany.idNum] = newCompany
 
-            self.insertIntoDatabase("Companies", "(Name, ShortName, Active)", "('" + newCompany.name + "', '" + newCompany.shortName + "', 'Y')")
+            self.insertIntoDatabase("Companies", "(Name, ShortName, Active)", "('" + newCompany.name + "', '" + newCompany.shortName + "', " + str(1) + ")")
             
             self.parent.parent.dbConnection.commit()
             
@@ -2759,15 +2771,15 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
         self.setText(1, self.asset.description)
         self.setText(2, "{:,.2f}".format(self.asset.cost()))
         self.setText(3, "{:,.2f}".format(self.asset.depreciatedAmount()))
-        self.setText(4, self.asset.acquireDate)
-        self.setText(5, self.asset.inSvcDate)
+        self.setText(4, str(self.asset.acquireDate))
+        self.setText(5, str(self.asset.inSvcDate))
         
     def refreshData(self):
         self.setText(1, self.asset.description)
         self.setText(2, "{:,.2f}".format(self.asset.cost()))
         self.setText(3, "{:,.2f}".format(self.asset.depreciatedAmount()))
-        self.setText(4, self.asset.acquireDate)
-        self.setText(5, self.asset.inSvcDate)
+        self.setText(4, str(self.asset.acquireDate))
+        self.setText(5, str(self.asset.inSvcDate))
 
     def depth(self, asset):
         if asset.subAssetOf == None:
@@ -2993,7 +3005,7 @@ class AssetWidget(QWidget):
 
     def disposeChildAssets(self, parentItem, amt, date):
         for idx in range(parentItem.childCount()):
-            self.parent.parent.dbCursor.execute("UPDATE Assets SET DisposeDate=?, DisposeAmount=? WHERE idNum=?", (date, amt, parentItem.child(idx).asset.idNum))
+            self.parent.parent.dbCursor.execute("UPDATE Assets SET DisposeDate=?, DisposeAmount=? WHERE idNum=?", (str(date), amt, parentItem.child(idx).asset.idNum))
             parentItem.child(idx).asset.disposeDate = date
             parentItem.child(idx).asset.disposeAmount = amt
 
@@ -3009,11 +3021,11 @@ class AssetWidget(QWidget):
             dialog = DisposeAssetDialog(self)
             if dialog.exec_():
                 self.parent.parent.dbCursor.execute("UPDATE Assets SET DisposeDate=?, DisposeAmount=? WHERE idNum=?", (dialog.dispDateTxt.text(), float(dialog.dispAmtTxt.text()), item.asset.idNum))
-                item.asset.disposeDate = dialog.dispDateTxt.text()
+                item.asset.disposeDate = classes.NewDate(dialog.dispDateTxt.text())
                 item.asset.disposeAmount = float(dialog.dispAmtTxt.text())
 
                 if item.childCount() > 0:
-                    self.disposeChildAssets(item, float(dialog.dispAmtTxt.text()), dialog.dispDateTxt.text())
+                    self.disposeChildAssets(item, float(dialog.dispAmtTxt.text()), item.asset.disposeDate)
 
                 self.parent.parent.dbConnection.commit()
                 self.refreshAssetTree()
@@ -3029,6 +3041,8 @@ class AssetWidget(QWidget):
 
             # Get and/or set some data elements
             assetType = self.parent.dataConnection.assetTypes[assetTypeId]
+            dateAcq = classes.NewDate(dialog.dateAcquiredText.text())
+            dateInSvc = classes.NewDate(dialog.dateInSvcText.text())
             if assetType.depreciable == True:
                 usefulLife = float(dialog.usefulLifeText.text())
                 depMethod = dialog.depMethodBox.currentText()
@@ -3045,8 +3059,8 @@ class AssetWidget(QWidget):
             
             # Create asset and add to database
             newAsset = Asset(dialog.descriptionText.text(),
-                             dialog.dateAcquiredText.text(),
-                             dialog.dateInSvcText.text(),
+                             dateAcq,
+                             dateInSvc,
                              None,
                              None,
                              usefulLife,
@@ -3061,7 +3075,7 @@ class AssetWidget(QWidget):
             self.parent.dataConnection.companies[companyId].addAsset(newAsset)
             
             self.parent.parent.dbCursor.execute("INSERT INTO Assets (Description, AcquireDate, InSvcDate, UsefulLife, SalvageAmount, DepreciationMethod, PartiallyDisposed) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                                (newAsset.description, newAsset.acquireDate, newAsset.inSvcDate, newAsset.usefulLife, newAsset.salvageAmount, newAsset.depMethod, int(newAsset.partiallyDisposed)))
+                                                (newAsset.description, str(newAsset.acquireDate), str(newAsset.inSvcDate), newAsset.usefulLife, newAsset.salvageAmount, newAsset.depMethod, int(newAsset.partiallyDisposed)))
             self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('companies', " + str(companyId) + ", 'addAsset', 'assets', " + str(nextId) + ")")
             self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
             self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addAssetType', 'assetTypes', " + str(assetTypeId) + ")")
@@ -3097,10 +3111,13 @@ class AssetWidget(QWidget):
             
             if dialog.exec_():
                 if dialog.hasChanges == True:
+                    dateAcq = classes.NewDate(dialog.dateAcquiredText_edit.text())
+                    dateInSvc = classes.NewDate(dialog.dateInSvcText_edit.text())
+                    
                     # Commit changes to database and to vendor entry
                     sql = ("UPDATE Assets SET Description = '" + dialog.descriptionText_edit.text() +
-                           "', AcquireDate = '" + dialog.dateAcquiredText_edit.text() +
-                           "', InSvcDate = '" + dialog.dateInSvcText_edit.text() + 
+                           "', AcquireDate = '" + str(dateAcq) +
+                           "', InSvcDate = '" + str(dateInSvc) + 
                            "', UsefulLife = " + dialog.usefulLifeText_edit.text() +
                            ", SalvageAmount = " + str(dialog.salvageValueText_edit.text()) +
                            ", DepreciationMethod = '" + dialog.depMethodBox.currentText() + 
@@ -3108,8 +3125,8 @@ class AssetWidget(QWidget):
                     self.parent.parent.dbCursor.execute(sql)
 
                     item.asset.description = dialog.descriptionText_edit.text()
-                    item.asset.acquireDate = dialog.dateAcquiredText_edit.text()
-                    item.asset.inSvcDate = dialog.dateInSvcText_edit.text()
+                    item.asset.acquireDate = dateAcq
+                    item.asset.inSvcDate = dateInSvc
                     item.asset.usefulLife = dialog.usefulLifeText_edit.text()
                     item.asset.salvageAmount = float(dialog.salvageValueText_edit.text())
                     item.asset.depMethod = dialog.depMethodBox.currentText()
@@ -3443,7 +3460,7 @@ class GLPostingsTreeWidgetItem(QTreeWidgetItem):
         super().__init__(parent)
         self.glPosting = postingItem
         
-        self.setText(0, self.glPosting.detailOf.date)
+        self.setText(0, str(self.glPosting.detailOf.date))
         self.setText(1, self.glPosting.detailOf.description)
         if self.glPosting.debitCredit == constants.DEBIT:
             self.setText(2, "{: ,.2f}".format(self.glPosting.amount))
@@ -3451,7 +3468,7 @@ class GLPostingsTreeWidgetItem(QTreeWidgetItem):
             self.setText(2, "{:-,.2f}".format(-1 * self.glPosting.amount))
         
     def refreshData(self):
-        self.setText(0, self.glPosting.detailOf.date)
+        self.setText(0, str(self.glPosting.detailOf.date))
         self.setText(1, self.glPosting.detailOf.description)
         self.setText(2, "{:,.2f}".format(self.glPosting.amount))
         
@@ -3471,7 +3488,7 @@ class GLPostingsTreeWidget(NewTreeWidget):
             self.topLevelItem(idx).refreshData()
 
 class GLPostingsWidget(QWidget):
-    postToGL = pyqtSignal(int, str, str, list)
+    postToGL = pyqtSignal(int, object, str, list)
     updateGLPost = pyqtSignal(object, str, str)
     updateGLDet = pyqtSignal(object, float, str)
     deleteGLPost = pyqtSignal(object)
@@ -3518,8 +3535,9 @@ class GLPostingsWidget(QWidget):
         dialog = NewGLPostingDialog("New", self.companiesDict, self.glAcctsDict)
         if dialog.exec_():
             companyNum = self.stripAllButNumbers(dialog.companyBox.currentText())
-            date = dialog.dateText.text()
+            date = classes.NewDate(dialog.dateText.text())
             description = dialog.memoText.text()
+            
             details = []
             for detailKey, detail in dialog.postingsWidget.details.items():
                 if detail.balanceType() != "NONE":
@@ -3610,7 +3628,7 @@ class GLView(QWidget):
         self.dataConnection.companies[companyNum].addPosting(glPosting)
         self.dataConnection.glPostings[glPosting.idNum] = glPosting
         self.parent.dbCursor.execute("INSERT INTO GLPostings (Date, Description) VALUES (?, ?)",
-                                            (glPosting.date, glPosting.description))
+                                            (str(glPosting.date), glPosting.description))
         self.parent.dbCursor.execute("INSERT INTO Xref VALUES ('glPostings', ?, 'addCompany', 'companies', ?)",
                                      (glPosting.idNum, companyNum))
         self.parent.dbCursor.execute("INSERT INTO Xref VALUES ('companies', ?, 'addPosting', 'glPostings', ?)",

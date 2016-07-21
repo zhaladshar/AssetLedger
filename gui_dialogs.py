@@ -168,8 +168,8 @@ class InvoiceDialog(QDialog):
             self.assetProjSelector.setEnabled(False)
             self.assetProjSelector.show()
             
-            self.invoiceDateText = QLabel(invoice.date)
-            self.dueDateText = QLabel(invoice.dueDate)
+            self.invoiceDateText = QLabel(str(invoice.date))
+            self.dueDateText = QLabel(str(invoice.dueDate))
         else:
             self.invoiceDateText = gui_elements.DateLineEdit()
             self.dueDateText = gui_elements.DateLineEdit()
@@ -227,30 +227,35 @@ class InvoiceDialog(QDialog):
         dialog = InvoicePaymentDialog("New", self.paymentTypesDict, self, self.invoice)
         if dialog.exec_():
             nextId = self.parent.nextIdNum("InvoicesPayments")
-            datePd = dialog.datePaidText.text()
+            paymentTypeId = self.parent.stripAllButNumbers(dialog.paymentTypeBox.currentText())
+            datePd = classes.NewDate(dialog.datePaidText.text())
             amtPd = float(dialog.amountText.text())
 
-            # Create new payment
+            # Create new payment and get necessary objects
             newPayment = classes.InvoicePayment(datePd, amtPd, nextId)
-
+            paymentType = self.paymentTypesDict[paymentTypeId]
+            
             # Add to database and to data structure
-            self.parent.insertIntoDatabase("InvoicesPayments", "(DatePaid, AmountPaid)", "('" + newPayment.datePaid + "', " + str(newPayment.amountPaid) + ")")
+            self.parent.insertIntoDatabase("InvoicesPayments", "(DatePaid, AmountPaid)", "('" + str(newPayment.datePaid) + "', " + str(newPayment.amountPaid) + ")")
             self.parent.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoices', " + str(self.invoice.idNum) + ", 'addPayment', 'invoicesPayments', " + str(nextId) + ")")
+            self.parent.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoicesPayments', " + str(newPayment.idNum) + ", 'addInvoice', 'invoices', " + str(self.invoice.idNum) + ")")
+            self.parent.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoicesPayments', " + str(newPayment.idNum) + ", 'addPaymentType', 'paymentTypes', " + str(paymentTypeId) + ")")
             self.parent.parent.parent.dbConnection.commit()
-
+            
             newPayment.addInvoice(self.invoice)
             self.invoice.addPayment(newPayment)
+            newPayment.addPaymentType(paymentType)
             self.parent.parent.dataConnection.invoicesPayments[newPayment.idNum] = newPayment
             
             # Create GL posting
             paymentTypeId = self.parent.stripAllButNumbers(dialog.paymentTypeBox.currentText())
-            description = constants.GL_POST_PYMT_DESC % (self.invoice.idNum, self.invoice.vendor.idNum, datePd)
+            description = constants.GL_POST_PYMT_DESC % (self.invoice.idNum, self.invoice.vendor.idNum, str(datePd))
             details = []
             details.append((amtPd, "CR", self.paymentTypesDict[paymentTypeId].glAccount.idNum, newPayment, "invoicesPayments"))
             details.append((amtPd, "DR", self.invoice.vendor.glAccount.idNum, None, None))
-
-            self.parent.postToGL.emit(datePd, description, details)
-
+            
+            self.parent.postToGL.emit(self.invoice.company.idNum, datePd, description, details)
+            
             # Add entry to payment tree
             item = gui_elements.InvoicePaymentTreeWidgetItem(newPayment, self.paymentHistory)
             self.paymentHistory.addTopLevelItem(item)
@@ -268,13 +273,13 @@ class InvoiceDialog(QDialog):
             if dialog.exec_():
                 if dialog.hasChanges == True:
                     newAmtPaid = float(dialog.amountText_edit.text())
-                    newDatePaid = dialog.datePaidText_edit.text()
+                    newDatePaid = NewDate(dialog.datePaidText_edit.text())
 
                     # Change values in data structure and database
                     item.invoicePayment.datePaid = newDatePaid
                     item.invoicePayment.amountPaid = newAmtPaid
                     self.parent.parent.parent.dbCursor.execute("UPDATE InvoicesPayments SET DatePaid=?, AmountPaid=? WHERE idNum=?",
-                                                               (newDatePaid, newAmtPaid, item.invoicePayment.idNum))
+                                                               (str(newDatePaid), newAmtPaid, item.invoicePayment.idNum))
                     self.parent.parent.parent.dbConnection.commit()
                     
                     # Update GL post
@@ -447,7 +452,7 @@ class ProposalDialog(QDialog):
             self.assetProjSelector.setEnabled(False)
             self.assetProjSelector.show()
             
-            self.dateText = QLabel(proposal.date)
+            self.dateText = QLabel(str(proposal.date))
         else:
             self.dateText = gui_elements.DateLineEdit()
 
@@ -559,7 +564,7 @@ class ProjectDialog(QDialog):
             self.companyBox.setCurrentIndex(self.companyBox.findText("%4d - %s" % (project.company.idNum, project.company.shortName)))
             self.companyBox.setEnabled(False)
             self.descriptionText = QLabel(project.description)
-            self.startDateText = QLabel(project.dateStart)
+            self.startDateText = QLabel(str(project.dateStart))
             self.endDateText = gui_elements.DateLineEdit()
             self.statusBox = QComboBox()
             self.statusBox.addItems(constants.PROJECT_STATUSES)
@@ -755,8 +760,8 @@ class AssetDialog(QDialog):
                 subAssetOfText = "%4d - %s" % (asset.subAssetOf.idNum, asset.subAssetOf.description)
             self.childOfAssetBox.setCurrentText(subAssetOfText)
             self.childOfAssetBox.setEnabled(False)
-            self.dateAcquiredText = QLabel(asset.acquireDate)
-            self.dateInSvcText = QLabel(asset.inSvcDate)
+            self.dateAcquiredText = QLabel(str(asset.acquireDate))
+            self.dateInSvcText = QLabel(str(asset.inSvcDate))
             self.usefulLifeText = QLabel(str(asset.usefulLife))
             self.depMethodBox.setCurrentIndex(self.depMethodBox.findText(asset.depMethod))
             self.depMethodBox.setEnabled(False)
@@ -882,6 +887,13 @@ class AssetDialog(QDialog):
         self.layout.addWidget(self.usefulLifeText_edit, 6, 1)
         self.layout.addWidget(self.salvageValueText_edit, 8, 1)
 
+        # Get asset type to determine depreciability
+        assetTypeId = self.parent.stripAllButNumbers(self.assetTypeBox.currentText())
+        assetType = self.parent.parent.dataConnection.assetTypes[assetTypeId]
+        if assetType.depreciable == False:
+            self.usefulLifeText_edit.hide()
+            self.salvageValueText_edit.hide()
+
     def resize(self):
         self.setFixedSize(self.sizeHint())
 
@@ -895,14 +907,14 @@ class InvoicePaymentDialog(QDialog):
         paymentTypeLbl = QLabel("Payment Type:")
         datePaidLbl = QLabel("Date Paid:")
         amountLbl = QLabel("Amount:")
-
+        
         self.paymentTypeBox = QComboBox()
         self.paymentTypeBox.addItems(paymentTypeDict.sortedListOfKeysAndNames())
         self.vendorText = QLabel(invoice.vendor.name)
         self.invoiceText = QLabel(str(invoice.idNum))
         
         if mode == "View":
-            self.datePaidText = QLabel(invoicePayment.datePaid)
+            self.datePaidText = QLabel(str(invoicePayment.datePaid))
             self.amountText = QLabel(str(invoicePayment.amountPaid))
             self.paymentTypeBox.setCurrentIndex(self.paymentTypeBox.findText("%4d - %s" % (invoicePayment.paymentType.idNum, invoicePayment.paymentType.description)))
             self.paymentTypeBox.setEnabled(False)
@@ -929,7 +941,7 @@ class InvoicePaymentDialog(QDialog):
 
         self.layout.addWidget(buttonWidget, 5, 0, 1, 2)
         self.setLayout(self.layout)
-
+        
         if mode == "View":
             self.setWindowTitle("View/Edit Invoice Payment")
         else:
@@ -1536,7 +1548,7 @@ class NewGLPostingDialog(QDialog):
             self.dateText = QLabel(glPosting.date)
             self.memoText = QLabel(glPosting.description)
         else:
-            self.dateText = QLineEdit()
+            self.dateText = gui_elements.DateLineEdit()
             self.memoText = QLineEdit()
         
         self.layout.addWidget(companyLbl, 0, 0)
