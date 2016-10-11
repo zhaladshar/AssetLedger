@@ -31,6 +31,9 @@ CREDIT = "CR"
 POSITIVE = "Positive"
 NEGATIVE = "Negative"
 DATE_FORMAT = "%m/%d/%Y"
+ID_DESC = "%4d - %s"
+INV_OPEN_STATUS = "Open"
+INV_PAID_STATUS = "Paid"
 
 # Strings
 GL_POST_PYMT_DESC = "Post payment for invoice %d from vendor %d on %s"
@@ -71,3 +74,5 @@ GL_POST_HDR_LIST = ["Date", "Description", "Balance"]
 GL_POST_HDR_WDTH = [    .1,            .7,        .2]
 ASSET_HIST_HDR_LIST = ["Date", "Description", "Dollars"]
 ASSET_HIST_HDR_WDTH = [    .1,            .8,        .1]
+DEP_ASSET_HDR_LIST = ["Id", "Description", "Current"]
+DEP_ASSET_HDR_WDTH = [  .1,            .8,        .1]

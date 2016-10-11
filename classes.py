@@ -8,6 +8,63 @@ class NewDate(datetime.date):
     
     def __str__(self):
         return self.strftime(constants.DATE_FORMAT)
+
+    def isLeapYear(self):
+        if self.year % 4 == 0:
+            if self.year % 100 == 0:
+                if self.year % 400 == 0:
+                    return True
+                else:
+                    return False
+            else:
+                return True
+        else:
+            return False
+
+    @staticmethod
+    def dateDiff(diffType, fromDate, toDate):
+        if diffType == "m":
+            origYear = fromDate.year
+            origMo = fromDate.month
+            currYear = toDate.year
+            currMo = toDate.month
+
+            return (currYear - origYear) * 12 + (currMo - origMo)
+
+    @staticmethod
+    def getDaysInMonth(date, offset=0):
+        if date.month + offset in [1, 3, 5, 7, 8, 10, 12]:
+            day = 31
+        elif date.month + offset in [4, 6, 9, 11]:
+            day = 30
+        else:
+            if date.isLeapYear() == True:
+                day = 29
+            else:
+                day = 28
+        return day
+        
+    @classmethod
+    def incrementMonth(cls, date):
+        day = date.day
+        month = date.month
+        year = date.year
+
+        month += 1
+        if month == 13:
+            month = 1
+            year += 1
+
+        day = min(day, NewDate.getDaysInMonth(date, 1))
+
+        dateString = "%d/%d/%d" % (month, day, year)
+        return NewDate(dateString)
+
+    @classmethod
+    def nextPeriodEnding(cls, date):
+        newDate = cls.incrementMonth(date)
+        day = NewDate.getDaysInMonth(newDate)
+        return NewDate("%d/%d/%d" % (newDate.month, day, newDate.year))
     
 class SortableDict(dict):
     def __init__(self):
@@ -21,7 +78,7 @@ class SortableDict(dict):
         sortedListOfKeys = self.sortedListOfKeys()
         sortedListOfKeysAndNames = []
         for key in sortedListOfKeys:
-            sortedListOfKeysAndNames.append("%4d - %s" % (key, getattr(self[key], attrName)))
+            sortedListOfKeysAndNames.append(constants.ID_DESC % (key, getattr(self[key], attrName)))
         return sortedListOfKeysAndNames
 
 class AssetTypesDict(SortableDict):
@@ -396,12 +453,12 @@ class InvoiceDetail:
         self.proposalDetail = propDet
 
 class Invoice:
-    def __init__(self, date, dueDate, idNum):
+    def __init__(self, date, dueDate, company, vendor, idNum):
         self.idNum = idNum
         self.date = date
         self.dueDate = dueDate
-        self.vendor = None
-        self.company = None
+        self.vendor = vendor
+        self.company = company
         self.assetProj = None
         self.payments = {}
         self.details = {}
@@ -544,6 +601,16 @@ class Company:
     def removePosting(self, posting):
         self.glPostings.pop(posting.idNum)
 
+class DepreciationExpense:
+    def __init__(self, date, amount, idNum):
+        self.idNum = idNum
+        self.date = date
+        self.amount = amount
+        self.assetCost = None
+
+    def addAssetCost(self, assetCost):
+        self.assetCost = assetCost
+
 class AssetHistory:
     def __init__(self, date, text, amount, posNeg, idNum):
         self.idNum = idNum
@@ -562,12 +629,29 @@ class AssetHistory:
         self.object = object_
         
 class AssetCost:
-    def __init__(self, cost, idNum):
+    def __init__(self, cost, date, assetId, reference, idNum):
         self.idNum = idNum
         self.cost = cost
+        self.date = date
         self.depExpenses = {}
-        self.invoice = None
-        self.asset = None
+        self.reference = reference.split(".")
+        self.asset = assetId
+
+    def accumulatedDepreciation(self):
+        accumDep = 0.0
+        for depExp in self.depExpenses.values():
+            accumDep += depExp.amount
+        return accumDep
+    
+    def depreciate(self, prSalvAmt, depMeth, usefulLife, periodEndDate):
+        numDepPrds = len(self.depExpenses)
+        totalPrds = 12 * usefulLife
+        if depMeth == constants.DEP_STRAIGHT:
+            if NewDate.dateDiff("m", self.date, periodEndDate) < totalPrds - 1:
+                depExp = (self.cost - prSalvAmt) / totalPrds
+            else:
+                depExp = self.cost - prSalvAmt - self.accumulatedDepreciation()
+        return round(depExp, 2)
 
     def addInvoice(self, invoice):
         self.invoice = invoice
@@ -662,10 +746,16 @@ class Asset:
         return 0
 
     def inSvc(self):
-        if self.disposeDate == "" or self.disposeDate == None:
+        if self.inSvcDate != "" and (self.disposeDate == "" or self.disposeDate == None):
             return True
         else:
             return False
+
+    def disposed(self):
+        if self.disposeDate == "" or self.disposeDate == None:
+            return False
+        else:
+            return True
 
     def markDisposals(self, dbCursor, dbConnection):
         # Mark all subassets as fully disposed
@@ -688,7 +778,20 @@ class Asset:
             if isinstance(history.object, type(object_)):
                 if history.object.idNum == object_.idNum:
                     return history
-
+                
+    def depreciate(self, date):
+        # We can only depreciate assets in service
+        if self.inSvc() == True:
+            # Get the total cost so that we know how to pro rate the salvage value
+            # across cost records when depreciating.
+            totalCost = 0.0
+            for assetCost in self.costs.values():
+                totalCost += assetCost.cost
+            
+            for assetCost in self.costs.values():
+                proratedSalv = assetCost.cost / totalCost * self.salvageAmount
+                assetCost.depreciate(proratedSalv, self.depMethod, self.usefulLife, date)
+    
 class AssetType:
     def __init__(self, description, depreciable, idNum):
         self.idNum = idNum
@@ -718,18 +821,19 @@ class GLAccount:
             self.placeHolder = False
         else:
             self.placeHolder = True
-        self.childOf = None
-        self.parentOf = GLAccountsDict()
+        self.parent = None
+        self.children = []
+        #self.parentOf = GLAccountsDict()
         self.postings = GLPostingsDetailsDict()
 
-    def addChild(self, child):
-        self.parentOf[child.idNum] = child
+    def addChild(self, childId):
+        self.children.append(childId)
 
-    def removeChild(self, child):
-        self.parentOf.pop(child.idNum)
+    def removeChild(self, childId):
+        self.children.pop(childId)
 
-    def addParent(self, parent):
-        self.childOf = parent
+    def addParent(self, parentId):
+        self.parent = parentId
 
     def addPosting(self, posting):
         self.postings[posting.idNum] = posting
@@ -738,21 +842,22 @@ class GLAccount:
         self.postings.pop(posting.idNum)
 
     def balance(self):
-        balance = 0
-        if self.placeHolder == True:
-            for childKey in self.parentOf:
-                balance += self.parentOf[childKey].balance()
-        else:
-            balance = self.postings.postingsByDRCR("DR").balance() - self.postings.postingsByDRCR("CR").balance()
-        return balance
+        return 0
+##        balance = 0
+##        if self.placeHolder == True:
+##            for childKey in self.parentOf:
+##                balance += self.parentOf[childKey].balance()
+##        else:
+##            balance = self.postings.postingsByDRCR("DR").balance() - self.postings.postingsByDRCR("CR").balance()
+##        return balance
 
 class GLPosting:
-    def __init__(self, date, description, idNum):
+    def __init__(self, date, description, company, idNum):
         self.idNum = idNum
         self.date = date
         self.description = description
         self.details = GLPostingsDetailsDict()
-        self.company = None
+        self.company = company
 
     def addDetail(self, detail):
         self.details[detail.idNum] = detail
@@ -761,12 +866,12 @@ class GLPosting:
         self.company = company
 
 class GLPostingDetail:
-    def __init__(self, amount, debitCredit, idNum):
+    def __init__(self, amount, debitCredit, glAccount, glPost, idNum):
         self.idNum = idNum
         self.amount = amount
         self.debitCredit = debitCredit
-        self.glAccount = None
-        self.detailOf = None
+        self.glAccount = glAccount
+        self.detailOf = glPost
 
     def addDetailOf(self, detailOf):
         self.detailOf = detailOf
