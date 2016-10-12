@@ -22,9 +22,9 @@ class Window(QMainWindow):
         # Provide layout for views
         self.views = QStackedWidget()
         self.generalView = QWidget()
-        self.companyOverview = CompanyView(self.data, self)
-        self.proposalOverview = ProposalView(self.data, self)
-        self.projectOverview = ProjectView(self.data, self)
+        self.companyOverview = CompanyView(self, self.dbConnection, self.dbCursor)
+        self.proposalOverview = ProposalView(self, self.dbConnection, self.dbCursor)
+        self.projectOverview = ProjectView(self, self.dbConnection, self.dbCursor)
         self.assetOverview = AssetView(self.data, self)
         self.glOverview = GLView(self.data, self.dbCursor, self)
         self.APOverview = APView(self.data, self, self.dbConnection, self.dbCursor)
@@ -75,14 +75,14 @@ class Window(QMainWindow):
 ##                datePd = NewDate(dateTxt)
 ##                self.data.invoicesPayments[idNum] = InvoicePayment(datePd, amtPd, idNum)
 
-            self.dbCursor.execute("SELECT * FROM Proposals")
-            for idNum, propDate, status, statusReason in self.dbCursor:
-                date = NewDate(propDate)
-                self.data.proposals[idNum] = Proposal(date, status, statusReason, idNum)
+##            self.dbCursor.execute("SELECT * FROM Proposals")
+##            for idNum, propDate, status, statusReason in self.dbCursor:
+##                date = NewDate(propDate)
+##                self.data.proposals[idNum] = Proposal(date, status, statusReason, idNum)
 
-            self.dbCursor.execute("SELECT * FROM ProposalsDetails")
-            for idNum, desc, cost in self.dbCursor:
-                self.data.proposalsDetails[idNum] = ProposalDetail(desc, cost, idNum)
+##            self.dbCursor.execute("SELECT * FROM ProposalsDetails")
+##            for idNum, desc, cost in self.dbCursor:
+##                self.data.proposalsDetails[idNum] = ProposalDetail(desc, cost, idNum)
 
 ##            self.dbCursor.execute("SELECT * FROM Projects")
 ##            for idNum, desc, ds, de, notes in self.dbCursor:
@@ -272,7 +272,9 @@ class Window(QMainWindow):
                                     (idNum        INTEGER PRIMARY KEY AUTOINCREMENT,
                                      ProposalDate TEXT,
                                      Status       TEXT,
-                                     StatusReason TEXT
+                                     StatusReason TEXT,
+                                     CompanyId    INTEGER,
+                                     VendorId     INTEGER
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE ProposalsDetails

@@ -274,30 +274,37 @@ class ClickableLabel(QLabel):
         self.released.emit()
 
 class InvoicePaymentTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, invoicePaymentItem, parent):
+    def __init__(self, idNum, datePd, amtPd, parent):
         super().__init__(parent)
-        self.invoicePayment = invoicePaymentItem
+        self.invoicePayment = idNum
         self.setText(0, str(self.invoicePayment.idNum))
         self.setText(1, str(self.invoicePayment.datePaid))
         self.setText(2, str(self.invoicePayment.amountPaid))
 
-    def refreshData(self):
-        self.setText(1, str(self.invoicePayment.datePaid))
-        self.setText(2, str(self.invoicePayment.amountPaid))
+    def refreshData(self, dbCur):
+        dbCur.execute("""SELECT DatePaid, AmountPaid FROM InvoicesPayments
+                         WHERE idNum=?""", (self.invoicePayment,))
+        datePd, amtPd = dbCur.fetchone()
+        self.setText(1, datePd)
+        self.setText(2, str(amtPd))
 
 class InvoicePaymentTreeWidget(NewTreeWidget):
-    def __init__(self, invoicePaymentsDict, headerList, widthList):
+    def __init__(self, dbCur, invoice, headerList, widthList):
         super().__init__(headerList, widthList)
-        self.buildItems(self, invoicePaymentsDict)
-
-    def buildItems(self, parent, invoicePaymentsDict):
-        for invoicePaymentKey in invoicePaymentsDict:
-            item = InvoicePaymentTreeWidgetItem(invoicePaymentsDict[invoicePaymentKey], parent)
+        self.dbCursor = dbCur
+        self.buildItems(self, dbCur, invoice)
+        
+    def buildItems(self, parent, dbCur, invoice):
+        dbCur.execute("""SELECT idNum, DatePaid, AmountPaid
+                         FROM InvoicesPayments
+                         WHERE InvoiceId=?""", (invoice,))
+        for idNum, datePd, amtPd in dbCur:
+            item = InvoicePaymentTreeWidgetItem(idNum, datePd, amtPd, parent)
             self.addTopLevelItem(item)
 
-    def refreshData(self):
+    def refreshData(self, dbCur):
         for idx in range(self.topLevelItemCount()):
-            self.topLevelItem(idx).refreshData()
+            self.topLevelItem(idx).refreshData(self.dbCursor)
             
 class StandardButtonWidget(QWidget):
     def __init__(self):
@@ -469,7 +476,7 @@ class AssetProjSelector(QGroupBox):
 class InvoiceDetailWidget(QWidget):
     detailsHaveChanged = pyqtSignal()
     
-    def __init__(self, detailsDict=None, proposals=None):
+    def __init__(self, dbCur, invoiceNum=None, proposals=None):
         super().__init__()
         self.details = {}
         self.proposals = proposals
@@ -479,23 +486,21 @@ class InvoiceDetailWidget(QWidget):
         descLine = QLabel("Description")
         costLine = QLabel("Cost")
         propLine = QLabel("Proposal Element")
-
+        
         self.gridLayout.addWidget(descLine, 0, 0)
         self.gridLayout.addWidget(costLine, 0, 1)
         self.gridLayout.addWidget(propLine, 0, 2, 1, 2)
         
-        if detailsDict == None:
+        dbCur.execute("""SELECT Description, Cost, ProposalDetId, idNum
+                         FROM InvoicesDetails WHERE InvoiceId=?""",
+                      (invoiceNum,))
+        invoiceDetails = dbCur.fetchall()
+        
+        if not invoiceDetails:
             self.addNewLine()
         else:
-            for detailKey in detailsDict:
-                # Need to check if detailsDict[detailKey].proposalDetail is
-                # None. If so, that means invoice was attached to an asset or
-                # project with no proposal.  Thus, a blank line should be used
-                if detailsDict[detailKey].proposalDetail:
-                    proposalDet = str("%4s - " % detailsDict[detailKey].proposalDetail.idNum) + detailsDict[detailKey].proposalDetail.description
-                else:
-                    proposalDet = ""
-                self.addLine(detailsDict[detailKey].description, detailsDict[detailKey].cost, proposalDet, False, False, detailsDict[detailKey].idNum)
+            for desc, cost, propDetail, idNum in invoiceDetails:
+                self.addLine(desc, cost, propDetail, False, False, idNum)
         
         self.layout.addLayout(self.gridLayout)
         self.layout.addStretch(1)
@@ -627,7 +632,7 @@ class InvoiceDetailWidget(QWidget):
 class ProposalDetailWidget(QWidget):
     detailsHaveChanged = pyqtSignal()
     
-    def __init__(self, detailsDict=None):
+    def __init__(self, dbCur, proposalId=None):
         super().__init__()
         self.details = {}
         
@@ -638,12 +643,15 @@ class ProposalDetailWidget(QWidget):
 
         self.gridLayout.addWidget(detailLine, 0, 0)
         self.gridLayout.addWidget(costLine, 0, 1, 1, 2)
-        
-        if detailsDict == None:
+
+        dbCur.execute("""SELECT idNum, Description, Cost FROM ProposalsDetails
+                         WHERE ProposalId=?""", (proposalId,))
+        details = dbCur.fetchall()
+        if not details:
             self.addNewLine()
         else:
-            for detail in detailsDict.keys():
-                self.addLine(detailsDict[detail].description, detailsDict[detail].cost, False, False, detailsDict[detail].idNum)
+            for idNum, desc, cost in details:
+                self.addLine(desc, cost, False, False, idNum)
 
         self.layout.addLayout(self.gridLayout)
         self.layout.addStretch(1)
@@ -838,21 +846,16 @@ class AssetHistoryTreeWidget(NewTreeWidget):
             self.topLevelItem(idx).refreshData()
 
 class VendorTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, vendorId, vendorName, dbCur, parent):
+    def __init__(self, vendorId, dbCur, parent):
         super().__init__(parent)
         self.vendor = vendorId
-
-        self.setText(0, str(vendorId))
-        self.setText(1, vendorName)
-##        self.setText(2, "%d / %d" % (len(self.vendor.proposals.proposalsByStatus("Open")),
-##                                     len(self.vendor.proposals)))
-##        self.setText(3, "%d / %d" % (self.vendor.openInvoiceCount(),
-##                                     len(self.vendor.invoices)))
-##        self.setText(4, "{:,.2f}".format(self.vendor.balance()))
-
+        self.refreshData(dbCur)
+        
     def refreshData(self, dbCur):
         dbCur.execute("SELECT Name FROM Vendors WHERE idNum=?", (self.vendor,))
         name = dbCur.fetchone()[0]
+        
+        self.setText(0, str(self.vendor))
         self.setText(1, name)
 ##        self.setText(2, "%d / %d" % (len(self.vendor.proposals.proposalsByStatus("Open")),
 ##                                     len(self.vendor.proposals)))
@@ -868,10 +871,10 @@ class VendorTreeWidget(NewTreeWidget):
         self.sortItems(0, Qt.AscendingOrder)
         
     def buildItems(self, parent, dbCur):
-        dbCur.execute("SELECT idNum, Name FROM Vendors")
+        dbCur.execute("SELECT idNum FROM Vendors")
         results = dbCur.fetchall()
-        for idNum, name in results:
-            item = VendorTreeWidgetItem(idNum, name, dbCur, parent)
+        for idNum in results:
+            item = VendorTreeWidgetItem(idNum[0], dbCur, parent)
             self.addTopLevelItem(item)
 
     def refreshData(self, dbCur):
@@ -1301,15 +1304,13 @@ class InvoiceWidget(ObjectWidget):
         needToUpdateGL = False
         
         # Determine which invoice tree (if any) has been selected
-        idxToShow = self.openInvoicesTreeWidget.indexFromItem(self.openInvoicesTreeWidget.currentItem())
-        item = self.openInvoicesTreeWidget.itemFromIndex(idxToShow)
-        if item == None:
-            idxToShow = self.paidInvoicesTreeWidget.indexFromItem(self.paidInvoicesTreeWidget.currentItem())
-            item = self.paidInvoicesTreeWidget.itemFromIndex(idxToShow)
+        item = self.openInvoicesTreeWidget.currentItem()
+        if not item:
+            item = self.paidInvoicesTreeWidget.currentItem()
 
         # Only show dialog if an item has been selected
         if item:
-            dialog = InvoiceDialog("View", self.paymentTypesDict, self, item.invoice)
+            dialog = InvoiceDialog("View", self.dbCur, self, item.invoice)
             if dialog.exec_():
                 if dialog.hasChanges == True:
                     listOfInvPropDetailKeysFromItem = list(item.invoice.details.keys())
@@ -1578,6 +1579,7 @@ class InvoiceWidget(ObjectWidget):
             whereDict = {"InvoiceId": item.invoice}
             self.deleteFromDatabase("InvoicesPayments", whereDict)
             self.deleteFromDatabase("InvoicesDetails", whereDict)
+            self.deleteFromDatabase("InvoicesObjects", whereDict)
 
             # Delete item from invoices tree widget
             idxToDelete = treeWidget.indexOfTopLevelItem(item)
@@ -1724,36 +1726,53 @@ class APView(ObjectWidget):
 ##        self.updateGLTree.emit()
             
 class ProposalTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, proposalItem, parent):
+    def __init__(self, proposalId, dbCur, parent):
         super().__init__(parent)
-        self.proposal = proposalItem
+        self.proposal = proposalId
+        self.refreshData(dbCur)
+        
+    def refreshData(self, dbCur):
+        dbCur.execute("""SELECT ProposalDate, ObjectType, ObjectId, Name
+                         FROM Proposals LEFT JOIN ProposalsObjects
+                         ON Proposals.idNum = ProposalsObjects.ProposalId
+                         LEFT JOIN Vendors
+                         ON Proposals.VendorId = Vendors.idNum
+                         WHERE Proposals.idNum=?""", (self.proposal,))
+        propDate, objectType, objectId, vendName = dbCur.fetchone()
 
-        self.setText(0, str(self.proposal.idNum))
-        self.setText(1, self.proposal.vendor.name)
-        self.setText(2, str(self.proposal.date))
-        self.setText(3, self.proposal.proposalFor[1].description)
-        self.setText(4, "{:,.2f}".format(self.proposal.totalCost()))
-
-    def refreshData(self):
-        self.setText(1, self.proposal.vendor.name)
-        self.setText(2, str(self.proposal.date))
-        self.setText(3, self.proposal.proposalFor[1].description)
-        self.setText(4, "{:,.2f}".format(self.proposal.totalCost()))
+        if objectType == "projects":
+            dbCur.execute("SELECT Description FROM Projects WHERE idNum=?",
+                          (objectId,))
+        else:
+            dbCur.execute("SELECT Description FROM Assets WHERE idNum=?",
+                          (objectId,))
+        desc = dbCur.fetchone()[0]
+        
+        self.setText(0, str(self.proposal))
+        self.setText(1, vendName)
+        self.setText(2, propDate)
+        self.setText(3, desc)
+##        self.setText(4, "{:,.2f}".format(self.proposal.totalCost()))
         
 class ProposalTreeWidget(NewTreeWidget):
     openProposal = pyqtSignal(int)
     rejectedProposal = pyqtSignal(int)
     acceptedProposal = pyqtSignal(int)
     
-    def __init__(self, proposalsDict, headerList, widthList):
+    def __init__(self, dbCur, status, headerList, widthList):
         super().__init__(headerList, widthList)
-        self.buildItems(self, proposalsDict)
+        self.dbCursor = dbCur
+        self.status = status
+        self.buildItems(self)
         self.setColumnCount(5)
         self.sortItems(0, Qt.AscendingOrder)
         
-    def buildItems(self, parent, proposalsDict):
-        for proposalKey in proposalsDict:
-            item = ProposalTreeWidgetItem(proposalsDict[proposalKey], parent)
+    def buildItems(self, parent):
+        self.dbCursor.execute("SELECT idNum FROM Proposals WHERE Status=?",
+                              (self.status,))
+        results = self.dbCursor.fetchall()
+        for idNum in results:
+            item = ProposalTreeWidgetItem(idNum[0], self.dbCursor, parent)
             self.addTopLevelItem(item)
 
     def refreshData(self):
@@ -1763,64 +1782,50 @@ class ProposalTreeWidget(NewTreeWidget):
             # will get an out of bounds error if any object other than the last
             # item in the list had its status changed (and hence was moved)
             try:
-                self.topLevelItem(idx).refreshData()
+                self.topLevelItem(idx).refreshData(self.dbCursor)
     
-                if self.topLevelItem(idx).proposal.status == constants.OPN_PROPOSAL_STATUS:
-                    self.openProposal.emit(idx)
-                elif self.topLevelItem(idx).proposal.status == constants.REJ_PROPOSAL_STATUS:
-                    self.rejectedProposal.emit(idx)
-                else:
-                    self.acceptedProposal.emit(idx)
+##                if self.topLevelItem(idx).proposal.status == constants.OPN_PROPOSAL_STATUS:
+##                    self.openProposal.emit(idx)
+##                elif self.topLevelItem(idx).proposal.status == constants.REJ_PROPOSAL_STATUS:
+##                    self.rejectedProposal.emit(idx)
+##                else:
+##                    self.acceptedProposal.emit(idx)
             except:
                 pass
     
-class ProposalWidget(QWidget):
+class ProposalWidget(ObjectWidget):
     updateVendorWidgetTree = pyqtSignal()
     
-    def __init__(self, proposalsDict, parent):
-        super().__init__(parent)
-        self.proposalsDict = proposalsDict
-        self.parent = parent
-
-        mainLayout = QVBoxLayout()
-
-        self.openProposalsLabel = QLabel("Open: %d" % len(self.proposalsDict.proposalsByStatus("Open")))
-        mainLayout.addWidget(self.openProposalsLabel)
-
+    def __init__(self, parent, dbConn, dbCur):
+        super().__init__(parent, dbConn, dbCur)
+        mainLayout = QGridLayout()
+        
         # Piece together the proposals layout
-        subLayout = QHBoxLayout()
-        treeWidgetsLayout = QVBoxLayout()
-
-        self.openProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus(constants.OPN_PROPOSAL_STATUS), constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
+        self.openProposalsLabel = QLabel()
+        self.rejectedProposalsLabel = QLabel()
+        self.acceptedProposalsLabel = QLabel()
+        
+        self.openProposalsTreeWidget = ProposalTreeWidget(dbCur, constants.OPN_PROPOSAL_STATUS, constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
         self.openProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
         self.openProposalsTreeWidget.rejectedProposal.connect(self.moveOpenToRejected)
         self.openProposalsTreeWidget.acceptedProposal.connect(self.moveOpenToAccepted)
 
-        self.rejectedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus(constants.REJ_PROPOSAL_STATUS), constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
+        self.rejectedProposalsTreeWidget = ProposalTreeWidget(dbCur, constants.REJ_PROPOSAL_STATUS, constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
         self.rejectedProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
         self.rejectedProposalsTreeWidget.openProposal.connect(self.moveRejectedToOpen)
         self.rejectedProposalsTreeWidget.acceptedProposal.connect(self.moveRejectedToAccepted)
         
-        self.acceptedProposalsTreeWidget = ProposalTreeWidget(self.proposalsDict.proposalsByStatus(constants.ACC_PROPOSAL_STATUS), constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
+        self.acceptedProposalsTreeWidget = ProposalTreeWidget(dbCur, constants.ACC_PROPOSAL_STATUS, constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
         self.acceptedProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(3))
         self.acceptedProposalsTreeWidget.openProposal.connect(self.moveAcceptedToOpen)
         self.acceptedProposalsTreeWidget.rejectedProposal.connect(self.moveAcceptedToRejected)
-
-        self.rejectedProposalsLabel = QLabel("Rejected: %d" % len(self.proposalsDict.proposalsByStatus("Rejected")))
-        self.acceptedProposalsLabel = QLabel("Accepted: %d" % len(self.proposalsDict.proposalsByStatus("Accepted")))
-
-        treeWidgetsLayout.addWidget(self.openProposalsTreeWidget)
-        treeWidgetsLayout.addWidget(self.rejectedProposalsLabel)
-        treeWidgetsLayout.addWidget(self.rejectedProposalsTreeWidget)
-        treeWidgetsLayout.addWidget(self.acceptedProposalsLabel)
-        treeWidgetsLayout.addWidget(self.acceptedProposalsTreeWidget)
-
+        
         buttonWidget = StandardButtonWidget()
         buttonWidget.newButton.clicked.connect(self.showNewProposalDialog)
         buttonWidget.viewButton.clicked.connect(self.showViewProposalDialog)
         buttonWidget.deleteButton.clicked.connect(self.deleteSelectedProposalFromList)
         buttonWidget.addSpacer()
-
+        
         acceptProposalButton = QPushButton("Accept...")
         acceptProposalButton.clicked.connect(self.acceptProposal)
         rejectProposalButton = QPushButton("Reject...")
@@ -1828,11 +1833,16 @@ class ProposalWidget(QWidget):
         buttonWidget.addButton(acceptProposalButton)
         buttonWidget.addButton(rejectProposalButton)
         
-        subLayout.addLayout(treeWidgetsLayout)
-        subLayout.addWidget(buttonWidget)
-        mainLayout.addLayout(subLayout)
+        mainLayout.addWidget(self.openProposalsLabel, 0, 0)
+        mainLayout.addWidget(self.openProposalsTreeWidget, 1, 0)
+        mainLayout.addWidget(self.rejectedProposalsLabel, 2, 0)
+        mainLayout.addWidget(self.rejectedProposalsTreeWidget, 3, 0)
+        mainLayout.addWidget(self.acceptedProposalsLabel, 4, 0)
+        mainLayout.addWidget(self.acceptedProposalsTreeWidget, 5, 0)
+        mainLayout.addWidget(buttonWidget, 1, 1, 5, 1)
         
         self.setLayout(mainLayout)
+        self.updateProposalsCount()
 
     def acceptProposal(self):
         idxToShow = self.openProposalsTreeWidget.indexFromItem(self.openProposalsTreeWidget.currentItem())
@@ -1904,68 +1914,43 @@ class ProposalWidget(QWidget):
         else:
             self.openProposalsTreeWidget.setCurrentItem(self.openProposalsTreeWidget.invisibleRootItem())
             self.rejectedProposalsTreeWidget.setCurrentItem(self.rejectedProposalsTreeWidget.invisibleRootItem())
-
-    def nextIdNum(self, name):
-        self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
-        largestId = self.parent.parent.dbCursor.fetchone()
-        if largestId != None:
-            return largestId[0] + 1
-        else:
-            return 1
-
-    def insertIntoDatabase(self, tblName, columns, values):
-        sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
-        self.parent.parent.dbCursor.execute(sql)
-                
+    
     def showNewProposalDialog(self):
-        dialog = ProposalDialog("New", self)
+        dialog = ProposalDialog("New", self.dbCur, self)
         if dialog.exec_():
             # Find current largest id and increment by one
             nextId = self.nextIdNum("Proposals")
             
             # Create proposal and add to database
             date = classes.NewDate(dialog.dateText.text())
+            companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+            vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
             newProposal = Proposal(date,
-                                   "Open",
+                                   constants.OPN_PROPOSAL_STATUS,
                                    "",
                                    nextId)
-            self.proposalsDict[newProposal.idNum] = newProposal
-            
-            # Add company<->proposal link
-            companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
-            newProposal.addCompany(self.parent.dataConnection.companies[companyId])
-            self.parent.dataConnection.companies[companyId].addProposal(newProposal)
-            
-            # Add vendor<->proposal link
-            vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
-            newProposal.addVendor(self.parent.dataConnection.vendors[vendorId])
-            self.parent.dataConnection.vendors[vendorId].addProposal(newProposal)
             
             # Add proposal<->project/asset links
             type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
             if dialog.assetProjSelector.assetSelected() == True:
                 type_ = "assets"
-                type_action = "addAsset"
-                newProposal.addAsset(self.parent.dataConnection.assets[type_Id])
-                self.parent.dataConnection.assets[type_Id].addProposal(newProposal)
             else:
                 type_ = "projects"
-                type_action = "addProject"
-                newProposal.addProject(self.parent.dataConnection.projects[type_Id])
-                self.parent.dataConnection.projects[type_Id].addProposal(newProposal)
             
             # Add to database
-            self.insertIntoDatabase("Proposals", "(ProposalDate, Status)", "('" + str(newProposal.date) + "', '" + newProposal.status + "')")
-            self.insertIntoDatabase("Xref", "", "('proposals', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
-            self.insertIntoDatabase("Xref", "", "('companies', " + str(companyId) + ", 'addProposal', 'proposals', " + str(nextId) + ")")
-            self.insertIntoDatabase("Xref", "", "('proposals', " + str(nextId) + ", 'addVendor', 'vendors', " + str(vendorId) + ")")
-            self.insertIntoDatabase("Xref", "", "('vendors', " + str(vendorId) + ", 'addProposal', 'proposals', " + str(nextId) + ")")
-            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('proposals', ?, ?, ?, ?)", (nextId, type_action, type_, type_Id))
-            self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, 'addProposal', 'proposals', ?)", (type_, type_Id, nextId))
+            columns = ("ProposalDate", "Status", "CompanyId", "VendorId")
+            values = (str(date), constants.OPN_PROPOSAL_STATUS, companyId,
+                      vendorId)
+            self.insertIntoDatabase("Proposals", columns, values)
+            
+            columns = ("ProposalId", "ObjectType", "ObjectId")
+            values = (nextId, type_, type_Id)
+            self.insertIntoDatabase("ProposalsObjects", columns, values)
             
             # Create proposal details and add to database
             nextProposalDetId = self.nextIdNum("ProposalsDetails")
-                
+            columns = ("ProposalId", "Description", "Cost")
+            
             for key in dialog.detailsWidget.details.keys():
                 if dialog.detailsWidget.details[key][2].text() == "":
                     proposalDetail = None
@@ -1975,41 +1960,36 @@ class ProposalWidget(QWidget):
                 # Last item in the dialog is a blank line, so a blank proposal
                 # detail will be created.  Ignore it.
                 if proposalDetail:
-                    self.insertIntoDatabase("ProposalsDetails", "(Description, Cost)", "('" + proposalDetail.description + "', '" + str(proposalDetail.cost) + "')")
-                    self.insertIntoDatabase("Xref", "", "('proposalsDetails', " + str(nextProposalDetId) + ", 'addDetailOf', 'proposals', " + str(nextId) + ")")
-                    self.insertIntoDatabase("Xref", "", "('proposals', " + str(nextId) + ", 'addDetail', 'proposalsDetails', " + str(nextProposalDetId) + ")")
-
-                    newProposal.addDetail(proposalDetail)
-                    proposalDetail.addDetailOf(newProposal)
-                    self.parent.dataConnection.proposalsDetails[proposalDetail.idNum] = proposalDetail
-
-                    nextProposalDetId += 1
+                    values = (nextId, proposalDetail.description,
+                              proposalDetail.cost)
+                    self.insertIntoDatabase("ProposalsDetails", columns, values)
             
-            self.parent.parent.dbConnection.commit()
+            self.dbConn.commit()
 
             # Make proposal into a ProposalTreeWidgetItem and add it to ProposalTree
-            item = ProposalTreeWidgetItem(newProposal, self.openProposalsTreeWidget)
+            item = ProposalTreeWidgetItem(newProposal.idNum, self.dbCur, self.openProposalsTreeWidget)
             self.openProposalsTreeWidget.addTopLevelItem(item)
             self.updateProposalsCount()
-            self.updateVendorWidgetTree.emit()
+##            self.updateVendorWidgetTree.emit()
             
     def showViewProposalDialog(self):
         # Determine which tree the proposal is in--if any.  If none, don't
         # display dialog
-        idxToShow = self.openProposalsTreeWidget.indexFromItem(self.openProposalsTreeWidget.currentItem())
-        item = self.openProposalsTreeWidget.itemFromIndex(idxToShow)
+        item = self.openProposalsTreeWidget.currentItem()
+        
+        if not item:
+            item = self.rejectedProposalsTreeWidget.currentItem()
 
-        if item == None:
-            idxToShow = self.rejectedProposalsTreeWidget.indexFromItem(self.rejectedProposalsTreeWidget.currentItem())
-            item = self.rejectedProposalsTreeWidget.itemFromIndex(idxToShow)
-
-            if item == None:
-                idxToShow = self.acceptedProposalsTreeWidget.indexFromItem(self.acceptedProposalsTreeWidget.currentItem())
-                item = self.acceptedProposalsTreeWidget.itemFromIndex(idxToShow)
-
+            if not item:
+                item = self.acceptedProposalsTreeWidget.currentItem()
+                treeWidget = self.acceptedProposalsTreeWidget
+            else:
+                treeWidget = self.rejectedProposalsTreeWidget
+        else:
+            treeWidget = self.openProposalsTreeWidget
+            
         if item:
-            dialog = ProposalDialog("View", self, item.proposal)
-            dialog.setWindowTitle("View Proposal")
+            dialog = ProposalDialog("View", self.dbCur, self, item.proposal)
             if dialog.exec_():
                 if dialog.hasChanges == True:
                     listOfKeysFromItem = list(item.proposal.details.keys())
@@ -2193,25 +2173,20 @@ class ProposalWidget(QWidget):
                 
             self.updateProposalsCount()
             self.updateVendorWidgetTree.emit()
-
-    def stripAllButNumbers(self, string):
-        regex = re.match(r"\s*([0-9]+).*", string)
-        return int(regex.groups()[0])
-
+    
     def updateProposalsCount(self):
-        self.openProposalsLabel.setText("Open: %d" % len(self.proposalsDict.proposalsByStatus("Open")))
-        self.rejectedProposalsLabel.setText("Rejected: %d" % len(self.proposalsDict.proposalsByStatus("Rejected")))
-        self.acceptedProposalsLabel.setText("Accepted: %d" % len(self.proposalsDict.proposalsByStatus("Accepted")))
+        self.openProposalsLabel.setText("Open: %d" % self.openProposalsTreeWidget.topLevelItemCount())
+        self.rejectedProposalsLabel.setText("Rejected: %d" % self.rejectedProposalsTreeWidget.topLevelItemCount())
+        self.acceptedProposalsLabel.setText("Accepted: %d" % self.acceptedProposalsTreeWidget.topLevelItemCount())
     
 class ProposalView(QWidget):
     updateVendorWidgetTree = pyqtSignal()
     
-    def __init__(self, dataConnection, parent):
+    def __init__(self, parent, dbConn, dbCur):
         super().__init__(parent)
-        self.dataConnection = dataConnection
         self.parent = parent
 
-        self.proposalWidget = ProposalWidget(self.dataConnection.proposals, self)
+        self.proposalWidget = ProposalWidget(self, dbConn, dbCur)
         self.proposalWidget.updateVendorWidgetTree.connect(self.emitVendorWidgetUpdate)
         layout = QVBoxLayout()
         layout.addWidget(self.proposalWidget)
@@ -2222,86 +2197,76 @@ class ProposalView(QWidget):
         self.updateVendorWidgetTree.emit()
 
 class ProjectTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, projectItem, parent):
+    def __init__(self, projectId, dbCur, parent):
         super().__init__(parent)
-        self.project = projectItem
-        
-        self.setText(0, str(self.project.idNum))
-        self.setText(1, self.project.description)
-        self.setText(2, str(self.project.dateStart))
-        self.setText(3, str(self.project.dateEnd))
-        self.setText(4, "<Duration>")
-        self.setText(5, "{:,.2f}".format(self.project.calculateCIP()))
+        self.project = projectId
+        self.refreshData(dbCur)
 
-    def refreshData(self):
-        self.setText(1, self.project.description)
-        self.setText(2, str(self.project.dateStart))
-        self.setText(3, str(self.project.dateEnd))
+    def refreshData(self, dbCur):
+        dbCur.execute("""SELECT Description, DateStart, DateEnd FROM Projects
+                         WHERE idNum=?""", (self.project,))
+        desc, dateStart, dateEnd = dbCur.fetchone()
+        
+        self.setText(0, str(self.project))
+        self.setText(1, desc)
+        self.setText(2, dateStart)
+        self.setText(3, dateEnd)
         self.setText(4, "<Duration>")
-        self.setText(5, "{:,.2f}".format(self.project.calculateCIP()))
+##        self.setText(5, "{:,.2f}".format(self.project.calculateCIP()))
         
 class ProjectTreeWidget(NewTreeWidget):
     projectAbandoned = pyqtSignal(int)
     projectCompleted = pyqtSignal(int)
     
-    def __init__(self, projectsDict, headerList, widthList):
+    def __init__(self, dbCur, status, headerList, widthList):
         super().__init__(headerList, widthList)
-        self.buildItems(self, projectsDict)
+        self.dbCursor = dbCur
+        self.status = status
+        self.buildItems(self)
         self.setColumnCount(6)
         self.sortItems(0, Qt.AscendingOrder)
 
-    def buildItems(self, parent, projectsDict):
-        for projectKey in projectsDict:
-            item = ProjectTreeWidgetItem(projectsDict[projectKey], parent)
+    def buildItems(self, parent):
+        self.dbCursor.execute("SELECT idNum FROM Projects WHERE Status=?",
+                              (self.status,))
+        results = self.dbCursor.fetchall()
+        for idNum in results:
+            item = ProjectTreeWidgetItem(idNum[0], self.dbCursor, parent)
             self.addTopLevelItem(item)
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
             try:
-                self.topLevelItem(idx).refreshData()
+                self.topLevelItem(idx).refreshData(self.dbCursor)
 
-                if self.topLevelItem(idx).project.status() == constants.ABD_PROJECT_STATUS:
-                    self.projectAbandoned.emit(idx)
-                elif self.topLevelItem(idx).project.status() == constants.CMP_PROJECT_STATUS:
-                    self.projectCompleted.emit(idx)
+##                if self.topLevelItem(idx).project.status() == constants.ABD_PROJECT_STATUS:
+##                    self.projectAbandoned.emit(idx)
+##                elif self.topLevelItem(idx).project.status() == constants.CMP_PROJECT_STATUS:
+##                    self.projectCompleted.emit(idx)
             except:
                 pass
 
-class ProjectWidget(QWidget):
+class ProjectWidget(ObjectWidget):
     addAssetToAssetView = pyqtSignal(object)
     
-    def __init__(self, projectsDict, parent):
-        super().__init__()
-        self.projectsDict = projectsDict
-        self.parent = parent
-
-        mainLayout = QVBoxLayout()
-
-        self.openProjectsLabel = QLabel("%s: %d" % (constants.OPN_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.OPN_PROJECT_STATUS))))
-        mainLayout.addWidget(self.openProjectsLabel)
+    def __init__(self, parent, dbConn, dbCur):
+        super().__init__(parent, dbConn, dbCur)
+        mainLayout = QGridLayout()
 
         # Piece together the projects layout
-        subLayout = QHBoxLayout()
-        treeWidgetsLayout = QVBoxLayout()
+        self.openProjectsLabel = QLabel()
+        self.abandonedProjectsLabel = QLabel()
+        self.completedProjectsLabel = QLabel()
 
-        self.openProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.OPN_PROJECT_STATUS), constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
+        self.openProjectsTreeWidget = ProjectTreeWidget(dbCur, constants.OPN_PROJECT_STATUS, constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
         self.openProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
         self.openProjectsTreeWidget.projectAbandoned.connect(self.moveOpenToAbandoned)
-
-        self.abandonedProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.ABD_PROJECT_STATUS), constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
+        
+        self.abandonedProjectsTreeWidget = ProjectTreeWidget(dbCur, constants.ABD_PROJECT_STATUS, constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
         self.abandonedProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
-
-        self.completedProjectsTreeWidget = ProjectTreeWidget(self.projectsDict.projectsByStatus(constants.CMP_PROJECT_STATUS), constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
+        
+        self.completedProjectsTreeWidget = ProjectTreeWidget(dbCur, constants.CMP_PROJECT_STATUS, constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
         self.completedProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(3))
-
-        self.abandonedProjectsLabel = QLabel("%s: %d" % (constants.ABD_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.ABD_PROJECT_STATUS))))
-        self.completedProjectsLabel = QLabel("%s: %d" % (constants.CMP_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.CMP_PROJECT_STATUS))))
-
-        treeWidgetsLayout.addWidget(self.openProjectsTreeWidget)
-        treeWidgetsLayout.addWidget(self.abandonedProjectsLabel)
-        treeWidgetsLayout.addWidget(self.abandonedProjectsTreeWidget)
-        treeWidgetsLayout.addWidget(self.completedProjectsLabel)
-        treeWidgetsLayout.addWidget(self.completedProjectsTreeWidget)
 
         buttonWidget = StandardButtonWidget()
         buttonWidget.newButton.clicked.connect(self.showNewProjectDialog)
@@ -2316,11 +2281,16 @@ class ProjectWidget(QWidget):
         buttonWidget.addButton(completeProject)
         buttonWidget.addButton(abandonProject)
 
-        subLayout.addLayout(treeWidgetsLayout)
-        subLayout.addWidget(buttonWidget)
-        mainLayout.addLayout(subLayout)
+        mainLayout.addWidget(self.openProjectsLabel, 0, 0)
+        mainLayout.addWidget(self.openProjectsTreeWidget, 1, 0)
+        mainLayout.addWidget(self.abandonedProjectsLabel, 2, 0)
+        mainLayout.addWidget(self.abandonedProjectsTreeWidget, 3, 0)
+        mainLayout.addWidget(self.completedProjectsLabel, 4, 0)
+        mainLayout.addWidget(self.completedProjectsTreeWidget, 5, 0)
+        mainLayout.addWidget(buttonWidget, 1, 1, 5, 1)
         
         self.setLayout(mainLayout)
+        self.updateProjectsCount()
 
     def moveOpenToAbandoned(self, idx):
         item = self.openProjectsTreeWidget.takeTopLevelItem(idx)
@@ -2625,9 +2595,9 @@ class ProjectWidget(QWidget):
             self.updateProjectsCount()
             
     def updateProjectsCount(self):
-        self.openProjectsLabel.setText("%s: %d" % (constants.OPN_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.OPN_PROJECT_STATUS))))
-        self.abandonedProjectsLabel.setText("%s: %d" % (constants.ABD_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.ABD_PROJECT_STATUS))))
-        self.completedProjectsLabel.setText("%s: %d" % (constants.CMP_PROJECT_STATUS, len(self.projectsDict.projectsByStatus(constants.CMP_PROJECT_STATUS))))
+        self.openProjectsLabel.setText("%s: %d" % (constants.OPN_PROJECT_STATUS, self.openProjectsTreeWidget.topLevelItemCount()))
+        self.abandonedProjectsLabel.setText("%s: %d" % (constants.ABD_PROJECT_STATUS, self.abandonedProjectsTreeWidget.topLevelItemCount()))
+        self.completedProjectsLabel.setText("%s: %d" % (constants.CMP_PROJECT_STATUS, self.completedProjectsTreeWidget.topLevelItemCount()))
 
     def refreshOpenProjectTree(self):
         self.openProjectsTreeWidget.refreshData()
@@ -2635,12 +2605,11 @@ class ProjectWidget(QWidget):
 class ProjectView(QWidget):
     addAssetToAssetView = pyqtSignal(object)
     
-    def __init__(self, dataConnection, parent):
+    def __init__(self, parent, dbConn, dbCur):
         super().__init__(parent)
-        self.dataConnection = dataConnection
         self.parent = parent
 
-        self.projectWidget = ProjectWidget(self.dataConnection.projects, self)
+        self.projectWidget = ProjectWidget(self, dbConn, dbCur)
         self.projectWidget.addAssetToAssetView.connect(self.emitAddAssetToAssetView)
         layout = QVBoxLayout()
         layout.addWidget(self.projectWidget)
@@ -2651,92 +2620,73 @@ class ProjectView(QWidget):
         self.addAssetToAssetView.emit(asset)
 
 class CompanyTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, companyItem, parent):
+    def __init__(self, idNum, dbCur, parent):
         super().__init__(parent)
-        self.company = companyItem
+        self.company = idNum
+        self.refreshData(dbCur)
         
-        self.setText(0, str(self.company.idNum))
-        self.setText(1, self.company.name)
-        self.setText(2, self.company.shortName)
-        self.setText(3, "{:,.2f}".format(self.company.assetsAmount()))
-        self.setText(4, "{:,.2f}".format(self.company.CIPAmount()))
-        
-    def refreshData(self):
-        self.setText(1, self.company.name)
-        self.setText(2, self.company.shortName)
-        self.setText(3, "{:,.2f}".format(self.company.assetsAmount()))
-        self.setText(4, "{:,.2f}".format(self.company.CIPAmount()))
+    def refreshData(self, dbCur):
+        dbCur.execute("""SELECT Name, ShortName FROM Companies
+                                 WHERE idNum=?""", (self.company,))
+        name, shortName = dbCur.fetchone()
+        self.setText(0, str(self.company))
+        self.setText(1, name)
+        self.setText(2, shortName)
+##        self.setText(3, "{:,.2f}".format(self.company.assetsAmount()))
+##        self.setText(4, "{:,.2f}".format(self.company.CIPAmount()))
         
 class CompanyTreeWidget(NewTreeWidget):
-    def __init__(self, companiesDict, headerList, widthList):
+    def __init__(self, dbCur, headerList, widthList):
         super().__init__(headerList, widthList)
-        self.buildItems(self, companiesDict)
+        self.dbCursor = dbCur
+        self.buildItems(self)
         self.setColumnCount(5)
         self.sortItems(0, Qt.AscendingOrder)
 
-    def buildItems(self, parent, companiesDict):
-        for companyKey in companiesDict:
-            item = CompanyTreeWidgetItem(companiesDict[companyKey], parent)
+    def buildItems(self, parent):
+        self.dbCursor.execute("SELECT idNum FROM Companies")
+        results = self.dbCursor.fetchall()
+        for idNum in results:
+            item = CompanyTreeWidgetItem(idNum[0], self.dbCursor, parent)
             self.addTopLevelItem(item)
 
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
-            self.topLevelItem(idx).refreshData()
+            self.topLevelItem(idx).refreshData(self.dbCursor)
             
-class CompanyWidget(QWidget):
+class CompanyWidget(ObjectWidget):
     addNewCompany = pyqtSignal(str)
     deleteCompany = pyqtSignal(str)
     
-    def __init__(self, companiesDict, parent):
-        super().__init__()
-        self.companiesDict = companiesDict
-        self.parent = parent
-
-        mainLayout = QVBoxLayout()
-
-        self.companiesLabel = QLabel("Companies: %d" % len(self.companiesDict))
-        mainLayout.addWidget(self.companiesLabel)
-
+    def __init__(self, parent, dbConn, dbCur):
+        super().__init__(parent, dbConn, dbCur)
+        mainLayout = QGridLayout()
+        
         # Piece together the companies layout
-        subLayout = QHBoxLayout()
-        treeWidgetsLayout = QVBoxLayout()
-
-        self.companiesTreeWidget = CompanyTreeWidget(self.companiesDict, constants.COMPANY_HDR_LIST, constants.COMPANY_HDR_WDTH)
-
-        treeWidgetsLayout.addWidget(self.companiesTreeWidget)
-        treeWidgetsLayout.addStretch(1)
-
+        self.companiesLabel = QLabel()
+        self.companiesTreeWidget = CompanyTreeWidget(dbCur, constants.COMPANY_HDR_LIST, constants.COMPANY_HDR_WDTH)
+        
         buttonWidget = StandardButtonWidget()
         buttonWidget.newButton.clicked.connect(self.showNewCompanyDialog)
         buttonWidget.viewButton.clicked.connect(self.showViewCompanyDialog)
         buttonWidget.deleteButton.clicked.connect(self.deleteSelectedCompanyFromList)
         
-        subLayout.addLayout(treeWidgetsLayout)
-        subLayout.addWidget(buttonWidget)
-        mainLayout.addLayout(subLayout)
+        mainLayout.addWidget(self.companiesLabel, 0, 0)
+        mainLayout.addWidget(self.companiesTreeWidget, 1, 0)
+        mainLayout.addWidget(buttonWidget, 1, 1)
+        mainLayout.setRowStretch(2, 1)
         
         self.setLayout(mainLayout)
-
-    def nextIdNum(self, name):
-        self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
-        largestId = self.parent.parent.dbCursor.fetchone()
-        if largestId != None:
-            return largestId[0] + 1
-        else:
-            return 1
+        self.updateCompaniesCount()
         
-    def insertIntoDatabase(self, tblName, columns, values):
-        sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
-        self.parent.parent.dbCursor.execute(sql)
-
     def updateCompaniesCount(self):
-        self.companiesLabel.setText("Companies: %d" % len(self.companiesDict))
-
+        self.companiesLabel.setText("Companies: %d" % self.companiesTreeWidget.topLevelItemCount())
+    
     def refreshCompanyTree(self):
         self.companiesTreeWidget.refreshData()
         
     def showNewCompanyDialog(self):
-        dialog = CompanyDialog("New", self)
+        dialog = CompanyDialog("New", self.dbCur, self)
         if dialog.exec_():
             # Find current largest id and increment by one
             nextId = self.nextIdNum("Companies")
@@ -2746,17 +2696,18 @@ class CompanyWidget(QWidget):
                                  dialog.shortNameText.text(),
                                  True,
                                  nextId)
-            self.companiesDict[newCompany.idNum] = newCompany
 
-            self.insertIntoDatabase("Companies", "(Name, ShortName, Active)", "('" + newCompany.name + "', '" + newCompany.shortName + "', " + str(1) + ")")
+            columns = ("Name", "ShortName", "Active")
+            values = (newCompany.name, newCompany.shortName,
+                      int(newCompany.active))
+            self.insertIntoDatabase("Companies", columns, values)
             
-            self.parent.parent.dbConnection.commit()
+            self.dbConn.commit()
             
             # Make company into a CompanyTreeWidgetItem and add it to CompanyTree
-            item = CompanyTreeWidgetItem(newCompany, self.companiesTreeWidget)
+            item = CompanyTreeWidgetItem(nextId, self.dbCur, self.companiesTreeWidget)
             self.companiesTreeWidget.addTopLevelItem(item)
             self.updateCompaniesCount()
-
             self.addNewCompany.emit(newCompany.shortName)
             
     def showViewCompanyDialog(self):
@@ -2766,58 +2717,43 @@ class CompanyWidget(QWidget):
         item = self.companiesTreeWidget.itemFromIndex(idxToShow)
 
         if item:
-            dialog = CompanyDialog("View", self, item.company)
-            dialog.setWindowTitle("View Company")
+            dialog = CompanyDialog("View", self.dbCur, self, item.company)
             
             if dialog.exec_():
                 if dialog.hasChanges == True:
                     # Commit changes to database and to vendor entry
-                    if item.company.active == True:
-                        active = "Y"
-                    else:
-                        active = "N"
-                        
-                    sql = ("UPDATE Companies SET Name = '" + dialog.nameText_edit.text() +
-                           "', ShortName = '" + dialog.shortNameText_edit.text() +
-                           "', Active = '" + active + 
-                           "' WHERE idNum = " + str(item.company.idNum))
-                    self.parent.parent.dbCursor.execute(sql)
-
-                    self.parent.parent.dbConnection.commit()
-
-                    item.company.name = dialog.nameText_edit.text()
-                    item.company.shortName = dialog.shortNameText_edit.text()
-                    #item.company.active = dialog.endDateText.text()
+                    columnValues = {"Name": dialog.nameText_edit.text(),
+                                    "ShortName": dialog.shortNameText_edit.text(),
+                                    "Active": dialog.activeChk.checkState()}
+                    whereDict = {"idNum": item.company}
+                    self.updateDatabase("Companies", columnValues, whereDict)
+                    self.dbConn.commit()
                     
                     self.companiesTreeWidget.refreshData()
 
     def deleteSelectedCompanyFromList(self):
         # Get the index of the item in the company list to delete
-        idxToDelete = self.companiesTreeWidget.indexOfTopLevelItem(self.companiesTreeWidget.currentItem())
-
-        if idxToDelete >= 0:
-            item = self.companiesTreeWidget.takeTopLevelItem(idxToDelete)
-        else:
-            item = None
+        item = self.companiesTreeWidget.currentItem()
         
         if item:
-            self.parent.parent.dbCursor.execute("DELETE FROM Companies WHERE idNum=?", (item.company.idNum,))
-            self.companiesDict.pop(item.company.idNum)
-            self.parent.parent.dbConnection.commit()
+            whereDict = {"idNum": item.company}
+            self.deleteFromDatabase("Companies", whereDict)
+            self.dbConn.commit()
+            
+            idxToDelete = self.companiesTreeWidget.indexOfTopLevelItem(item)
+            self.companiesTreeWidget.takeTopLevelItem(idxToDelete)
             self.updateCompaniesCount()
+            
+        self.deleteCompany.emit(item.text(2))
 
-        self.deleteCompany.emit(item.company.shortName)
-
-class CompanyView(QWidget):
+class CompanyView(ObjectWidget):
     addNewCompany = pyqtSignal(str)
     deleteCompany = pyqtSignal(str)
     
-    def __init__(self, dataConnection, parent):
-        super().__init__(parent)
-        self.dataConnection = dataConnection
-        self.parent = parent
-
-        self.companyWidget = CompanyWidget(self.dataConnection.companies, self)
+    def __init__(self, parent, dbConn, dbCur):
+        super().__init__(parent, dbConn, dbCur)
+        
+        self.companyWidget = CompanyWidget(self, dbConn, dbCur)
         self.companyWidget.addNewCompany.connect(self.emitAddNewCompany)
         self.companyWidget.deleteCompany.connect(self.emitDeleteCompany)
 

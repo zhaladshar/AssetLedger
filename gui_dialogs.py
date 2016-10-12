@@ -166,11 +166,8 @@ class InvoiceDialog(QDialog):
         super().__init__(parent)
         self.parent = parent
         self.invoice = invoice
+        self.dbCur = dbCur
         self.hasChanges = False
-        self.companyChanged = False
-        self.vendorChanged = False
-        self.projectAssetChanged = False
-        self.invoicePropDetailsChanged = False
         self.mode = mode
         
         self.layout = QGridLayout()
@@ -197,33 +194,54 @@ class InvoiceDialog(QDialog):
         self.assetProjSelector.selectorChanged.connect(self.updateDetailInvoiceWidget)
         
         if self.mode == "View":
-            self.companyBox.setCurrentIndex(self.companyBox.findText(constants.ID_DESC % (invoice.company.idNum, invoice.company.shortName)))
+            dbCur.execute("""SELECT Vendors.idNum, Vendors.Name,
+                                    Companies.idNum, Companies.ShortName
+                             FROM Invoices
+                             LEFT JOIN Companies
+                             ON Invoices.CompanyId = Companies.idNum
+                             LEFT JOIN Vendors
+                             ON Invoices.VendorId = Vendors.idNum
+                             WHERE Invoices.idNum=?""",
+                          (invoice,))
+            vendId, vendName, companyId, companyName = dbCur.fetchone()
+            self.companyBox.setCurrentIndex(self.companyBox.findText(constants.ID_DESC % (companyId, companyName)))
             self.companyBox.setEnabled(False)
             
-            self.vendorBox.setCurrentIndex(self.vendorBox.findText(constants.ID_DESC % (invoice.vendor.idNum, invoice.vendor.name)))
+            self.vendorBox.setCurrentIndex(self.vendorBox.findText(constants.ID_DESC % (vendId, vendName)))
             self.vendorBox.setEnabled(False)
             
-            companyId = parent.stripAllButNumbers(self.companyBox.currentText())
-            self.assetProjSelector.updateCompany(parent.parent.dataConnection.companies[companyId])
-            
-            if invoice.assetProj[0] == "assets":
+            self.assetProjSelector.updateCompany(companyId)
+
+            dbCur.execute("""SELECT ObjectType, ObjectId FROM InvoicesObjects
+                             WHERE InvoiceId=?""", (invoice,))
+            objectType, objectId = dbCur.fetchone()
+            if objectType == "assets":
                 # Need to disable signals, otherwise checking the radio button
                 # will cause a myriad of signals to be passed and will crash
                 # the program.
+                dbCur.execute("SELECT Description FROM Assets WHERE idNum=?",
+                              (objectId,))
+                desc = dbCur.fetchone()[0]
                 self.assetProjSelector.dontEmitSignals(True)
                 self.assetProjSelector.assetRdoBtn.setChecked(True)
-                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
+                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(constants.ID_DESC % (objectId, desc)))
                 self.assetProjSelector.dontEmitSignals(False)
             else:
+                dbCur.execute("SELECT Description FROM Projects WHERE idNum=?",
+                              (objectId,))
+                desc = dbCur.fetchone()[0]
                 self.assetProjSelector.dontEmitSignals(True)
                 self.assetProjSelector.projRdoBtn.setChecked(True)
-                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % invoice.assetProj[1].idNum) + " - " + invoice.assetProj[1].description))
+                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(constants.ID_DESC % (objectId, desc)))
                 self.assetProjSelector.dontEmitSignals(False)
             self.assetProjSelector.setEnabled(False)
             self.assetProjSelector.show()
-            
-            self.invoiceDateText = QLabel(str(invoice.date))
-            self.dueDateText = QLabel(str(invoice.dueDate))
+
+            dbCur.execute("""SELECT InvoiceDate, DueDate FROM Invoices
+                             WHERE idNum=?""", (invoice,))
+            invoiceDate, dueDate = dbCur.fetchone()
+            self.invoiceDateText = QLabel(invoiceDate)
+            self.dueDateText = QLabel(dueDate)
         else:
             self.invoiceDateText = gui_elements.DateLineEdit()
             self.dueDateText = gui_elements.DateLineEdit()
@@ -239,10 +257,10 @@ class InvoiceDialog(QDialog):
         self.layout.addWidget(self.dueDateText, 4, 1)
         
         if self.mode == "View":
-            proposal = self.getAcceptedProposalsOfAssetProject()
-            self.detailsWidget = gui_elements.InvoiceDetailWidget(invoice.details, proposal)
+            proposals = self.getAcceptedProposalsOfAssetProject()
+            self.detailsWidget = gui_elements.InvoiceDetailWidget(dbCur, invoice, proposals)
         else:
-            self.detailsWidget = gui_elements.InvoiceDetailWidget()
+            self.detailsWidget = gui_elements.InvoiceDetailWidget(dbCur)
         self.detailsWidget.detailsHaveChanged.connect(self.invoicePropDetailsChange)
         self.layout.addWidget(self.detailsWidget, 5, 0, 1, 2)
         
@@ -250,12 +268,12 @@ class InvoiceDialog(QDialog):
         buttonWidget.saveButton.clicked.connect(self.accept)
         buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
         buttonWidget.cancelButton.clicked.connect(self.reject)
-
+        
         nextRow = 6
         if self.mode == "View":
             subLayout = QHBoxLayout()
             
-            self.paymentHistory = gui_elements.InvoicePaymentTreeWidget(invoice.payments, constants.INVOICE_PYMT_HDR_LIST, constants.INVOICE_PYMT_HDR_WDTH)
+            self.paymentHistory = gui_elements.InvoicePaymentTreeWidget(dbCur, invoice, constants.INVOICE_PYMT_HDR_LIST, constants.INVOICE_PYMT_HDR_WDTH)
             self.paymentHistory.setCurrentItem(self.paymentHistory.invisibleRootItem())
             
             paymentButtonLayout = gui_elements.StandardButtonWidget()
@@ -382,26 +400,27 @@ class InvoiceDialog(QDialog):
             self.parent.updateVendorTree.emit()
     
     def getAcceptedProposalsOfAssetProject(self):
+        listOfAcceptedProposals = []
         selection = self.assetProjSelector.selector.currentText()
         selectionId = self.parent.stripAllButNumbers(selection)
-
+        
         if selectionId:
             if self.assetProjSelector.assetSelected() == True:
-                acceptedProposals = self.parent.parent.dataConnection.assets[selectionId].proposals.proposalsByStatus(constants.ACC_PROPOSAL_STATUS)
-                
-                if acceptedProposals:
-                    return list(acceptedProposals.values())
-                else:
-                    return None
+                type_ = 'assets'
             else:
-                acceptedProposals = self.parent.parent.dataConnection.projects[selectionId].proposals.proposalsByStatus(constants.ACC_PROPOSAL_STATUS)
-
-                if acceptedProposals:
-                    return list(acceptedProposals.values())
-                else:
-                    return None
-        else:
-            return None
+                type_ = 'projects'
+            
+            self.dbCur.execute("""SELECT Proposals.idNum FROM Proposals
+                                  LEFT JOIN ProposalsObjects
+                                  ON Proposals.idNum = ProposalsObjects.ProposalId
+                                  WHERE Status=? AND ObjectType=?
+                                        AND ObjectId=?""",
+                               (constants.ACC_PROPOSAL_STATUS, type_,
+                                selectionId))
+            
+            for idNum in self.dbCur:
+                listOfAcceptedProposals.append(idNum[0])
+        return listOfAcceptedProposals
 
     def updateDetailInvoiceWidget(self):
         pass
@@ -456,13 +475,10 @@ class InvoiceDialog(QDialog):
         QDialog.accept(self)
 
 class ProposalDialog(QDialog):
-    def __init__(self, mode, parent=None, proposal=None):
+    def __init__(self, mode, dbCur, parent=None, proposal=None):
         super().__init__(parent)
         self.parent = parent
         self.hasChanges = False
-        self.vendorChanged = False
-        self.companyChanged = False
-        self.projectAssetChanged = False
         self.mode = mode
 
         self.layout = QGridLayout()
@@ -473,17 +489,21 @@ class ProposalDialog(QDialog):
         dateLbl = QLabel("Date:")
         
         self.companyBox = QComboBox()
-        self.companyBox.addItems(parent.parent.dataConnection.companies.sortedListOfKeysAndNames())
+        dbCur.execute("SELECT idNum, ShortName FROM Companies")
+        for idNum, shortName in dbCur:
+            self.companyBox.addItem(constants.ID_DESC % (idNum, shortName))
         self.companyBox.currentIndexChanged.connect(self.updateAssetProjSelector)
         
         self.vendorBox = QComboBox()
-        self.vendorBox.addItems(parent.parent.dataConnection.vendors.sortedListOfKeysAndNames())
+        dbCur.execute("SELECT idNum, Name FROM Vendors")
+        for idNum, name in dbCur:
+            self.vendorBox.addItem(constants.ID_DESC % (idNum, name))
 
         self.statusBox = QComboBox()
         self.statusBox.addItems(constants.PROPOSAL_STATUSES)
         
         companyId = parent.stripAllButNumbers(self.companyBox.currentText())
-        self.assetProjSelector = gui_elements.AssetProjSelector(parent.parent.dataConnection.companies[companyId])
+        self.assetProjSelector = gui_elements.AssetProjSelector(companyId, dbCur)
         
         if self.mode == "View":
             self.companyBox.setCurrentIndex(self.companyBox.findText(constants.ID_DESC % (proposal.company.idNum, proposal.company.shortName)))
@@ -526,11 +546,11 @@ class ProposalDialog(QDialog):
         self.layout.addWidget(dateLbl, nextRow, 0)
         self.layout.addWidget(self.dateText, nextRow, 1)
         nextRow += 1
-
+        
         if self.mode == "View":
             self.detailsWidget = gui_elements.ProposalDetailWidget(proposal.details)
         else:
-            self.detailsWidget = gui_elements.ProposalDetailWidget()
+            self.detailsWidget = gui_elements.ProposalDetailWidget(dbCur)
         self.layout.addWidget(self.detailsWidget, nextRow, 0, 1, 2)
         nextRow += 1
         
@@ -588,7 +608,7 @@ class ProposalDialog(QDialog):
         
     def updateAssetProjSelector(self):
         companyId = self.parent.stripAllButNumbers(self.companyBox.currentText())
-        self.assetProjSelector.updateCompany(self.parent.parent.dataConnection.companies[companyId])
+        self.assetProjSelector.updateCompany(companyId)
         self.assetProjSelector.clear()
         
 class ProjectDialog(QDialog):
@@ -721,7 +741,7 @@ class ProjectDialog(QDialog):
         self.layout.addWidget(self.startDateText_edit, 2, 1)
 
 class CompanyDialog(QDialog):
-    def __init__(self, mode, parent=None, company=None):
+    def __init__(self, mode, dbCur, parent=None, company=None):
         super().__init__(parent)
         self.hasChanges = False
 
@@ -731,8 +751,17 @@ class CompanyDialog(QDialog):
         shortNameLbl = QLabel("Short Name:")
         
         if mode == "View":
-            self.nameText = QLabel(company.name)
-            self.shortNameText = QLabel(company.shortName)
+            activeLbl = QLabel("Active:")
+            self.activeChk = QCheckBox()
+            self.activeChk.setEnabled(False)
+            
+            dbCur.execute("""SELECT Name, ShortName, Active
+                            FROM Companies WHERE idNum=?""",
+                          (company,))
+            name, shortName, active = dbCur.fetchone()
+            self.nameText = QLabel(name)
+            self.shortNameText = QLabel(shortName)
+            self.activeChk.setCheckState(active)
         else:
             self.nameText = QLineEdit()
             self.shortNameText = QLineEdit()
@@ -741,13 +770,19 @@ class CompanyDialog(QDialog):
         self.layout.addWidget(self.nameText, 0, 1)
         self.layout.addWidget(shortNameLbl, 1, 0)
         self.layout.addWidget(self.shortNameText, 1, 1)
+        nextRow = 2
+
+        if mode == "View":
+            self.layout.addWidget(activeLbl, nextRow, 0)
+            self.layout.addWidget(self.activeChk, nextRow, 1)
+            nextRow += 1
 
         buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
         buttonWidget.saveButton.clicked.connect(self.accept)
         buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
         buttonWidget.cancelButton.clicked.connect(self.reject)
 
-        self.layout.addWidget(buttonWidget, 4, 0, 1, 2)
+        self.layout.addWidget(buttonWidget, nextRow, 0, 1, 2)
         self.setLayout(self.layout)
 
         if mode == "View":
@@ -764,6 +799,9 @@ class CompanyDialog(QDialog):
         
         self.shortNameText_edit = QLineEdit(self.shortNameText.text())
         self.shortNameText_edit.textEdited.connect(self.changed)
+
+        self.activeChk.setEnabled(True)
+        self.activeChk.stateChanged.connect(self.changed)
         
         self.layout.addWidget(self.nameText_edit, 0, 1)
         self.layout.addWidget(self.shortNameText_edit, 1, 1)
