@@ -26,7 +26,7 @@ class Window(QMainWindow):
         self.proposalOverview = ProposalView(self, self.dbConnection, self.dbCursor)
         self.projectOverview = ProjectView(self, self.dbConnection, self.dbCursor)
         self.assetOverview = AssetView(self.data, self)
-        self.glOverview = GLView(self.data, self.dbCursor, self)
+        self.glOverview = GLView(self, self.dbConnection, self.dbCursor)
         self.APOverview = APView(self.data, self, self.dbConnection, self.dbCursor)
         self.companyViewSelected = None
         self.detailViewSelected = None
@@ -55,104 +55,7 @@ class Window(QMainWindow):
         databaseExists = os.path.exists(constants.DB_NAME)
         self.dbConnection = sqlite3.connect(dbName)
         self.dbCursor = self.dbConnection.cursor()
-        if databaseExists:
-            self.dbCursor.execute("SELECT * FROM Companies")
-            for idNum, name, shortName, active in self.dbCursor:
-                self.data.companies[idNum] = Company(name, shortName, bool(active), idNum)
-            
-##            self.dbCursor.execute("SELECT * FROM Invoices")
-##            for idNum, invoiceDateTxt, dueDateTxt in self.dbCursor:
-##                invoiceDate = NewDate(invoiceDateTxt)
-##                dueDate = NewDate(dueDateTxt)
-##                self.data.invoices[idNum] = Invoice(invoiceDate, dueDate, idNum)
-
-##            self.dbCursor.execute("SELECT * FROM InvoicesDetails")
-##            for idNum, desc, cost in self.dbCursor:
-##                self.data.invoicesDetails[idNum] = InvoiceDetail(desc, cost, idNum)
-##
-##            self.dbCursor.execute("SELECT * FROM InvoicesPayments")
-##            for idNum, dateTxt, amtPd in self.dbCursor:
-##                datePd = NewDate(dateTxt)
-##                self.data.invoicesPayments[idNum] = InvoicePayment(datePd, amtPd, idNum)
-
-##            self.dbCursor.execute("SELECT * FROM Proposals")
-##            for idNum, propDate, status, statusReason in self.dbCursor:
-##                date = NewDate(propDate)
-##                self.data.proposals[idNum] = Proposal(date, status, statusReason, idNum)
-
-##            self.dbCursor.execute("SELECT * FROM ProposalsDetails")
-##            for idNum, desc, cost in self.dbCursor:
-##                self.data.proposalsDetails[idNum] = ProposalDetail(desc, cost, idNum)
-
-##            self.dbCursor.execute("SELECT * FROM Projects")
-##            for idNum, desc, ds, de, notes in self.dbCursor:
-##                dateStart = classes.NewDate(ds)
-##                if de == "" or de == None:
-##                    dateEnd = ""
-##                else:
-##                    dateEnd = classes.NewDate(de)
-##                self.data.projects[idNum] = Project(desc, dateStart, notes, idNum, dateEnd)
-
-##            self.dbCursor.execute("SELECT * FROM Assets")
-##            for idNum, desc, acqD, inSvcD, dDate, dAmt, uLife, sAmt, dMeth, pDis in self.dbCursor:
-##                dateAcq = classes.NewDate(acqD)
-##                if inSvcD == "" or inSvcD == None:
-##                    dateInSvc = ""
-##                else:
-##                    dateInSvc = classes.NewDate(inSvcD)
-##                if dDate == "" or dDate == None:
-##                    dateDis = ""
-##                else:
-##                    dateDis = classes.NewDate(dDate)
-##                self.data.assets[idNum] = Asset(desc, dateAcq, dateInSvc, dateDis, dAmt, uLife, sAmt, dMeth, bool(pDis), idNum)
-
-##            self.dbCursor.execute("SELECT * FROM AssetTypes")
-##            for idNum, assetType, dep in self.dbCursor:
-##                self.data.assetTypes[idNum] = AssetType(assetType, dep, idNum)
-
-##            self.dbCursor.execute("SELECT * FROM AssetCosts")
-##            for idNum, cost, dateTxt in self.dbCursor:
-##                if dateTxt == "" or dateTxt == None:
-##                    date = ""
-##                else:
-##                    date = classes.NewDate(dateTxt)
-##                self.data.assetCosts[idNum] = AssetCost(cost, date, idNum)
-##
-##            self.dbCursor.execute("SELECT * FROM AssetHistory")
-##            for idNum, date, desc, dollars, posNeg in self.dbCursor:
-##                self.data.assetsHistory[idNum] = AssetHistory(date, desc, dollars, posNeg, idNum)
-
-##            self.dbCursor.execute("SELECT * FROM GLPostings")
-##            for idNum, dateTxt, desc in self.dbCursor:
-##                date = NewDate(dateTxt)
-##                self.data.glPostings[idNum] = GLPosting(date, desc, idNum)
-##
-##            self.dbCursor.execute("SELECT * FROM GLPostingsDetails")
-##            for idNum, amt, drCr in self.dbCursor:
-##                self.data.glPostingsDetails[idNum] = GLPostingDetail(amt, drCr, idNum)
-
-##            self.dbCursor.execute("SELECT * FROM GLAccounts")
-##            for idNum, desc, pHolder, parentGL in self.dbCursor:
-##                self.data.glAccounts[idNum] = GLAccount(desc, bool(pHolder), idNum)
-##
-##            for glNum in self.data.glAccounts.accountGroups().keys():
-##                self.dbCursor.execute("SELECT idNum FROM GLAccounts WHERE ParentGL=?",
-##                                      (glNum,))
-##                for glAccount in self.dbCursor:
-##                    self.data.glAccounts[glNum].addChild(glAccount[0])
-##                    self.data.glAccounts[glAccount[0]].addParent(glNum)
-                    
-            self.dbCursor.execute("SELECT * FROM PaymentTypes")
-            for idNum, desc in self.dbCursor:
-                self.data.paymentTypes[idNum] = PaymentType(desc, idNum)
-                
-##            self.dbCursor.execute("SELECT * FROM Xref")
-##            for each in self.dbCursor:
-##                print(each)
-##                eval("self.data." + each[0] + "[" + str(each[1]) + "]." + each[2] + \
-##                     "(" + "self.data." + each[3] + "[" + str(each[4]) + "])")
-        else:
-            # Need to put in db creation routine
+        if not databaseExists:
             self.dbCursor.execute("""CREATE TABLE AssetCosts
                                     (idNum     INTEGER PRIMARY KEY AUTOINCREMENT,
                                      Cost      REAL,
@@ -247,15 +150,17 @@ class Window(QMainWindow):
                                     )""")
             
             self.dbCursor.execute("""CREATE TABLE InvoicesPayments
-                                    (idNum      INTEGER PRIMARY KEY AUTOINCREMENT,
-                                     DatePaid   TEXT,
-                                     AmountPaid REAL,
-                                     InvoiceId  INTEGER
+                                    (idNum         INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     DatePaid      TEXT,
+                                     AmountPaid    REAL,
+                                     InvoiceId     INTEGER,
+                                     PaymentTypeId INTEGER
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE PaymentTypes
                                     (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
-                                     Description TEXT
+                                     Description TEXT,
+                                     GLAccount   INTEGER
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE Projects
@@ -292,14 +197,6 @@ class Window(QMainWindow):
                                      ZIP       TEXT,
                                      Phone     TEXT,
                                      GLAccount INTEGER
-                                    )""")
-
-            self.dbCursor.execute("""CREATE TABLE Xref
-                                    (ObjectToAddLinkTo   TEXT,
-                                     ObjectIdToAddLinkTo INTEGER,
-                                     Method              TEXT,
-                                     ObjectBeingLinked   TEXT,
-                                     ObjectIdBeingLinked INTEGER
                                     )""")
 
             self.dbConnection.commit()
@@ -361,8 +258,12 @@ class Window(QMainWindow):
         lbl.setFixedSize(100, 100)
         lbl.setStyleSheet("QLabel { background-color: black }")
 
+        listOfNames = []
+        self.dbCursor.execute("SELECT ShortName FROM Companies")
+        for shortName in self.dbCursor:
+            listOfNames.append(shortName[0])
         self.companyLayout = ButtonToggleBox("Vertical")
-        self.companyLayout.addButtons(self.data.companies.dictToList())
+        self.companyLayout.addButtons(listOfNames)
         self.companyLayout.setLayout(self.companyLayout.layout)
         self.companyLayout.selectionChanged.connect(self.changeCompanySelection)
 

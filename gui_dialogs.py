@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import *
 import constants
 import gui_elements
 import classes
+import functions
 
 class DepreciationDialog(QDialog):
     def __init__(self, assetsDict, companyDict):
@@ -236,7 +237,7 @@ class InvoiceDialog(QDialog):
                 self.assetProjSelector.dontEmitSignals(False)
             self.assetProjSelector.setEnabled(False)
             self.assetProjSelector.show()
-
+            
             dbCur.execute("""SELECT InvoiceDate, DueDate FROM Invoices
                              WHERE idNum=?""", (invoice,))
             invoiceDate, dueDate = dbCur.fetchone()
@@ -261,7 +262,6 @@ class InvoiceDialog(QDialog):
             self.detailsWidget = gui_elements.InvoiceDetailWidget(dbCur, invoice, proposals)
         else:
             self.detailsWidget = gui_elements.InvoiceDetailWidget(dbCur)
-        self.detailsWidget.detailsHaveChanged.connect(self.invoicePropDetailsChange)
         self.layout.addWidget(self.detailsWidget, 5, 0, 1, 2)
         
         buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
@@ -420,18 +420,16 @@ class InvoiceDialog(QDialog):
             
             for idNum in self.dbCur:
                 listOfAcceptedProposals.append(idNum[0])
+            
         return listOfAcceptedProposals
 
     def updateDetailInvoiceWidget(self):
-        pass
-##        proposals = self.getAcceptedProposalsOfAssetProject()
-##        self.detailsWidget.addProposals(proposals)
+        proposals = self.getAcceptedProposalsOfAssetProject()
+        self.detailsWidget.addProposals(proposals)
 
     def makeLabelsEditable(self):
         self.companyBox.setEnabled(True)
-        self.companyBox.currentIndexChanged.connect(self.companyChange)
         self.vendorBox.setEnabled(True)
-        self.vendorBox.currentIndexChanged.connect(self.vendorChange)
         self.assetProjSelector.setEnabled(True)
         self.assetProjSelector.rdoBtnChanged.connect(self.projectAssetChange)
         self.assetProjSelector.selectorChanged.connect(self.projectAssetChange)
@@ -452,27 +450,6 @@ class InvoiceDialog(QDialog):
 
     def changed(self):
         self.hasChanges = True
-
-    def vendorChange(self):
-        self.vendorChanged = True
-        self.hasChanges = True
-
-    def companyChange(self):
-        self.companyChanged = True
-        self.hasChanges = True
-
-        self.updateAssetProjSelector()
-
-    def projectAssetChange(self):
-        self.projectAssetChanged = True
-        self.hasChanges = True
-
-    def invoicePropDetailsChange(self):
-        self.invoicePropDetailsChanged = True
-        self.hasChanges = True
-
-    def accept(self):
-        QDialog.accept(self)
 
 class ProposalDialog(QDialog):
     def __init__(self, mode, dbCur, parent=None, proposal=None):
@@ -506,28 +483,46 @@ class ProposalDialog(QDialog):
         self.assetProjSelector = gui_elements.AssetProjSelector(companyId, dbCur)
         
         if self.mode == "View":
-            self.companyBox.setCurrentIndex(self.companyBox.findText(constants.ID_DESC % (proposal.company.idNum, proposal.company.shortName)))
+            dbCur.execute("""SELECT Companies.idNum, ShortName, Vendors.idNum,
+                                    Vendors.Name, ProposalDate, Status,
+                                    ObjectType, ObjectId
+                             FROM Proposals
+                             LEFT JOIN Companies
+                             ON Proposals.CompanyId = Companies.idNum
+                             LEFT JOIN Vendors
+                             ON Proposals.VendorId = Vendors.idNum
+                             LEFT JOIN ProposalsObjects
+                             ON Proposals.idNum = ProposalsObjects.ProposalId
+                             WHERE Proposals.idNum=?""", (proposal,))
+            compId, shortName, vendId, vendName, propDate, status, type_, typeId = dbCur.fetchone()
+            
+            self.companyBox.setCurrentIndex(self.companyBox.findText(constants.ID_DESC % (compId, shortName)))
             self.companyBox.setEnabled(False)
             
-            self.vendorBox.setCurrentIndex(self.vendorBox.findText(constants.ID_DESC % (proposal.vendor.idNum, proposal.vendor.name)))
+            self.vendorBox.setCurrentIndex(self.vendorBox.findText(constants.ID_DESC % (vendId, vendName)))
             self.vendorBox.setEnabled(False)
             
-            self.statusBox.setCurrentIndex(self.statusBox.findText(proposal.status))
+            self.statusBox.setCurrentIndex(self.statusBox.findText(status))
             self.statusBox.setEnabled(False)
 
-            companyId = parent.stripAllButNumbers(self.companyBox.currentText())
-            self.assetProjSelector.updateCompany(parent.parent.dataConnection.companies[companyId])
+            self.assetProjSelector.updateCompany(compId)
             
-            if proposal.proposalFor[0] == "assets":
+            if type_ == "assets":
+                dbCur.execute("SELECT Description FROM Assets WHERE idNum=?",
+                              (typeId,))
+                desc = dbCur.fetchone()[0]
                 self.assetProjSelector.assetRdoBtn.setChecked(True)
-                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % proposal.proposalFor[1].idNum) + " - " + proposal.proposalFor[1].description))
+                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(constants.ID_DESC % (typeId, desc)))
             else:
+                dbCur.execute("SELECT Description FROM Projects WHERE idNum=?",
+                              (typeId,))
+                desc = dbCur.fetchone()[0]
                 self.assetProjSelector.projRdoBtn.setChecked(True)
-                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(str("%4s" % proposal.proposalFor[1].idNum) + " - " + proposal.proposalFor[1].description))
+                self.assetProjSelector.selector.setCurrentIndex(self.assetProjSelector.selector.findText(constants.ID_DESC % (typeId, desc)))
             self.assetProjSelector.setEnabled(False)
             self.assetProjSelector.show()
             
-            self.dateText = QLabel(str(proposal.date))
+            self.dateText = QLabel(propDate)
         else:
             self.dateText = gui_elements.DateLineEdit()
 
@@ -548,7 +543,7 @@ class ProposalDialog(QDialog):
         nextRow += 1
         
         if self.mode == "View":
-            self.detailsWidget = gui_elements.ProposalDetailWidget(proposal.details)
+            self.detailsWidget = gui_elements.ProposalDetailWidget(dbCur, proposal)
         else:
             self.detailsWidget = gui_elements.ProposalDetailWidget(dbCur)
         self.layout.addWidget(self.detailsWidget, nextRow, 0, 1, 2)
@@ -573,28 +568,16 @@ class ProposalDialog(QDialog):
     def changed(self):
         self.hasChanges = True
 
-    def vendorChange(self):
-        self.vendorChanged = True
-        self.hasChanges = True
-
-    def companyChange(self):
-        self.companyChanged = True
-        self.hasChanges = True
-
-    def projectAssetChange(self):
-        self.projectAssetChanged = True
-        self.hasChanges = True
-        
     def makeLabelsEditable(self):
         self.companyBox.setEnabled(True)
-        self.companyBox.currentIndexChanged.connect(self.companyChange)
+        self.companyBox.currentIndexChanged.connect(self.changed)
         
         self.vendorBox.setEnabled(True)
-        self.vendorBox.currentIndexChanged.connect(self.vendorChange)
+        self.vendorBox.currentIndexChanged.connect(self.changed)
         
         self.assetProjSelector.setEnabled(True)
-        self.assetProjSelector.rdoBtnChanged.connect(self.projectAssetChange)
-        self.assetProjSelector.selectorChanged.connect(self.projectAssetChange)
+        self.assetProjSelector.rdoBtnChanged.connect(self.changed)
+        self.assetProjSelector.selectorChanged.connect(self.changed)
         
         self.statusBox.setEnabled(True)
         self.statusBox.currentIndexChanged.connect(self.changed)
@@ -612,13 +595,11 @@ class ProposalDialog(QDialog):
         self.assetProjSelector.clear()
         
 class ProjectDialog(QDialog):
-    def __init__(self, mode, GLDict, parent=None, project=None):
+    def __init__(self, mode, dbCur, parent=None, project=None):
         super().__init__(parent)
         self.project = project
         self.hasChanges = False
-        self.companyChanged = False
-        self.glAccountChanged = False
-
+        
         self.layout = QGridLayout()
         
         companyLbl = QLabel("Company:")
@@ -630,25 +611,41 @@ class ProjectDialog(QDialog):
         glAccountLbl = QLabel("GL Account:")
         
         self.companyBox = QComboBox()
-        self.companyBox.addItems(parent.parent.dataConnection.companies.sortedListOfKeysAndNames())
+        dbCur.execute("SELECT idNum, ShortName FROM Companies")
+        for idNum, shortName in dbCur:
+            self.companyBox.addItem(constants.ID_DESC % (idNum, shortName))
         
         self.glAccountsBox = QComboBox()
-        self.glAccountsBox.addItems(GLDict.accounts().sortedListOfKeysAndNames())
+        dbCur.execute("SELECT idNum, Description FROM GLAccounts")
+        for idNum, desc in dbCur:
+            self.glAccountsBox.addItem(constants.ID_DESC % (idNum, desc))
         
         if mode == "View":
-            self.companyBox.setCurrentIndex(self.companyBox.findText(constants.ID_DESC % (project.company.idNum, project.company.shortName)))
+            dbCur.execute("""SELECT Projects.Description, DateStart, DateEnd,
+                                    Status, Notes, GLAccount,
+                                    GLAccounts.Description, CompanyId,
+                                    ShortName
+                             FROM Projects
+                             JOIN Companies
+                             ON Projects.CompanyId = Companies.idNum
+                             JOIN GLAccounts
+                             ON Projects.GLAccount = GLAccounts.idNum
+                             WHERE Projects.idNum=?""", (project,))
+            desc, dtStart, dtEnd, status, notes, glAcct, glDesc, companyId, shortName = dbCur.fetchone()
+            
+            self.companyBox.setCurrentIndex(self.companyBox.findText(constants.ID_DESC % (companyId, shortName)))
             self.companyBox.setEnabled(False)
-            self.descriptionText = QLabel(project.description)
-            self.startDateText = QLabel(str(project.dateStart))
-            self.endDateText = gui_elements.DateLineEdit()
+            self.descriptionText = QLabel(desc)
+            self.startDateText = QLabel(dtStart)
+            self.endDateText = gui_elements.DateLineEdit(dtEnd)
             self.statusBox = QComboBox()
             self.statusBox.addItems(constants.PROJECT_STATUSES)
-            self.statusBox.setCurrentIndex(self.statusBox.findText(self.project.status()))
+            self.statusBox.setCurrentIndex(self.statusBox.findText(status))
             self.statusBox.setEnabled(False)
-            self.statusReasonText = QLabel(self.project.notes)
-            self.glAccountsBox.setCurrentIndex(self.glAccountsBox.findText(constants.ID_DESC % (project.glAccount.idNum, project.glAccount.description)))
+            self.statusReasonText = QLabel(notes)
+            self.glAccountsBox.setCurrentIndex(self.glAccountsBox.findText(constants.ID_DESC % (glAcct, glDesc)))
             self.glAccountsBox.setEnabled(False)
-            self.invoicesTreeWidget = gui_elements.InvoiceTreeWidget(project.invoices, constants.INVOICE_HDR_LIST, constants.INVOICE_HDR_WDTH)
+            self.invoicesTreeWidget = gui_elements.InvoiceTreeWidget(dbCur, None, constants.INVOICE_HDR_LIST, constants.INVOICE_HDR_WDTH, "projects.%d" % project)
         else:
             self.descriptionText = QLineEdit()
             self.startDateText = gui_elements.DateLineEdit()
@@ -717,23 +714,15 @@ class ProjectDialog(QDialog):
     def changed(self):
         self.hasChanges = True
 
-    def companyChange(self):
-        self.companyChanged = True
-        self.hasChanges = True
-
-    def glAccountChange(self):
-        self.glAccountChanged = True
-        self.hasChanges = True
-
     def makeLabelsEditable(self):
         self.companyBox.setEnabled(True)
-        self.companyBox.currentIndexChanged.connect(self.companyChange)
+        self.companyBox.currentIndexChanged.connect(self.changed)
         self.descriptionText_edit = QLineEdit(self.descriptionText.text())
         self.descriptionText_edit.textEdited.connect(self.changed)
         self.startDateText_edit = gui_elements.DateLineEdit(self.startDateText.text())
         self.startDateText_edit.textEdited.connect(self.changed)
         self.glAccountsBox.setEnabled(True)
-        self.glAccountsBox.currentIndexChanged.connect(self.glAccountChange)
+        self.glAccountsBox.currentIndexChanged.connect(self.changed)
 
         self.endDateText.textEdited.connect(self.changed)
 
@@ -991,7 +980,7 @@ class AssetDialog(QDialog):
         self.setFixedSize(self.sizeHint())
 
 class InvoicePaymentDialog(QDialog):
-    def __init__(self, mode, paymentTypeDict, parent=None, invoice=None, invoicePayment=None):
+    def __init__(self, mode, parent=None, invoice=None, invoicePayment=None):
         super().__init__(parent)
         self.hasChanges = False
 
@@ -1063,27 +1052,23 @@ class ChangeProposalStatusDialog(QDialog):
         buttonWidget.saveButton.clicked.connect(self.accept)
         buttonWidget.cancelButton.clicked.connect(self.reject)
         
-        layout = QVBoxLayout()
-        subLayout = QHBoxLayout()
-        
-        subLayout.addWidget(statusLbl)
-        subLayout.addWidget(self.statusTxt)
-
-        layout.addLayout(subLayout)
-        layout.addWidget(buttonWidget)
+        layout = QGridLayout()
+        layout.addWidget(statusLbl, 0, 0)
+        layout.addWidget(self.statusTxt, 0, 1)
+        layout.addWidget(buttonWidget, 1, 0, 1, 2)
         
         self.setLayout(layout)
 
         self.setWindowTitle(proposalStatus + " Proposal")
 
 class CIPAllocationDialog(QDialog):
-    def __init__(self, project, parent=None):
+    def __init__(self, project, dbCur, parent=None):
         super().__init__(parent)
         
         self.layout = QVBoxLayout()
         self.gridLayout = QGridLayout()
         cipLbl = QLabel("CIP")
-        cipAmt = QLabel(str(project.calculateCIP()))
+        cipAmt = QLabel(str(functions.CalculateCIP(dbCur, project)))
         assetNameLbl = QLabel("Name")
         costLbl = QLabel("Amount of CIP")
         
@@ -1147,7 +1132,7 @@ class CIPAllocationDialog(QDialog):
                 self.gridLayout.itemAtPosition(row - 1, 2).widget().show()
                     
 class CloseProjectDialog(QDialog):
-    def __init__(self, status, parent=None, assetName=""):
+    def __init__(self, status, dbCur, parent=None, assetName=""):
         super().__init__(parent)
         self.parent = parent
 
@@ -1163,9 +1148,20 @@ class CloseProjectDialog(QDialog):
         if status == constants.ABD_PROJECT_STATUS:
             reasonLbl = QLabel("Reason:")
             self.reasonTxt = QLineEdit()
-            
+
+            glLbl = QLabel("Expense Acct:")
+            self.glBox = QComboBox()
+            dbCur.execute("""SELECT idNum, Description FROM GLAccounts
+                             WHERE Placeholder=0""")
+            for idNum, desc in dbCur:
+                self.glBox.addItem(constants.ID_DESC % (idNum, desc))
+                
             layout.addWidget(reasonLbl, nextRow, 0)
             layout.addWidget(self.reasonTxt, nextRow, 1)
+            nextRow += 1
+
+            layout.addWidget(glLbl, nextRow, 0)
+            layout.addWidget(self.glBox, nextRow, 1)
             nextRow += 1
         elif status == constants.CMP_PROJECT_STATUS:
             assetNameLbl = QLabel("Asset Name:")
@@ -1222,6 +1218,8 @@ class CloseProjectDialog(QDialog):
             layout.addWidget(self.salvageValueText, nextRow, 1)
             nextRow += 1
 
+            self.showHideDisposalInfo()
+
         buttonWidget = gui_elements.SaveViewCancelButtonWidget("New")
         buttonWidget.saveButton.clicked.connect(self.accept)
         buttonWidget.cancelButton.clicked.connect(self.reject)
@@ -1229,7 +1227,6 @@ class CloseProjectDialog(QDialog):
         layout.addWidget(buttonWidget, nextRow, 0, 1, 2)
 
         self.setLayout(layout)
-        self.showHideDisposalInfo()
         
         self.setWindowTitle(status + "Project")
 

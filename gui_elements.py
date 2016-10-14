@@ -5,6 +5,7 @@ from gui_dialogs import *
 import re
 import sys
 import constants
+import functions
 from classes import *
 
 class ObjectWidget(QWidget):
@@ -480,6 +481,7 @@ class InvoiceDetailWidget(QWidget):
         super().__init__()
         self.details = {}
         self.proposals = proposals
+        self.dbCur = dbCur
         
         self.layout = QVBoxLayout()
         self.gridLayout = QGridLayout()
@@ -500,7 +502,7 @@ class InvoiceDetailWidget(QWidget):
             self.addNewLine()
         else:
             for desc, cost, propDetail, idNum in invoiceDetails:
-                self.addLine(desc, cost, propDetail, False, False, idNum)
+                self.addLine(desc, cost, propDetail, dbCur, False, False, idNum)
         
         self.layout.addLayout(self.gridLayout)
         self.layout.addStretch(1)
@@ -510,7 +512,9 @@ class InvoiceDetailWidget(QWidget):
     def resetProposalBoxes(self):
         for detailKey in self.details:
             rowToUse = self.details[detailKey][4]
-            newProposalBox = self.makeProposalDetComboBox("")
+            
+            newProposalBox = self.makeProposalDetComboBox(self.dbCur, None)
+            
             newProposalBox.currentIndexChanged.connect(lambda: self.validateInput(rowToUse))
             newProposalBox.currentIndexChanged.connect(self.emitChange)
             
@@ -529,23 +533,44 @@ class InvoiceDetailWidget(QWidget):
         self.proposals = proposals
         self.resetProposalBoxes()
 
-    def makeProposalDetComboBox(self, proposalDet):
+    def makeProposalDetComboBox(self, dbCur, proposalDet):
         proposalDetList = [""]
-
-        if self.proposals:
-            for proposal in self.proposals:
-                for detailKey, detail in proposal.details.items():
-                    proposalDetList.append("%4s - %s" % (detailKey, detail.description))
         proposalBox = QComboBox()
-        proposalBox.addItems(proposalDetList)
-        proposalBox.setCurrentIndex(proposalBox.findText(proposalDet))
+        results = None
+        
+        if proposalDet:
+            dbCur.execute("""SELECT idNum, Description FROM ProposalsDetails
+                             WHERE ProposalId IN
+                             (SELECT ProposalId FROM ProposalsDetails
+                             WHERE idNum=?)""", (proposalDet,))
+            results = dbCur.fetchall()
+        elif self.proposals:
+            if len(self.proposals) == 1:
+                proposals = str(tuple(self.proposals)).replace(",", "")
+            else:
+                proposals = str(tuple(self.proposals))
+            sql = """SELECT idNum, Description FROM ProposalsDetails
+                     WHERE ProposalId IN %s""" % proposals
+            dbCur.execute(sql)
+            results = dbCur.fetchall()
+            
+        if results:
+            for idNum, desc in results:
+                if idNum == proposalDet:
+                    proposalDesc = desc
+                    
+                proposalDetList.append(constants.ID_DESC % (idNum, desc))
+            proposalBox.addItems(proposalDetList)
+
+            if proposalDet:
+                proposalBox.setCurrentIndex(proposalBox.findText(constants.ID_DESC % (proposalDet, proposalDesc)))
 
         return proposalBox
         
-    def addLine(self, desc, cost, proposalDet, showDelBtn=False, editable=True, detailIdNum=0):
+    def addLine(self, desc, cost, proposalDet, dbCur, showDelBtn=False, editable=True, detailIdNum=0):
         rowToUse = self.gridLayout.rowCount()
         
-        proposalBox = self.makeProposalDetComboBox(proposalDet)
+        proposalBox = self.makeProposalDetComboBox(dbCur, proposalDet)
         
         if editable == True:
             descLine = NewLineEdit(desc)
@@ -561,7 +586,7 @@ class InvoiceDetailWidget(QWidget):
             costLine = QLabel(str(cost))
             proposalBox.setEnabled(False)
             proposalBox.currentIndexChanged.connect(self.emitChange)
-
+            
         deleteButton = QPushButton("-")
         deleteButton.clicked.connect(lambda: self.deleteLine(rowToUse))
         if showDelBtn == False:
@@ -577,7 +602,7 @@ class InvoiceDetailWidget(QWidget):
         self.details[rowToUse] = (detailIdNum, descLine, costLine, proposalBox, rowToUse)
         
     def addNewLine(self):
-        self.addLine("", "", "")
+        self.addLine("", "", "", self.dbCur)
         
     def deleteLine(self, row):
         self.details.pop(row)
@@ -854,18 +879,47 @@ class VendorTreeWidgetItem(QTreeWidgetItem):
     def refreshData(self, dbCur):
         dbCur.execute("SELECT Name FROM Vendors WHERE idNum=?", (self.vendor,))
         name = dbCur.fetchone()[0]
+
+        dbCur.execute("SELECT Count(idNum) FROM Proposals WHERE VendorId=?",
+                      (self.vendor,))
+        propCount = dbCur.fetchone()[0]
+
+        dbCur.execute("""SELECT Count(idNum) FROM Proposals
+                         WHERE VendorId=? AND Status=?""",
+                      (self.vendor, constants.OPN_PROPOSAL_STATUS))
+        openPropCount = dbCur.fetchone()[0]
+        
+        openInvoices = 0
+        invoiceCount = 0
+        balance = 0.0
+        dbCur.execute("SELECT idNum FROM Invoices WHERE VendorId=?",
+                      (self.vendor,))
+        invoices = dbCur.fetchall()
+        for invoice in invoices:
+            dbCur.execute("""SELECT Sum(Cost) FROM InvoicesDetails
+                             WHERE InvoiceId=?""", (invoice[0],))
+            invoiceTtl = dbCur.fetchone()[0]
+
+            dbCur.execute("""SELECT Sum(AmountPaid) FROM InvoicesPayments
+                             WHERE InvoiceId=?""", (invoice[0],))
+            invoicePymts = dbCur.fetchone()[0]
+            if not invoicePymts:
+                invoicePymts = 0.0
+
+            if invoiceTtl - invoicePymts != 0:
+                openInvoices += 1
+            balance += invoiceTtl - invoicePymts
         
         self.setText(0, str(self.vendor))
         self.setText(1, name)
-##        self.setText(2, "%d / %d" % (len(self.vendor.proposals.proposalsByStatus("Open")),
-##                                     len(self.vendor.proposals)))
-##        self.setText(3, "%d / %d" % (self.vendor.openInvoiceCount(),
-##                                     len(self.vendor.invoices)))
-##        self.setText(4, "{:,.2f}".format(self.vendor.balance()))
+        self.setText(2, "%d / %d" % (openPropCount, propCount))
+        self.setText(3, "%d / %d" % (openInvoices, len(invoices)))
+        self.setText(4, "{:,.2f}".format(balance))
         
 class VendorTreeWidget(NewTreeWidget):
     def __init__(self, dbCur, headerList, widthList):
         super().__init__(headerList, widthList)
+        self.dbCursor = dbCur
         self.buildItems(self, dbCur)
         self.setColumnCount(5)
         self.sortItems(0, Qt.AscendingOrder)
@@ -877,9 +931,9 @@ class VendorTreeWidget(NewTreeWidget):
             item = VendorTreeWidgetItem(idNum[0], dbCur, parent)
             self.addTopLevelItem(item)
 
-    def refreshData(self, dbCur):
+    def refreshData(self):
         for idx in range(self.topLevelItemCount()):
-            self.topLevelItem(idx).refreshData(dbCur)
+            self.topLevelItem(idx).refreshData(self.dbCursor)
 
 class VendorWidget(ObjectWidget):
     def __init__(self, parent, dbConn, dbCur):
@@ -1038,16 +1092,25 @@ class InvoiceTreeWidget(NewTreeWidget):
     balanceZero = pyqtSignal(int)
     balanceNotZero = pyqtSignal(int)
     
-    def __init__(self, dbCursor, status, headerList, widthList):
+    def __init__(self, dbCursor, status, headerList, widthList, restriction=None):
         super().__init__(headerList, widthList)
         self.dbCursor = dbCursor
         self.status = status
-        self.buildItems(self)
+        self.buildItems(self, restriction)
         self.setColumnCount(7)
         self.sortItems(0, Qt.AscendingOrder)
 
-    def buildItems(self, parent):
-        self.dbCursor.execute("SELECT idNum FROM Invoices")
+    def buildItems(self, parent, restriction):
+        sql = "SELECT idNum FROM Invoices"
+        if restriction:
+            params = tuple(restriction.split("."))
+            sql += """ JOIN InvoicesObjects
+                       ON Invoices.idNum = InvoicesObjects.InvoiceId
+                       WHERE ObjectType=? AND ObjectId=?"""
+            self.dbCursor.execute(sql, params)
+        else:
+            self.dbCursor.execute(sql)
+            
         results = self.dbCursor.fetchall()
         for idNum in results:
             invoiceAmt = 0.0
@@ -1067,15 +1130,23 @@ class InvoiceTreeWidget(NewTreeWidget):
             if self.status == constants.INV_OPEN_STATUS and invoiceAmt - paymentAmt != 0.0:
                 item = InvoiceTreeWidgetItem(idNum[0], self.dbCursor, parent)
                 self.addTopLevelItem(item)
-
+            elif self.status == constants.INV_PAID_STATUS and invoiceAmt - paymentAmt == 0.0:
+                item = InvoiceTreeWidgetItem(idNum[0], self.dbCursor, parent)
+                self.addTopLevelItem(item)
+            elif self.status == None:
+                item = InvoiceTreeWidgetItem(idNum[0], self.dbCursor, parent)
+                self.addTopLevelItem(item)
+                
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
-            self.topLevelItem(idx).refreshData(self.dbCursor)
+            item = self.topLevelItem(idx)
+            item.refreshData(self.dbCursor)
 
-##            if self.topLevelItem(idx).invoice.balance() == 0:
-##                self.balanceZero.emit(idx)
-##            else:
-##                self.balanceNotZero.emit(idx)
+            balance = float(item.text(6).replace(",", ""))
+            if balance == 0.0:
+                self.balanceZero.emit(idx)
+            else:
+                self.balanceNotZero.emit(idx)
 
 class InvoiceWidget(ObjectWidget):
     updateVendorTree = pyqtSignal()
@@ -1137,7 +1208,7 @@ class InvoiceWidget(ObjectWidget):
         item = self.openInvoicesTreeWidget.itemFromIndex(idxToShow)
         
         if item:
-            dialog = InvoicePaymentDialog("New", self.paymentTypesDict, self, item.invoice)
+            dialog = InvoicePaymentDialog("New", self, item.invoice)
             if dialog.exec_():
                 nextId = self.nextIdNum("InvoicesPayments")
                 paymentTypeId = self.stripAllButNumbers(dialog.paymentTypeBox.currentText())
@@ -1146,29 +1217,35 @@ class InvoiceWidget(ObjectWidget):
                 
                 # Create new payment and get necessary objects
                 newPayment = InvoicePayment(datePd, amtPd, nextId)
-                paymentType = self.paymentTypesDict[paymentTypeId]
                 
                 # Add to database and to data structure
-                self.insertIntoDatabase("InvoicesPayments", "(DatePaid, AmountPaid)", "('" + str(newPayment.datePaid) + "', " + str(newPayment.amountPaid) + ")")
-                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoices', " + str(item.invoice.idNum) + ", 'addPayment', 'invoicesPayments', " + str(nextId) + ")")
-                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoicesPayments', " + str(newPayment.idNum) + ", 'addInvoice', 'invoices', " + str(item.invoice.idNum) + ")")
-                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoicesPayments', " + str(newPayment.idNum) + ", 'addPaymentType', 'paymentTypes', " + str(paymentTypeId) + ")")
-                self.parent.parent.dbConnection.commit()
-                
-                newPayment.addInvoice(item.invoice)
-                item.invoice.addPayment(newPayment)
-                newPayment.addPaymentType(paymentType)
-                self.invoicePaymentsDict[newPayment.idNum] = newPayment
+                columns = ("DatePaid", "AmountPaid", "InvoiceId")
+                values = (str(datePd), amtPd, item.invoice)
+                self.insertIntODatabase("InvoicesPayments", columns, values)
+                self.dbConn.commit()
                 
                 # Create GL posting for this payment
-                companyId = newPayment.invoicePaid.company.idNum
-                paymentTypeId = self.stripAllButNumbers(dialog.paymentTypeBox.currentText())
-                description = constants.GL_POST_PYMT_DESC % (int(dialog.invoiceText.text()), item.invoice.vendor.idNum, str(datePd))
-                details = []
-                details.append((amtPd, "CR", paymentType.glAccount.idNum, newPayment, "invoicesPayments"))
-                details.append((amtPd, "DR", item.invoice.vendor.glAccount.idNum, None, None))
+                self.dbCur.execute("""SELECT Invoices.CompanyId, Invoices.VendorId,
+                                             Vendors.GLAccount, PaymentTypes.GLAccount
+                                      FROM Invoices
+                                      JOIN Vendors
+                                      ON Invoices.VendorId = Vendors.idNum
+                                      JOIN InvoicesPayments
+                                      ON Invoices.idNum = InvoicesPayments.InvoiceID
+                                      JOIN PaymentTypes
+                                      ON PaymentTypes.idNum = InvoicesPayments.PaymentTypeId
+                                      WHERE Invoices.idNum=?""",
+                                   (item.invoice,))
+                companyId, vendorId, vendGLAcct, pymtGLAccount = self.dbCur.fetchone()
+                reference = ".".join("InvoicesPayments", str(nextId))
                 
-                self.postToGL.emit(companyId, datePd, description, details)
+                description = constants.GL_POST_PYMT_DESC % (item.invoice, vendorId, str(datePd))
+                details = []
+                details.append((amtPd, "CR", pymtGLAccount))
+                details.append((amtPd, "DR", vendGLAcct))
+                
+                self.postToGL.emit(companyId, datePd, description,
+                                   reference, details)
                 
                 # Refresh AP info
                 self.updateVendorTree.emit()
@@ -1185,6 +1262,26 @@ class InvoiceWidget(ObjectWidget):
         dialog = PaymentTypeDialog(self.parent.dataConnection.paymentTypes, self.parent.dataConnection.glAccounts, self)
         dialog.exec_()
 
+    def createCostHistory(self, invDate, invoiceId, cost, assetId):
+        costId = self.nextIdNum("AssetCosts")
+        reference = ".".join(["Invoices", str(invoiceId)])
+        cost = AssetCost(cost, invDate, assetId, reference, costId)
+        
+        columns = ("Cost", "Date", "AssetId", "Reference")
+        values = (cost.cost, invDate, assetId, reference)
+        self.insertIntoDatabase("AssetCosts", columns, values)
+
+    def createAssetHistory(self, invDate, invoiceId, cost, assetId):
+        histId = self.nextIdNum("AssetHistory")
+        history = AssetHistory(invDate, constants.ASSET_HIST_INV % invoiceId, cost, constants.POSITIVE, histId)
+        reference = ".".join(["Invoices", str(invoiceId)])
+        
+        columns = ("Date", "Description", "Dollars", "PosNeg",
+                   "AssetId", "Reference")
+        values = (invDate, history.text, history.amount,
+                  history.posNeg, assetId, reference)
+        self.insertIntoDatabase("AssetHistory", columns, values)
+                
     def showNewInvoiceDialog(self):
         dialog = InvoiceDialog("New", self.dbCur, self)
         if dialog.exec_():
@@ -1231,25 +1328,16 @@ class InvoiceWidget(ObjectWidget):
                 type_ = "assets"
                 
                 # Create new cost element for asset
-                costId = self.nextIdNum("AssetCosts")
-                reference = ".".join(["Invoices", str(newInvoice.idNum)])
-                cost = AssetCost(invoiceCost, invoiceDate, type_Id, reference, costId)
-                
-                columns = ("Cost", "Date", "AssetId", "Reference")
-                values = (cost.cost, str(newInvoice.date), type_Id,
-                          reference)
-                self.insertIntoDatabase("AssetCosts", columns, values)
+                self.createCostHistory(str(invoiceDate),
+                                       nextId,
+                                       invoiceCost,
+                                       type_Id)
                 
                 # Create history entry for asset
-                histId = self.nextIdNum("AssetHistory")
-                history = AssetHistory(newInvoice.date, constants.ASSET_HIST_INV % newInvoice.idNum, invoiceCost, constants.POSITIVE, histId)
-                history.addObject(cost)
-                
-                columns = ("Date", "Description", "Dollars", "PosNeg",
-                           "AssetId", "Reference")
-                values = (str(history.date), history.text, history.amount,
-                          history.posNeg, type_Id, reference)
-                self.insertIntoDatabase("AssetHistory", columns, values)
+                self.createAssetHistory(str(invoiceDate),
+                                        nextId,
+                                        invoiceCost,
+                                        type_Id)
             else:
                 type_ = "projects"
             
@@ -1295,8 +1383,8 @@ class InvoiceWidget(ObjectWidget):
             
             # Update vendor tree widget to display new information based on
             # invoice just created
-##            self.updateVendorTree.emit()
-##            self.updateProjectTree.emit()
+            self.updateVendorTree.emit()
+            self.updateProjectTree.emit()
 ##            self.updateAssetTree.emit()
 ##            self.updateCompanyTree.emit()
             
@@ -1313,220 +1401,163 @@ class InvoiceWidget(ObjectWidget):
             dialog = InvoiceDialog("View", self.dbCur, self, item.invoice)
             if dialog.exec_():
                 if dialog.hasChanges == True:
-                    listOfInvPropDetailKeysFromItem = list(item.invoice.details.keys())
-
                     # Commit changes to database and to vendor entry
-                    sql = ("UPDATE Invoices SET InvoiceDate = '" + dialog.invoiceDateText_edit.text() +
-                          "', DueDate = '" + dialog.dueDateText_edit.text() +
-                          "' WHERE idNum = " + str(item.invoice.idNum))
-                    self.parent.parent.dbCursor.execute(sql)
+                    invDate = dialog.invoiceDateText_edit.text()
+                    dueDate = dialog.dueDateText_edit.text()
+                    companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+                    vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
 
-                    if dialog.companyChanged == True:
-                        newCompanyId = self.stripAllButNumbers(dialog.companyBox.currentText())
-                        
-                        # Change company<->invoice links in Xref tabel
-                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newCompanyId) +
-                               " WHERE ObjectToAddLinkTo = 'invoices' AND" +
-                               " ObjectIdToAddLinkTo = " + str(item.invoice.idNum) + " AND" +
-                               " ObjectBeingLinked = 'companies'")
-                        self.parent.parent.dbCursor.execute(sql)
+                    colValDict = {"InvoiceDate": invDate,
+                                  "DueDate": dueDate,
+                                  "CompanyId": companyId,
+                                  "VendorId": vendorId}
+                    whereDict = {"idNum": item.invoice}
+                    self.updateDatabase("Invoices", colValDict, whereDict)
+                    
+                    self.dbCur.execute("""SELECT idNum FROM InvoicesDetails
+                                          WHERE InvoiceId=?""", (item.invoice,))
+                    listOfDetailsInDB = self.dbCur.fetchall()
+                    listOfDetailsInWidget = []
+                    for row in dialog.detailsWidget.details.keys():
+                        detailId = dialog.detailsWidget.details[row][0]
+                        listOfDetailsInWidget.append(detailId)
+                    for detail in listOfDetailsInDB:
+                        if detail[0] not in listOfDetailsInWidget:
+                            whereDict = {"idNum": detail[0],
+                                         "InvoiceId": item.invoice}
+                            self.deleteFromDatabase("InvoicesDetails",
+                                                    whereDict)
 
-                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(newCompanyId) +
-                               " WHERE ObjectToAddLinkTo = 'companies' AND" +
-                               " ObjectIdBeingLinked = " + str(item.invoice.idNum) + " AND" +
-                               " ObjectBeingLinked = 'invoices'")
-                        self.parent.parent.dbCursor.execute(sql)
-
-                        # Change company<->invoice links in dataConnection
-                        self.parent.dataConnection.companies[item.invoice.company.idNum].removeInvoice(item.invoice)
-                        item.invoice.addCompany(self.parent.dataConnection.companies[newCompanyId])
-                        self.parent.dataConnection.companies[newCompanyId].addInvoice(item.invoice)
-
-                    if dialog.vendorChanged == True:
-                        newVendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
-
-                        # Change vendor<->invoice links in Xref table
-                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newVendorId) +
-                               " WHERE ObjectToAddLinkTo = 'invoices' AND" + 
-                               " ObjectIdToAddLinkTo = " + str(item.invoice.idNum) + " AND" +
-                               " ObjectBeingLinked = 'vendors'")
-                        self.parent.parent.dbCursor.execute(sql)
-
-                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(newVendorId) +
-                               " WHERE ObjectToAddLinkTo = 'vendors' AND" +
-                               " ObjectBeingLinked = 'invoices' AND" +
-                               " ObjectIdBeingLinked = " + str(item.invoice.idNum))
-                        self.parent.parent.dbCursor.execute(sql)
-
-                        # Change vendor<->invoice links in dataConnection
-                        self.parent.dataConnection.vendors[item.invoice.vendor.idNum].removeInvoice(item.invoice)
-                        self.invoicesDict[item.invoice.idNum].addVendor(self.parent.dataConnection.vendors[newVendorId])
-                        self.parent.dataConnection.vendors[newVendorId].addInvoice(item.invoice)
-
-                    if dialog.projectAssetChanged == True:
-                        newTypeId = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
-                        
-                        if dialog.assetProjSelector.assetSelected() == True:
-                            type_ = "assets"
-                            oldType = item.invoice.assetProj[1]
-
-                            oldType.removeInvoice(item.invoice)
-                            item.invoice.addAsset(self.parent.dataConnection.assets[newTypeId])
-                            self.parent.dataConnection.assets[newTypeId].addInvoice(item.invoice)
+                    # If the details of the proposal have changed, update as
+                    # well. If dialog.detailsWidget.details[key][0] > 0 then
+                    # that means we changed a currently existing detail.  If
+                    # it equals 0, this is a newly added detail and so it must
+                    # be created and added to database.
+                    for row, detTuple in dialog.detailsWidget.details.items():
+                        detId, detLine, costLine, propBox = detTuple
+                        propDetId = self.stripAllButNumbers(propBox.currentText())
+                        if dialog.detailsWidget.details[row][0] > 0:
+                            colValDict = {"Description": detLine.text(),
+                                          "Cost": costLine.text(),
+                                          "ProposalDetId": propDetId}
+                            whereDict = {"idNum": detId}
+                            self.updateDatabase("InvoicesDetails",
+                                                colValDict,
+                                                whereDict)
                         else:
-                            type_ = "projects"
-                            oldType = item.invoice.assetProj[1]
-                            
-                            oldType.removeInvoice(item.invoice)
-                            item.invoice.addProject(self.parent.dataConnection.projects[newTypeId])
-                            self.parent.dataConnection.projects[newTypeId].addInvoice(item.invoice)
+                            # Make sure description is not blank - if so, this
+                            # is the usual blank line at the end of the widget
+                            if detLine.text() != "":
+                                columns = ("Invoice", "Description", "Cost",
+                                           "ProposalDetId")
+                                values = (item.proposal, detLine.text(),
+                                          costLine.text(), propDetId)
+                                self.insertIntoDatabase("InvoicesDetails",
+                                                        columns,
+                                                        values)
+
+                    # Make any changes to which object the invoice is allocated
+                    # to.  If an asset, cascade this change down through the
+                    # asset info.
+                    newTypeId = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
+                    if dialog.assetProjSelector.assetSelected() == True:
+                        newType = "assets"
+
+                        self.dbCur.execute("""SELECT AssetGL FROM AssetTypes
+                                              JOIN Assets
+                                              ON Assets.AssetTypeId = AssetTypes.idNum
+                                              WHERE Assets.idNum=?""",
+                                           (newTypeId,))
+                    else:
+                        newType = "projects"
+
+                        self.dbCur.execute("""SELECT GLAccount FROM Projects
+                                              WHERE idNum=?""", (newTypeId,))
+                    newDebitGLAcct = self.dbCur.fetchone()[0]
                         
-                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo=? " +
-                               "AND ObjectBeingLinked='invoices' AND ObjectIdBeingLinked=?",
-                               (newTypeId, type_, item.invoice.idNum))
-                        
-                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectBeingLinked=? "
-                               "AND ObjectToAddLinkTo='invoices' AND ObjectIdToAddLinkTo=?",
-                               (newTypeId, type_, item.invoice.idNum))
+                    self.dbCur.execute("""SELECT ObjectType, ObjectId
+                                          FROM InvoicesObjects
+                                          WHERE InvoiceId=?""", (item.invoice,))
+                    oldType, oldTypeId = self.dbCur.fetchone()
+                    self.dbCur.execute("""SELECT Sum(Cost) FROM InvoicesDetails
+                                          WHERE InvoiceId=?""", (item.invoice,))
+                    cost = self.dbCur.fetchone()[0]
+                    reference = ".".join(["Invoices", str(item.invoice)])
+                    
+                    if oldType != newType:
+                        if newType == "assets":
+                            self.createCostHistory(invDate,
+                                                   item.invoice,
+                                                   cost,
+                                                   newTypeId)
+                            self.createAssetHistory(invDate,
+                                                    item.invoice,
+                                                    cost,
+                                                    newTypeId)
+                        else:
+                            whereDict = {"Reference": reference}
+                            self.deleteFromDatabase("AssetCosts", whereDict)
+                            self.deleteFromDatabase("AssetHistory", whereDict)
+                    else:
+                        if newType == "assets":
+                            colValDict = {"Cost": cost,
+                                          "Date": invDate,
+                                          "AssetId": newTypeId}
+                            whereDict = {"Reference": reference}
+                            self.updateDatabase("AssetCosts",
+                                                colValDict,
+                                                whereDict)
 
-                        # Need to transmit cost, history, and signal that GL entry needs to be updated
-                        if dialog.assetProjSelector.assetSelected() == True:
-                            cost = oldType.findCost(item.invoice)
-                            oldType.removeCost(cost)
-                            item.invoice.assetProj[1].addCost(cost)
-
-                            history = oldType.findHistory(cost)
-                            oldType.removeHistory(history)
-                            item.invoice.assetProj[1].addHistory(history)
-
-                            oldDRGL = oldType.assetType.assetGLAccount
-                            newDRGL = item.invoice.assetProj[1].assetType.assetGLAccount
-                            if oldDRGL != newDRGL:
-                                needToUpdateGL = True
+                            colValDict = {"Date": invDate,
+                                          "Dollars": cost,
+                                          "AssetId": newTypeId}
+                            self.updateDatabase("AssetHistory",
+                                                colValDict,
+                                                whereDict)
                             
-                            self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='assetCosts' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='assets'",
-                                                                (item.invoice.assetProj[1].idNum, cost.idNum))
-                            self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo='assets' AND ObjectBeingLinked='assetCosts' AND ObjectIdBeingLinked=?",
-                                                                (item.invoice.assetProj[1].idNum, cost.idNum))
-                            self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='assetsHistory' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='assets'",
-                                                                (item.invoice.assetProj[1].idNum, history.idNum))
-                            self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo='assets' AND ObjectBeingLinked='assetsHistory' AND ObjectIdBeingLinked=?",
-                                                                (item.invoice.assetProj[1].idNum, history.idNum))
-                            
-                    if dialog.invoicePropDetailsChanged == True:
-                        # Generate list of invoice/proposal detail entries to
-                        # compare with original.  Delete from database any
-                        # entries in original that aren't in the new list
-                        # generated.
-                        listOfInvPropDetailKeysFromDialog = []
-                        
-                        for key in dialog.detailsWidget.details:
-                            listOfInvPropDetailKeysFromDialog.append(dialog.detailsWidget.details[key][0])
-                        
-                        for oldKey in listOfInvPropDetailKeysFromItem:
-                            if oldKey not in listOfInvPropDetailKeysFromDialog:
-                                invoiceDetail = self.parent.dataConnection.invoicesDetails.pop(oldKey)
-                                invoiceDetail.detailOf.removeDetail(invoiceDetail)
-                                
-                                self.parent.parent.dbCursor.execute("DELETE FROM InvoicesDetails WHERE idNum=?", (invoiceDetail.idNum,))
-                                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo = 'invoicesDetails' AND ObjectIdToAddLinkTo=?", (invoiceDetail.idNum,))
-                                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked = 'invoicesDetails' AND ObjectIdBeingLinked=?", (invoiceDetail.idNum,))
+                    colValDict = {"ObjectType": newType,
+                                  "ObjectId": newTypeId}
+                    whereDict = {"InvoiceId": item.invoice}
+                    self.updateDatabase("InvoicesObjects",
+                                        colValDict,
+                                        whereDict)
 
-                                if invoiceDetail.proposalDetail:
-                                    proposalDetail = invoiceDetail.proposalDetail
-                                    proposalDetail.removeInvoiceDetail(invoiceDetail)
+                    # Update GL Posting
+                    self.dbCur.execute("""SELECT GLAccount FROM Vendors
+                                          WHERE idNum=?""", (vendorId,))
+                    vendGLAcct = self.dbCur.fetchone()[0]
+                    
+                    colValDict = {"Date": invDate, "CompanyId": companyId}
+                    whereDict = {"Reference": reference}
+                    self.updateDatabase("GLPostings", colValDict, whereDict)
 
-                        # If the details of the proposal have changed, update as well
-                        # If dialog.detailsWidget.details[key][0] > 0 then that means
-                        # we changed a currently existing detail.  If it equals 0, this
-                        # is a newly added detail and so it must be created and added
-                        # to database.
-                        for key in dialog.detailsWidget.details:
-                            if dialog.detailsWidget.details[key][0] > 0:
-                                proposalDetId = self.stripAllButNumbers(dialog.detailsWidget.details[key][3].currentText())
-                                
-                                sql = ("UPDATE InvoicesDetails SET Description = '" + dialog.detailsWidget.details[key][1].text() +
-                                       "', Cost = " + dialog.detailsWidget.details[key][2].text() +
-                                       " WHERE idNum = " + str(dialog.detailsWidget.details[key][0]))
-                                self.parent.parent.dbCursor.execute(sql)
-                                
-                                self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='invoicesDetails' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposalsDetails'",
-                                                                    (proposalDetId, dialog.detailsWidget.details[key][0]))
-                                self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo='proposalsDetails' AND ObjectBeingLinked='invoicesDetails' AND ObjectIdBeingLinked=?",
-                                                                    (proposalDetId, dialog.detailsWidget.details[key][0]))
-                                
-                                item.invoice.details[dialog.detailsWidget.details[key][0]].description = dialog.detailsWidget.details[key][1].text()
-                                item.invoice.details[dialog.detailsWidget.details[key][0]].cost = float(dialog.detailsWidget.details[key][2].text())
-                                
-                                if item.invoice.details[dialog.detailsWidget.details[key][0]].proposalDetail:
-                                    oldProposalDetail = item.invoice.details[dialog.detailsWidget.details[key][0]].proposalDetail
-                                    oldProposalDetail.removeInvoiceDetail(item.invoice.details[dialog.detailsWidget.details[key][0]])
-                                    newProposalDetail = self.parent.dataConnection.proposalsDetails[proposalDetId]
-                                    
-                                    item.invoice.details[dialog.detailsWidget.details[key][0]].addProposalDetail(newProposalDetail)
-                                    newProposalDetail.addInvoiceDetail(item.invoice.details[dialog.detailsWidget.details[key][0]])
-                            else:
-                                # Make sure description is not blank - if so, this
-                                # is the usual blank line at the end of the widget
-                                if dialog.detailsWidget.details[key][1].text() != "":
-                                    nextInvoiceDetId = self.nextIdNum("InvoicesDetails")
-                                    proposalDetId = self.stripAllButNumbers(dialog.detailsWidget.details[key][3].currentText())
-                                    
-                                    self.parent.parent.dbCursor.execute("INSERT INTO InvoicesDetails (Description, Cost) VALUES (?, ?)",
-                                                                        (dialog.detailsWidget.details[key][1].text(), dialog.detailsWidget.details[key][2].text()))
-                                    self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoicesDetails', ?, 'addDetailOf', 'invoices', ?)", (nextInvoiceDetId, item.invoice.idNum))
-                                    self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoices', ?, 'addDetail', 'invoicesDetails', ?)", (item.invoice.idNum, nextInvoiceDetId))
-                                    
-                                    newInvoiceDetail = InvoiceDetail(dialog.detailsWidget.details[key][1].text(), float(dialog.detailsWidget.details[key][2].text()), nextInvoiceDetId)
-                                    newInvoiceDetail.addDetailOf(item.invoice)
-                                    item.invoice.addDetail(newInvoiceDetail)
-                                    
-                                    if proposalDetId:
-                                        self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('invoicesDetails', ?, 'addProposalDetail', 'proposalsDetails', ?)", (nextInvoiceDetId, proposalDetId))
-                                        self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('proposalsDetails', ?, 'addInvoiceDetail', 'invoicesDetails', ?)", (proposalDetId, nextInvoiceDetId))
-                                        newInvoiceDetail.addProposalDetail(self.parent.dataConnection.proposalsDetails[proposalDetId])
-                                        self.parent.dataConnection.proposalsDetails[proposalDetId].addInvoiceDetail(newInvoiceDetail)
-                                    
-                                    self.parent.dataConnection.invoicesDetails[newInvoiceDetail.idNum] = newInvoiceDetail
+                    self.dbCur.execute("""SELECT GLPostingsDetails.idNum,
+                                                 DebitCredit
+                                          FROM GLPostingsDetails JOIN GLPostings
+                                          ON GLPostings.idNum = GLPostingsDetails.GLPostingId
+                                          WHERE Reference=?""", (reference,))
+                    glPostDetIds = self.dbCur.fetchall()
+                    for glPostDetId, drCr in glPostDetIds:
+                        whereDict = {"idNum": glPostDetId}
+                        if drCr == constants.DEBIT:
+                            colValDict = {"GLAccount": newDebitGLAcct,
+                                          "Amount": cost}
+                        else:
+                            colValDict = {"GLAccount": vendGLAcct,
+                                          "Amount": cost}
+                        self.updateDatabase("GLPostingsDetails",
+                                            colValDict,
+                                            whereDict)
 
-                        # If invoice of an asset, update the asset cost and
-                        # update history element
-                        if item.invoice.assetProj[0] == "assets":
-                            cost = item.invoice.assetProj[1].findCost(item.invoice)
-                            cost.cost = item.invoice.amount()
-                            
-                            history = item.invoice.assetProj[1].getHistoryByObject(item.invoice)
-                            history.date = item.invoice.date
-                            history.amount = item.invoice.amount()
-
-                            self.parent.parent.dbCursor.execute("UPDATE AssetCosts SET Cost=? WHERE idNum=?",
-                                                                (cost.cost, cost.idNum))
-                            self.parent.parent.dbCursor.execute("UPDATE AssetHistory SET Date=?, Dollars=? WHERE idNum=?",
-                                                                (history.date, history.amount, history.idNum))
-                            
-                    self.parent.parent.dbConnection.commit()
-
-                    item.invoice.date = dialog.invoiceDateText_edit.text()
-                    item.invoice.dueDate = dialog.dueDateText_edit.text()
-
-                    if needToUpdateGL == True:
-                        oldGLPost = item.invoice.glPosting.detailOf
-                        glDetList = []
-                        for detail in oldGLPost.details.values():
-                            if detail.glAccount != item.invoice.vendor.glAccount:
-                                glDetList.append((detail, item.invoice.amount(), detail.debitCredit, newDRGL))
-                            else:
-                                glDetList.append((detail, item.invoice.amount(), detail.debitCredit, item.invoice.vendor.glAccount))
-                        
-                        self.updateGLPost.emit(oldGLPost, oldGLPost.company.idNum, oldGLPost.date, oldGLPost.description, glDetList)
+                    self.dbConn.commit()
 
                     self.openInvoicesTreeWidget.refreshData()
                     self.paidInvoicesTreeWidget.refreshData()
 
                     self.updateVendorTree.emit()
                     self.updateProjectTree.emit()
-                    self.updateAssetTree.emit()
-                    self.updateCompanyTree.emit()
+##                    self.updateAssetTree.emit()
+##                    self.updateCompanyTree.emit()
                     
     def deleteSelectedInvoiceFromList(self):
         # Check to see if the item to delete is in the open invoices tree widget
@@ -1588,8 +1619,8 @@ class InvoiceWidget(ObjectWidget):
             self.dbConn.commit()
             self.updateInvoicesCount()
             
-##            self.updateVendorTree.emit()
-##            self.updateProjectTree.emit()
+            self.updateVendorTree.emit()
+            self.updateProjectTree.emit()
 ##            self.updateAssetTree.emit()
 ##            self.updateCompanyTree.emit()
 
@@ -1732,14 +1763,15 @@ class ProposalTreeWidgetItem(QTreeWidgetItem):
         self.refreshData(dbCur)
         
     def refreshData(self, dbCur):
-        dbCur.execute("""SELECT ProposalDate, ObjectType, ObjectId, Name
+        dbCur.execute("""SELECT ProposalDate, Status, ObjectType, ObjectId, Name
                          FROM Proposals LEFT JOIN ProposalsObjects
                          ON Proposals.idNum = ProposalsObjects.ProposalId
                          LEFT JOIN Vendors
                          ON Proposals.VendorId = Vendors.idNum
                          WHERE Proposals.idNum=?""", (self.proposal,))
-        propDate, objectType, objectId, vendName = dbCur.fetchone()
-
+        propDate, status, objectType, objectId, vendName = dbCur.fetchone()
+        self.status = status
+        
         if objectType == "projects":
             dbCur.execute("SELECT Description FROM Projects WHERE idNum=?",
                           (objectId,))
@@ -1755,9 +1787,7 @@ class ProposalTreeWidgetItem(QTreeWidgetItem):
 ##        self.setText(4, "{:,.2f}".format(self.proposal.totalCost()))
         
 class ProposalTreeWidget(NewTreeWidget):
-    openProposal = pyqtSignal(int)
-    rejectedProposal = pyqtSignal(int)
-    acceptedProposal = pyqtSignal(int)
+    moveItem = pyqtSignal(int, str, str)
     
     def __init__(self, dbCur, status, headerList, widthList):
         super().__init__(headerList, widthList)
@@ -1782,14 +1812,11 @@ class ProposalTreeWidget(NewTreeWidget):
             # will get an out of bounds error if any object other than the last
             # item in the list had its status changed (and hence was moved)
             try:
-                self.topLevelItem(idx).refreshData(self.dbCursor)
-    
-##                if self.topLevelItem(idx).proposal.status == constants.OPN_PROPOSAL_STATUS:
-##                    self.openProposal.emit(idx)
-##                elif self.topLevelItem(idx).proposal.status == constants.REJ_PROPOSAL_STATUS:
-##                    self.rejectedProposal.emit(idx)
-##                else:
-##                    self.acceptedProposal.emit(idx)
+                item = self.topLevelItem(idx)
+                item.refreshData(self.dbCursor)
+                
+                if item.status != self.status:
+                    self.moveItem.emit(idx, self.status, item.status)
             except:
                 pass
     
@@ -1807,18 +1834,15 @@ class ProposalWidget(ObjectWidget):
         
         self.openProposalsTreeWidget = ProposalTreeWidget(dbCur, constants.OPN_PROPOSAL_STATUS, constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
         self.openProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
-        self.openProposalsTreeWidget.rejectedProposal.connect(self.moveOpenToRejected)
-        self.openProposalsTreeWidget.acceptedProposal.connect(self.moveOpenToAccepted)
+        self.openProposalsTreeWidget.moveItem.connect(self.moveFromTreeXToTreeY)
 
         self.rejectedProposalsTreeWidget = ProposalTreeWidget(dbCur, constants.REJ_PROPOSAL_STATUS, constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
         self.rejectedProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
-        self.rejectedProposalsTreeWidget.openProposal.connect(self.moveRejectedToOpen)
-        self.rejectedProposalsTreeWidget.acceptedProposal.connect(self.moveRejectedToAccepted)
+        self.rejectedProposalsTreeWidget.moveItem.connect(self.moveFromTreeXToTreeY)
         
         self.acceptedProposalsTreeWidget = ProposalTreeWidget(dbCur, constants.ACC_PROPOSAL_STATUS, constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
         self.acceptedProposalsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(3))
-        self.acceptedProposalsTreeWidget.openProposal.connect(self.moveAcceptedToOpen)
-        self.acceptedProposalsTreeWidget.rejectedProposal.connect(self.moveAcceptedToRejected)
+        self.acceptedProposalsTreeWidget.moveItem.connect(self.moveFromTreeXToTreeY)
         
         buttonWidget = StandardButtonWidget()
         buttonWidget.newButton.clicked.connect(self.showNewProposalDialog)
@@ -1827,9 +1851,9 @@ class ProposalWidget(ObjectWidget):
         buttonWidget.addSpacer()
         
         acceptProposalButton = QPushButton("Accept...")
-        acceptProposalButton.clicked.connect(self.acceptProposal)
+        acceptProposalButton.clicked.connect(lambda: self.changeProposalStatus(constants.ACC_PROPOSAL_STATUS))
         rejectProposalButton = QPushButton("Reject...")
-        rejectProposalButton.clicked.connect(self.rejectProposal)
+        rejectProposalButton.clicked.connect(lambda: self.changeProposalStatus(constants.REJ_PROPOSAL_STATUS))
         buttonWidget.addButton(acceptProposalButton)
         buttonWidget.addButton(rejectProposalButton)
         
@@ -1844,65 +1868,35 @@ class ProposalWidget(ObjectWidget):
         self.setLayout(mainLayout)
         self.updateProposalsCount()
 
-    def acceptProposal(self):
-        idxToShow = self.openProposalsTreeWidget.indexFromItem(self.openProposalsTreeWidget.currentItem())
-        item = self.openProposalsTreeWidget.itemFromIndex(idxToShow)
-
+    def changeProposalStatus(self, status):
+        item = self.openProposalsTreeWidget.currentItem()
+        
         if item:
-            dialog = ChangeProposalStatusDialog(constants.ACC_PROPOSAL_STATUS, self)
+            dialog = ChangeProposalStatusDialog(status, self)
             if dialog.exec_():
-                item.proposal.accept()
-                self.parent.parent.dbCursor.execute("UPDATE Proposals SET Status = ?, StatusReason = ? WHERE idNum = ?", (constants.ACC_PROPOSAL_STATUS, dialog.statusTxt.text(), str(item.proposal.idNum)))
-                self.parent.parent.dbConnection.commit()
+                colValDict = {"Status": status,
+                              "StatusReason": dialog.statusTxt.text()}
+                whereDict = {"idNum": item.proposal}
+                self.updateDatabase("Proposals", colValDict, whereDict)
+            self.dbConn.commit()
                 
         self.openProposalsTreeWidget.refreshData()
         self.updateProposalsCount()
         self.updateVendorWidgetTree.emit()
 
-    def rejectProposal(self):
-        idxToShow = self.openProposalsTreeWidget.indexFromItem(self.openProposalsTreeWidget.currentItem())
-        item = self.openProposalsTreeWidget.itemFromIndex(idxToShow)
-
-        if item:
-            dialog = ChangeProposalStatusDialog(constants.REJ_PROPOSAL_STATUS, self)
-            if dialog.exec_():
-                item.proposal.reject()
-                self.parent.parent.dbCursor.execute("UPDATE Proposals SET Status = ?, StatusReason = ? WHERE idNum = ?", (constants.REJ_PROPOSAL_STATUS, dialog.statusTxt.text(), str(item.proposal.idNum)))
-                self.parent.parent.dbConnection.commit()
-                
-        self.openProposalsTreeWidget.refreshData()
-        self.updateProposalsCount()
-        self.updateVendorWidgetTree.emit()
-
-    def moveOpenToRejected(self, idx):
-        item = self.openProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.rejectedProposalsTreeWidget)
-        self.rejectedProposalsTreeWidget.addTopLevelItem(newItem)
-
-    def moveOpenToAccepted(self, idx):
-        item = self.openProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.acceptedProposalsTreeWidget)
-        self.acceptedProposalsTreeWidget.addTopLevelItem(newItem)
-
-    def moveRejectedToOpen(self, idx):
-        item = self.rejectedProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.openProposalsTreeWidget)
-        self.openProposalsTreeWidget.addTopLevelItem(newItem)
-
-    def moveRejectedToAccepted(self, idx):
-        item = self.rejectedProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.acceptedProposalsTreeWidget)
-        self.acceptedProposalsTreeWidget.addTopLevelItem(newItem)
-
-    def moveAcceptedToOpen(self, idx):
-        item = self.acceptedProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.openProposalsTreeWidget)
-        self.openProposalsTreeWidget.addTopLevelItem(newItem)
-
-    def moveAcceptedToRejected(self, idx):
-        item = self.acceptedProposalsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProposalTreeWidgetItem(item.proposal, self.rejectedProposalsTreeWidget)
-        self.rejectedProposalsTreeWidget.addTopLevelItem(newItem)
+    def moveFromTreeXToTreeY(self, fromIdx, fromTree, toTree):
+        list_ = [fromTree, toTree]
+        for n in range(len(list_)):
+            if list_[n] == constants.OPN_PROPOSAL_STATUS:
+                list_[n] = self.openProposalsTreeWidget
+            elif list_[n] == constants.REJ_PROPOSAL_STATUS:
+                list_[n] = self.rejectedProposalsTreeWidget
+            elif list_[n] == constants.ACC_PROPOSAL_STATUS:
+                list_[n] = self.acceptedProposalsTreeWidget
+        
+        item = list_[0].takeTopLevelItem(fromIdx)
+        newItem = ProposalTreeWidgetItem(item.proposal, self.dbCur, list_[1])
+        list_[1].addTopLevelItem(newItem)
 
     def removeSelectionsFromAllBut(self, but):
         if but == 1:
@@ -1970,7 +1964,7 @@ class ProposalWidget(ObjectWidget):
             item = ProposalTreeWidgetItem(newProposal.idNum, self.dbCur, self.openProposalsTreeWidget)
             self.openProposalsTreeWidget.addTopLevelItem(item)
             self.updateProposalsCount()
-##            self.updateVendorWidgetTree.emit()
+            self.updateVendorWidgetTree.emit()
             
     def showViewProposalDialog(self):
         # Determine which tree the proposal is in--if any.  If none, don't
@@ -1992,133 +1986,71 @@ class ProposalWidget(ObjectWidget):
             dialog = ProposalDialog("View", self.dbCur, self, item.proposal)
             if dialog.exec_():
                 if dialog.hasChanges == True:
-                    listOfKeysFromItem = list(item.proposal.details.keys())
-                    
                     # Commit changes to database
-                    sql = ("UPDATE Proposals SET ProposalDate = '" + dialog.dateText_edit.text() +
-                           "', Status = '" + dialog.statusBox.currentText() + 
-                           "' WHERE idNum = " + str(item.proposal.idNum))
-                    self.parent.parent.dbCursor.execute(sql)
+                    companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+                    vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
+                    type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
+                    if dialog.assetProjSelector.assetSelected() == True:
+                        type_ = "assets"
+                    else:
+                        type_ = "projects"
+                    colValDict = {"ProposalDate": dialog.dateText_edit.text(),
+                                  "Status": dialog.statusBox.currentText(),
+                                  "CompanyId": companyId,
+                                  "VendorId": vendorId}
+                    whereDict = {"idNum": item.proposal}
+                    self.updateDatabase("Proposals", colValDict, whereDict)
 
-                    # If the details of the proposal have changed, update as well
-                    # If dialog.detailsWidget.details[key][0] > 0 then that means
-                    # we changed a currently existing detail.  If it equals 0, this
-                    # is a newly added detail and so it must be created and added
-                    # to database.
-                    for key in dialog.detailsWidget.details:
-                        if dialog.detailsWidget.details[key][0] > 0:
-                            sql = ("UPDATE ProposalsDetails SET Description = '" + dialog.detailsWidget.details[key][1].text() +
-                                   "', Cost = " + dialog.detailsWidget.details[key][2].text() +
-                                   " WHERE idNum = " + str(dialog.detailsWidget.details[key][0]))
-                            self.parent.parent.dbCursor.execute(sql)
-                            
-                            item.proposal.details[dialog.detailsWidget.details[key][0]].description = dialog.detailsWidget.details[key][1].text()
-                            item.proposal.details[dialog.detailsWidget.details[key][0]].cost = float(dialog.detailsWidget.details[key][2].text())
+                    colValDict = {"ObjectType": type_,
+                                  "ObjectId": type_Id}
+                    whereDict = {"ProposalId": item.proposal}
+                    self.updateDatabase("ProposalsObjects",
+                                        colValDict,
+                                        whereDict)
+                    
+                    # Get list of current details in DB and compare to list
+                    # in detailsWidget.  If an item is the the DB list but
+                    # not the widget list it must be deleted from the DB
+                    self.dbCur.execute("""SELECT idNum FROM ProposalsDetails
+                                          WHERE ProposalId=?""", (item.proposal,))
+                    listOfDetailsInDB = self.dbCur.fetchall()
+                    listOfDetailsInWidget = []
+                    for row in dialog.detailsWidget.details.keys():
+                        detailId = dialog.detailsWidget.details[row][0]
+                        listOfDetailsInWidget.append(detailId)
+                    for detail in listOfDetailsInDB:
+                        if detail[0] not in listOfDetailsInWidget:
+                            whereDict = {"idNum": detail[0],
+                                         "ProposalId": item.proposal}
+                            self.deleteFromDatabase("ProposalsDetails",
+                                                    whereDict)
+                        
+                    # If the details of the proposal have changed, update as
+                    # well. If dialog.detailsWidget.details[key][0] > 0 then
+                    # that means we changed a currently existing detail.  If
+                    # it equals 0, this is a newly added detail and so it must
+                    # be created and added to database.
+                    for row, detTuple in dialog.detailsWidget.details.items():
+                        detId, detLine, costLine = detTuple
+                        if dialog.detailsWidget.details[row][0] > 0:
+                            colValDict = {"Description": detLine.text(),
+                                          "Cost": costLine.text()}
+                            whereDict = {"idNum": detId}
+                            self.updateDatabase("ProposalsDetails",
+                                                colValDict,
+                                                whereDict)
                         else:
                             # Make sure description is not blank - if so, this
                             # is the usual blank line at the end of the widget
-                            if dialog.detailsWidget.details[key][1].text() != "":
-                                nextProposalDetId = self.nextIdNum("ProposalsDetails")
-                                
-                                self.parent.parent.dbCursor.execute("INSERT INTO ProposalsDetails (Description, Cost) VALUES (?, ?)",
-                                                                    (dialog.detailsWidget.details[key][1].text(), dialog.detailsWidget.details[key][2].text()))
-                                self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('proposalsDetails', ?, 'addDetailOf', 'proposals', ?)", (nextProposalDetId, item.proposal.idNum))
-                                self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES ('proposals', ?, 'addDetail', 'proposalsDetails', ?)", (item.proposal.idNum, nextProposalDetId))
-                                
-                                newProposalDetail = ProposalDetail(dialog.detailsWidget.details[key][1].text(), float(dialog.detailsWidget.details[key][2].text()), nextProposalDetId)
-                                newProposalDetail.addDetailOf(item.proposal)
-                                item.proposal.addDetail(newProposalDetail)
-
-                                self.parent.dataConnection.proposalsDetails[newProposalDetail.idNum] = newProposalDetail
-
-                    # Compare entries in original details dictionary
-                    # (item.proposals.details) to what is in the
-                    # details widget of the dialog.  Delete any items
-                    # that are in the former but not the latter.
-                    listOfPropDetailsFromDialog = []
+                            if detLine.text() != "":
+                                columns = ("ProposalId", "Description", "Cost")
+                                values = (item.proposal, detLine.text(),
+                                          costLine.text())
+                                self.insertIntoDatabase("ProposalsDetails",
+                                                        columns,
+                                                        values)
                     
-                    for dialogKey in dialog.detailsWidget.details:
-                        listOfPropDetailsFromDialog.append(dialog.detailsWidget.details[dialogKey][0])
-
-                    for key in listOfKeysFromItem:
-                        if key not in listOfPropDetailsFromDialog:
-                            self.parent.parent.dbCursor.execute("DELETE FROM ProposalsDetails WHERE idNum=?", (item.proposal.details[key].idNum,))
-                            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposalsDetails' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposals' AND ObjectIdBeingLinked=?)",
-                                                                (key, item.proposal.idNum))
-                            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposals' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='proposalsDetails' AND ObjectIdBeingLinked=?)",
-                                                                (item.proposal.idNum, key))
-                            item.proposal.details.pop(key)
-                            self.parent.dataConnection.proposalsDetails.pop(key)
-
-                    if dialog.vendorChanged == True:
-                        newVendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
-
-                        # Change vendor<->proposal links in Xref table
-                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newVendorId) +
-                               " WHERE ObjectToAddLinkTo = 'proposals' AND" + 
-                               " ObjectIdToAddLinkTo = " + str(item.proposal.idNum) + " AND" +
-                               " ObjectBeingLinked = 'vendors'")
-                        self.parent.parent.dbCursor.execute(sql)
-
-                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(newVendorId) +
-                               " WHERE ObjectToAddLinkTo = 'vendors' AND" +
-                               " ObjectBeingLinked = 'proposals' AND" +
-                               " ObjectIdBeingLinked = " + str(item.proposal.idNum))
-                        self.parent.parent.dbCursor.execute(sql)
-
-                        # Change vendor<->proposal links in dataConnection
-                        self.parent.dataConnection.vendors[item.proposal.vendor.idNum].removeProposal(item.proposal)
-                        item.proposal.addVendor(self.parent.dataConnection.vendors[newVendorId])
-                        self.parent.dataConnection.vendors[newVendorId].addProposal(item.proposal)
-
-                    if dialog.companyChanged == True:
-                        newCompanyId = self.stripAllButNumbers(dialog.companyBox.currentText())
-
-                        # Change company<->proposal links in Xref table
-                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newCompanyId) +
-                               " WHERE ObjectToAddLinkTo = 'proposals' AND" +
-                               " ObjectIdToAddLinkTo = " + str(item.proposal.idNum) + " AND" +
-                               " ObjectBeingLinked = 'companies'")
-                        self.parent.parent.dbCursor.execute(sql)
-
-                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(newCompanyId) +
-                               " WHERE ObjectToAddLinkTo = 'companies' AND" +
-                               " ObjectBeingLinked = 'proposals' AND" +
-                               " ObjectIdBeingLinked = " + str(item.proposal.idNum))
-                        self.parent.parent.dbCursor.execute(sql)
-
-                        # Change company<->proposal links in dataConnection
-                        self.parent.dataConnection.companies[item.proposal.company.idNum].removeProposal(item.proposal)
-                        item.proposal.addCompany(self.parent.dataConnection.companies[newCompanyId])
-                        self.parent.dataConnection.companies[newCompanyId].addProposal(item.proposal)
-
-                    if dialog.projectAssetChanged == True:
-                        # Change project/asset<->proposal links in database
-                        type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
-                        if dialog.assetProjSelector.assetSelected() == True:
-                            pass
-                        else:
-                            type_ = "projects"
-                            self.parent.dataConnection.projects[item.proposal.proposalFor[1].idNum].removeProposal(item.proposal)
-                            item.proposal.addProject(self.parent.dataConnection.projects[type_Id])
-                            self.parent.dataConnection.projects[type_Id].addProposal(item.proposal)
-                        
-                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(type_Id) +
-                               " WHERE ObjectToAddLinkTo = 'proposals' AND" +
-                               " ObjectIdToAddLinkTo = " + str(item.proposal.idNum) + " AND" +
-                               " ObjectBeingLinked = '" + type_ + "'")
-                        self.parent.parent.dbCursor.execute(sql)
-                        
-                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(type_Id) +
-                               " WHERE ObjectToAddLinkTo = '" + type_ + "' AND" +
-                               " ObjectBeingLinked = 'proposals' AND" +
-                               " ObjectIdBeingLinked = " + str(item.proposal.idNum))
-                        self.parent.parent.dbCursor.execute(sql)
-
-                    self.parent.parent.dbConnection.commit()
-
-                    item.proposal.date = classes.NewDate(dialog.dateText_edit.text())
-                    item.proposal.status = dialog.statusBox.currentText()
+                    self.dbConn.commit()
 
                     self.openProposalsTreeWidget.refreshData()
                     self.rejectedProposalsTreeWidget.refreshData()
@@ -2127,50 +2059,32 @@ class ProposalWidget(ObjectWidget):
                 
     def deleteSelectedProposalFromList(self):
         # Check to see if the item to delete is in the open proposal tree widget
-        idxToDelete = self.openProposalsTreeWidget.indexOfTopLevelItem(self.openProposalsTreeWidget.currentItem())
-
-        if idxToDelete >= 0:
-            item = self.openProposalsTreeWidget.takeTopLevelItem(idxToDelete)
+        item = self.openProposalsTreeWidget.currentItem()
+        
+        if not item:
+            item = self.rejectedProposalsTreeWidget.currentItem()
+            
+            if not item:
+                item = self.acceptedProposalsTreeWidget.currentItem()
+                treeWidget = self.acceptedProposalsTreeWidget
+            else:
+                treeWidget = self.rejectedProposalsTreeWidget
         else:
-            # Selected item not in open proposals tree widget--check if in
-            # rejected proposals tree widget
-            idxToDelete = self.rejectedProposalsTreeWidget.indexOfTopLevelItem(self.rejectedProposalsTreeWidget.currentItem())
-
-            if idxToDelete >= 0:
-                item = self.paidInvoicesTreeWidget.takeTopLevelItem(idxToDelete)
-            else:
-                item = None
-
-                idxToDelete = self.acceptedProposalsTreeWidget.indexOfTopLevelItem(self.acceptedProposalsTreeWidget.currentItem())
-
-                if idxToDelete >= 0:
-                    # Selected item in accepted proposal tree widget--throw up error
-                    deleteError = QMessageBox()
-                    deleteError.setWindowTitle("Can't Delete")
-                    deleteError.setText("Cannot delete an accepted proposal")
-                    deleteError.exec_()
-
+            treeWidget = self.openProposalsTreeWidget
+            
         if item:
-            self.parent.parent.dbCursor.execute("DELETE FROM Proposals WHERE idNum=?", (item.proposal.idNum,))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='proposals' AND ObjectIdToAddLinkTo=?)", (item.proposal.idNum,))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectBeingLinked='proposals' AND ObjectIdBeingLinked=?)", (item.proposal.idNum,))
-
-            self.parent.dataConnection.vendors[item.proposal.vendor.idNum].removeProposal(item.proposal)
-            self.parent.dataConnection.companies[item.proposal.company.idNum].removeProposal(item.proposal)
+            whereDict = {"idNum": item.proposal}
+            self.deleteFromDatabase("Proposals", whereDict)
             
-            if item.proposal.proposalFor[0] == "assets":
-                self.parent.dataConnection.assets[item.proposal.proposalFor[1].idNum].removeProposal(item.proposal)
-            else:
-                self.parent.dataConnection.projects[item.proposal.proposalFor[1].idNum].removeProposal(item.proposal)
+            whereDict = {"ProposalId": item.proposal}
+            self.deleteFromDatabase("ProposalsDetails", whereDict)
+            self.deleteFromDatabase("ProposalsObjects", whereDict)
             
-            proposal = self.proposalsDict.pop(item.proposal.idNum)
-            for key in proposal.details.keys():
-                proposalDet = proposal.details[key]
-                self.parent.parent.dbCursor.execute("DELETE FROM ProposalsDetails WHERE idNum=?", (proposalDet.idNum,))
-                self.parent.dataConnection.proposalsDetails.pop(proposalDet.idNum)
+            self.dbConn.commit()
 
-            self.parent.parent.dbConnection.commit()
-                
+            idxToDelete = treeWidget.indexOfTopLevelItem(item)
+            treeWidget.takeTopLevelItem(idxToDelete)
+            
             self.updateProposalsCount()
             self.updateVendorWidgetTree.emit()
     
@@ -2206,17 +2120,18 @@ class ProjectTreeWidgetItem(QTreeWidgetItem):
         dbCur.execute("""SELECT Description, DateStart, DateEnd FROM Projects
                          WHERE idNum=?""", (self.project,))
         desc, dateStart, dateEnd = dbCur.fetchone()
+
+        cip = functions.CalculateCIP(dbCur, self.project)
         
         self.setText(0, str(self.project))
         self.setText(1, desc)
         self.setText(2, dateStart)
         self.setText(3, dateEnd)
         self.setText(4, "<Duration>")
-##        self.setText(5, "{:,.2f}".format(self.project.calculateCIP()))
+        self.setText(5, "{:,.2f}".format(cip))
         
 class ProjectTreeWidget(NewTreeWidget):
-    projectAbandoned = pyqtSignal(int)
-    projectCompleted = pyqtSignal(int)
+    moveItem = pyqtSignal(int, str, str)
     
     def __init__(self, dbCur, status, headerList, widthList):
         super().__init__(headerList, widthList)
@@ -2237,12 +2152,11 @@ class ProjectTreeWidget(NewTreeWidget):
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
             try:
-                self.topLevelItem(idx).refreshData(self.dbCursor)
-
-##                if self.topLevelItem(idx).project.status() == constants.ABD_PROJECT_STATUS:
-##                    self.projectAbandoned.emit(idx)
-##                elif self.topLevelItem(idx).project.status() == constants.CMP_PROJECT_STATUS:
-##                    self.projectCompleted.emit(idx)
+                item = self.topLevelItem(idx)
+                item.refreshData(self.dbCursor)
+                
+                if item.status != self.status:
+                    self.moveItem.emit(idx, self.status, item.status)
             except:
                 pass
 
@@ -2260,7 +2174,7 @@ class ProjectWidget(ObjectWidget):
 
         self.openProjectsTreeWidget = ProjectTreeWidget(dbCur, constants.OPN_PROJECT_STATUS, constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
         self.openProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
-        self.openProjectsTreeWidget.projectAbandoned.connect(self.moveOpenToAbandoned)
+        self.openProjectsTreeWidget.moveItem.connect(self.moveFromTreeXToTreeY)
         
         self.abandonedProjectsTreeWidget = ProjectTreeWidget(dbCur, constants.ABD_PROJECT_STATUS, constants.PROJECT_HDR_LIST, constants.PROJECT_HDR_WDTH)
         self.abandonedProjectsTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
@@ -2292,141 +2206,152 @@ class ProjectWidget(ObjectWidget):
         self.setLayout(mainLayout)
         self.updateProjectsCount()
 
-    def moveOpenToAbandoned(self, idx):
-        item = self.openProjectsTreeWidget.takeTopLevelItem(idx)
-        newItem = ProjectTreeWidgetItem(item.project, self.abandonedProjectsTreeWidget)
-        self.abandonedProjectsTreeWidget.addTopLevelItem(newItem)
+    def moveFromTreeXToTreeY(self, fromIdx, fromTree, toTree):
+        list_ = [fromTree, toTree]
+        for n in range(len(list_)):
+            if list_[n] == constants.OPN_PROJECT_STATUS:
+                list_[n] = self.openProjectsTreeWidget
+            elif list_[n] == constants.ABD_PROJECT_STATUS:
+                list_[n] = self.abandonedProjectsTreeWidget
+            elif list_[n] == constants.CMP_PROJECT_STATUS:
+                list_[n] = self.completedProjectsTreeWidget
         
+        item = list_[0].takeTopLevelItem(fromIdx)
+        newItem = ProjectTreeWidgetItem(item.project, self.dbCur, list_[1])
+        list_[1].addTopLevelItem(newItem)
+
     def completeProject(self):
-        idxToComplete = self.openProjectsTreeWidget.indexFromItem(self.openProjectsTreeWidget.currentItem())
-        item = self.openProjectsTreeWidget.itemFromIndex(idxToComplete)
+        item = self.openProjectsTreeWidget.currentItem()
 
         if item:
-            preDialog = CIPAllocationDialog(item.project)
-            preDialog.exec_()
-            lastRowOfLayout = preDialog.gridLayout.rowCount() - 1
-            for n in range(2, lastRowOfLayout):
-                assetName = preDialog.gridLayout.itemAtPosition(n, 0).widget().text()
-                assetCost = round(float(preDialog.gridLayout.itemAtPosition(n, 1).widget().text()), 2)
-                dialog = CloseProjectDialog(constants.CMP_PROJECT_STATUS, self, assetName)
-                if dialog.exec_():
-                    assetId = self.nextIdNum("Assets")
-                    costId = self.nextIdNum("AssetCosts")
-                    histId = self.nextIdNum("AssetHistory")
-                    dateEnd = classes.NewDate(dialog.dateTxt.text())
-                    assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
-                    assetType = self.parent.dataConnection.assetTypes[assetTypeId]
-                    if dialog.inSvcChk.isChecked() == True:
-                        inSvcDate = dateEnd
-                    else:
-                        inSvcDate = ""
+            preDialog = CIPAllocationDialog(item.project, self.dbCur)
+            if preDialog.exec_():
+                lastRowOfLayout = preDialog.gridLayout.rowCount() - 1
+                for n in range(2, lastRowOfLayout):
+                    assetName = preDialog.gridLayout.itemAtPosition(n, 0).widget().text()
+                    assetCost = round(float(preDialog.gridLayout.itemAtPosition(n, 1).widget().text()), 2)
+                    dialog = CloseProjectDialog(constants.CMP_PROJECT_STATUS, self.dbCur, self, assetName)
+                    if dialog.exec_():
+                        assetId = self.nextIdNum("Assets")
+                        costId = self.nextIdNum("AssetCosts")
+                        histId = self.nextIdNum("AssetHistory")
+                        dateEnd = classes.NewDate(dialog.dateTxt.text())
+                        assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
+                        assetType = self.parent.dataConnection.assetTypes[assetTypeId]
+                        if dialog.inSvcChk.isChecked() == True:
+                            inSvcDate = dateEnd
+                        else:
+                            inSvcDate = ""
 
-                    if assetType.depreciable == True:
-                        usefulLife = float(dialog.usefulLifeTxt.text())
-                        salvageValue = float(dialog.salvageValueText.text())
-                        depMethod = dialog.depMethodBox.currentText()
-                    else:
-                        usefulLife = None
-                        salvageValue = None
-                        depMethod = None
-                    
-                    # Create new asset and cost
-                    newAsset = Asset(dialog.assetNameTxt.text(),
-                                     dateEnd,
-                                     inSvcDate,
-                                     "",
-                                     None,
-                                     usefulLife,
-                                     salvageValue,
-                                     depMethod,
-                                     int(False),
-                                     assetId)
-                    
-                    parentAssetTxt = dialog.childOfAssetBox.currentText()
-                    cost = AssetCost(assetCost, inSvcDate, costId)
-                    history = AssetHistory(dateEnd,
-                                           constants.ASSET_HIST_PROJ_COMP % item.project.idNum,
-                                           cost.cost,
-                                           constants.POSITIVE,
-                                           histId)
-                    
-                    # Add assetType, company, fromProject, and cost data to asset
-                    newAsset.addAssetType(assetType)
-                    newAsset.addCompany(item.project.company)
-                    newAsset.addProject(item.project)
-                    newAsset.addCost(cost)
-                    newAsset.addHistory(history)
-                    
-                    if parentAssetTxt != "":
-                        parentAssetId = self.stripAllButNumbers(parentAssetTxt)
-                        parentAsset = self.parent.dataConnection.assets[parentAssetId]
-                        newAsset.addSubAssetOf(parentAsset)
-                        parentAsset.addSubAsset(newAsset)
-                    
-                    # Add reverse data
-                    newAsset.company.addAsset(newAsset)
-                    self.parent.dataConnection.assets[assetId] = newAsset
-                    self.parent.dataConnection.assetCosts[costId] = cost
-                    self.parent.dataConnection.assetsHistory[histId] = history
-                    cost.addAsset(newAsset)
-                    history.addAsset(newAsset)
-                    history.addObject(cost)
-                    
-                    # Add completion information to project
-                    item.project.addAsset(newAsset)
-                    item.project.dateEnd = dialog.dateTxt.text()
-                    
-                    # Add to database
-                    print(newAsset.description, newAsset.acquireDate, newAsset.inSvcDate, newAsset.usefulLife, newAsset.salvageAmount, newAsset.depMethod, int(newAsset.partiallyDisposed))
-                    self.parent.parent.dbCursor.execute("INSERT INTO Assets (Description, AcquireDate, InSvcDate, UsefulLife, SalvageAmount, DepreciationMethod, PartiallyDisposed) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                                        (newAsset.description, str(newAsset.acquireDate), str(newAsset.inSvcDate), newAsset.usefulLife, newAsset.salvageAmount, newAsset.depMethod, int(newAsset.partiallyDisposed)))
-                    self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addAssetType', 'assetTypes', " + str(newAsset.assetType.idNum) + ")")
-                    self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addCompany', 'companies', " + str(newAsset.company.idNum) + ")")
-                    self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addProject', 'projects', " + str(newAsset.fromProject.idNum) + ")")
-                    self.insertIntoDatabase("Xref", "", "('companies', " + str(newAsset.company.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
-                    self.insertIntoDatabase("Xref", "", "('projects', " + str(newAsset.fromProject.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
-                    self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addCost', 'assetCosts', " + str(cost.idNum) + ")")
-                    
-                    self.parent.parent.dbCursor.execute("INSERT INTO AssetHistory (Date, Description, Dollars, PosNeg) VALUES (?, ?, ?, ?)",
-                                                        (str(history.date), history.text, history.amount, history.posNeg))
-                    self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                                        ('assetsHistory', histId, 'addAsset', 'assets', newAsset.idNum))
-                    self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                                        ('assetsHistory', histId, 'addObject', 'assetCosts', cost.idNum))
-                    self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                                        ('assets', newAsset.idNum, 'addHistory', 'assetsHistory', histId))
-                    self.parent.parent.dbCursor.execute("INSERT INTO AssetCosts (Cost, Date) VALUES (?, ?)",
-                                                        (cost.cost, str(dateEnd)))
-                    
-                    self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=? WHERE idNum=?", (item.project.dateEnd, item.project.idNum))
-                    
-                    if parentAssetTxt != "":
-                        self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addSubAssetOf', 'assets', " + str(parentAsset.idNum) + ")")
-                        self.insertIntoDatabase("Xref", "", "('assets', " + str(parentAsset.idNum) + ", 'addSubAsset', 'assets', " + str(newAsset.idNum) + ")")
-                    
-                    self.addAssetToAssetView.emit(newAsset)
-                    
-            self.parent.parent.dbConnection.commit()
-            
-            self.openProjectsTreeWidget.takeTopLevelItem(idxToComplete.row())
-            newItem = ProjectTreeWidgetItem(item.project, self.completedProjectsTreeWidget)
-            self.completedProjectsTreeWidget.addTopLevelItem(newItem)
-            self.refreshOpenProjectTree()
-            self.updateProjectsCount()
+                        if assetType.depreciable == True:
+                            usefulLife = float(dialog.usefulLifeTxt.text())
+                            salvageValue = float(dialog.salvageValueText.text())
+                            depMethod = dialog.depMethodBox.currentText()
+                        else:
+                            usefulLife = None
+                            salvageValue = None
+                            depMethod = None
+                        
+                        # Create new asset and cost
+                        newAsset = Asset(dialog.assetNameTxt.text(),
+                                         dateEnd,
+                                         inSvcDate,
+                                         "",
+                                         None,
+                                         usefulLife,
+                                         salvageValue,
+                                         depMethod,
+                                         int(False),
+                                         assetId)
+                        
+                        parentAssetTxt = dialog.childOfAssetBox.currentText()
+                        cost = AssetCost(assetCost, inSvcDate, costId)
+                        history = AssetHistory(dateEnd,
+                                               constants.ASSET_HIST_PROJ_COMP % item.project.idNum,
+                                               cost.cost,
+                                               constants.POSITIVE,
+                                               histId)
+                        
+                        # Add assetType, company, fromProject, and cost data to asset
+                        newAsset.addAssetType(assetType)
+                        newAsset.addCompany(item.project.company)
+                        newAsset.addProject(item.project)
+                        newAsset.addCost(cost)
+                        newAsset.addHistory(history)
+                        
+                        if parentAssetTxt != "":
+                            parentAssetId = self.stripAllButNumbers(parentAssetTxt)
+                            parentAsset = self.parent.dataConnection.assets[parentAssetId]
+                            newAsset.addSubAssetOf(parentAsset)
+                            parentAsset.addSubAsset(newAsset)
+                        
+                        # Add reverse data
+                        newAsset.company.addAsset(newAsset)
+                        self.parent.dataConnection.assets[assetId] = newAsset
+                        self.parent.dataConnection.assetCosts[costId] = cost
+                        self.parent.dataConnection.assetsHistory[histId] = history
+                        cost.addAsset(newAsset)
+                        history.addAsset(newAsset)
+                        history.addObject(cost)
+                        
+                        # Add completion information to project
+                        item.project.addAsset(newAsset)
+                        item.project.dateEnd = dialog.dateTxt.text()
+                        
+                        # Add to database
+                        self.parent.parent.dbCursor.execute("INSERT INTO Assets (Description, AcquireDate, InSvcDate, UsefulLife, SalvageAmount, DepreciationMethod, PartiallyDisposed) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                                            (newAsset.description, str(newAsset.acquireDate), str(newAsset.inSvcDate), newAsset.usefulLife, newAsset.salvageAmount, newAsset.depMethod, int(newAsset.partiallyDisposed)))
+                        self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addAssetType', 'assetTypes', " + str(newAsset.assetType.idNum) + ")")
+                        self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addCompany', 'companies', " + str(newAsset.company.idNum) + ")")
+                        self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addProject', 'projects', " + str(newAsset.fromProject.idNum) + ")")
+                        self.insertIntoDatabase("Xref", "", "('companies', " + str(newAsset.company.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
+                        self.insertIntoDatabase("Xref", "", "('projects', " + str(newAsset.fromProject.idNum) + ", 'addAsset', 'assets', " + str(newAsset.idNum) + ")")
+                        self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addCost', 'assetCosts', " + str(cost.idNum) + ")")
+                        
+                        self.parent.parent.dbCursor.execute("INSERT INTO AssetHistory (Date, Description, Dollars, PosNeg) VALUES (?, ?, ?, ?)",
+                                                            (str(history.date), history.text, history.amount, history.posNeg))
+                        self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
+                                                            ('assetsHistory', histId, 'addAsset', 'assets', newAsset.idNum))
+                        self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
+                                                            ('assetsHistory', histId, 'addObject', 'assetCosts', cost.idNum))
+                        self.parent.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
+                                                            ('assets', newAsset.idNum, 'addHistory', 'assetsHistory', histId))
+                        self.parent.parent.dbCursor.execute("INSERT INTO AssetCosts (Cost, Date) VALUES (?, ?)",
+                                                            (cost.cost, str(dateEnd)))
+                        
+                        self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=? WHERE idNum=?", (item.project.dateEnd, item.project.idNum))
+                        
+                        if parentAssetTxt != "":
+                            self.insertIntoDatabase("Xref", "", "('assets', " + str(newAsset.idNum) + ", 'addSubAssetOf', 'assets', " + str(parentAsset.idNum) + ")")
+                            self.insertIntoDatabase("Xref", "", "('assets', " + str(parentAsset.idNum) + ", 'addSubAsset', 'assets', " + str(newAsset.idNum) + ")")
+                        
+                        self.addAssetToAssetView.emit(newAsset)
+                        
+                self.parent.parent.dbConnection.commit()
+                
+                self.openProjectsTreeWidget.takeTopLevelItem(idxToComplete.row())
+                newItem = ProjectTreeWidgetItem(item.project, self.completedProjectsTreeWidget)
+                self.completedProjectsTreeWidget.addTopLevelItem(newItem)
+                self.refreshOpenProjectTree()
+                self.updateProjectsCount()
                 
     def abandonProject(self):
-        idxToAbandon = self.openProjectsTreeWidget.indexFromItem(self.openProjectsTreeWidget.currentItem())
-        item = self.openProjectsTreeWidget.itemFromIndex(idxToAbandon)
+        item = self.openProjectsTreeWidget.currentItem()
 
         if item:
-            dialog = CloseProjectDialog(constants.ABD_PROJECT_STATUS, self)
+            dialog = CloseProjectDialog(constants.ABD_PROJECT_STATUS,
+                                        self.dbCur,
+                                        self)
 
             if dialog.exec_():
-                item.project.dateEnd = classes.NewDate(dialog.dateTxt.text())
-                item.project.notes = dialog.reasonTxt.text()
-                
-                self.parent.parent.dbCursor.execute("UPDATE Projects SET DateEnd=?, Notes=? WHERE idNum=?", (str(dialog.dateTxt.text()), dialog.reasonTxt.text(), item.project.idNum))
-                self.parent.parent.dbConnection.commit()
+                dateEnd = dialog.dateTxt.text()
+                notes = dialog.reasonTxt.text()
+                expGLAcct = self.stripAllButNumbers(dialog.glBox.currentText())
+
+                colValDict = {"DateEnd": dateEnd, "Notes": notes}
+                whereDict = {"idNum": item.project}
+                self.updateDatabase("Projects", colValDict, whereDict)
+                self.dbConn.commit()
 
         self.refreshOpenProjectTree()
         self.updateProjectsCount()
@@ -2442,28 +2367,13 @@ class ProjectWidget(ObjectWidget):
             self.openProjectsTreeWidget.setCurrentItem(self.openProjectsTreeWidget.invisibleRootItem())
             self.abandonedProjectsTreeWidget.setCurrentItem(self.abandonedProjectsTreeWidget.invisibleRootItem())
 
-    def nextIdNum(self, name):
-        self.parent.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
-        largestId = self.parent.parent.dbCursor.fetchone()
-        if largestId != None:
-            return largestId[0] + 1
-        else:
-            return 1
-
-    def stripAllButNumbers(self, string):
-        regex = re.match(r"\s*([0-9]+).*", string)
-        return int(regex.groups()[0])
-
-    def insertIntoDatabase(self, tblName, columns, values):
-        sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
-        self.parent.parent.dbCursor.execute(sql)
-
     def showNewProjectDialog(self):
-        dialog = ProjectDialog("New", self.parent.dataConnection.glAccounts, self)
+        dialog = ProjectDialog("New", self.dbCur, self)
         if dialog.exec_():
             # Find current largest id and increment by one
             nextId = self.nextIdNum("Projects")
             date = classes.NewDate(dialog.startDateText.text())
+            companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
             glAccountNum = self.stripAllButNumbers(dialog.glAccountsBox.currentText())
             
             # Create project and add to database
@@ -2472,125 +2382,82 @@ class ProjectWidget(ObjectWidget):
                                  "",
                                  nextId,
                                  "")
-            newProject.addGLAccount(self.parent.dataConnection.glAccounts[glAccountNum])
-            companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
-            newProject.addCompany(self.parent.dataConnection.companies[companyId])
-            self.parent.dataConnection.companies[companyId].addProject(newProject)
-            self.projectsDict[newProject.idNum] = newProject
+
+            columns = ("Description", "DateStart", "Status", "CompanyId",
+                       "GLAccount")
+            values = (newProject.description, str(date),
+                      constants.OPN_PROJECT_STATUS, companyId, glAccountNum)
+            self.insertIntoDatabase("Projects", columns, values)
             
-            self.insertIntoDatabase("Projects", "(Description, DateStart)", "('" + newProject.description + "', '" + str(newProject.dateStart) + "')")
-            self.insertIntoDatabase("Xref", "", "('projects', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
-            self.insertIntoDatabase("Xref", "", "('companies', " + str(companyId) + ", 'addProject', 'projects', " + str(nextId) + ")")
-            self.insertIntoDatabase("Xref", "", "('projects', " + str(nextId) + ", 'addGLAccount', 'glAccounts', " + str(glAccountNum) + ")")
-            
-            self.parent.parent.dbConnection.commit()
+            self.dbConn.commit()
             
             # Make project into a ProjectTreeWidgetItem and add it to ProjectTree
-            item = ProjectTreeWidgetItem(newProject, self.openProjectsTreeWidget)
+            item = ProjectTreeWidgetItem(nextId, self.dbCur, self.openProjectsTreeWidget)
             self.openProjectsTreeWidget.addTopLevelItem(item)
             self.updateProjectsCount()
 
     def showViewProjectDialog(self):
         # Determine which tree the project is in--if any.  If none, don't
         # display dialog
-        idxToShow = self.openProjectsTreeWidget.indexFromItem(self.openProjectsTreeWidget.currentItem())
-        item = self.openProjectsTreeWidget.itemFromIndex(idxToShow)
+        item = self.openProjectsTreeWidget.currentItem()
 
-        if item == None:
-            idxToShow = self.abandonedProjectsTreeWidget.indexFromItem(self.abandonedProjectsTreeWidget.currentItem())
-            item = self.abandonedProjectsTreeWidget.itemFromIndex(idxToShow)
+        if not item:
+            item = self.abandonedProjectsTreeWidget.currentItem()
 
-            if item == None:
-                idxToShow = self.completedProjectsTreeWidget.indexFromItem(self.completedProjectsTreeWidget.currentItem())
-                item = self.completedProjectsTreeWidget.itemFromIndex(idxToShow)
+            if not item:
+                item = self.completedProjectsTreeWidget.currentItem()
         
         if item:
-            dialog = ProjectDialog("View", self.parent.dataConnection.glAccounts, self, item.project)
-            
-            dialog.setWindowTitle("View Project")
+            dialog = ProjectDialog("View", self.dbCur, self, item.project)
             if dialog.exec_():
                 if dialog.hasChanges == True:
                     dateStart = classes.NewDate(dialog.startDateText_edit.text())
+                    companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+                    glAccount = self.stripAllButNumbers(dialog.glAccountsBox.currentText())
                     if dialog.endDateText.text() == "" or dialog.endDateText.text() == None:
-                        dateEnd = ""
+                        dateEnd = None
+                        status = constants.OPN_PROJECT_STATUS
                     else:
-                        dateEnd = classes.NewDate(dialog.endDateText.text())
+                        dateEnd = dialog.endDateText.text()
+                        status = constants.CMP_PROJECT_STATUS
                     
                     # Commit changes to database and to vendor entry
-                    sql = ("UPDATE Projects SET Description = '" + dialog.descriptionText_edit.text() +
-                           "', DateStart = '" + str(dateStart) +
-                           "', DateEnd = '" + str(dateEnd) + 
-                           "' WHERE idNum = " + str(item.project.idNum))
-                    self.parent.parent.dbCursor.execute(sql)
-
-                    if dialog.companyChanged == True:
-                        newCompanyId = self.stripAllButNumbers(dialog.companyBox.currentText())
-
-                        # Change company<->project links in Xref table
-                        sql = ("UPDATE Xref SET ObjectIdBeingLinked = " + str(newCompanyId) +
-                               " WHERE ObjectToAddLinkTo = 'projects' AND" + 
-                               " ObjectIdToAddLinkTo = " + str(item.project.idNum) + " AND" +
-                               " ObjectBeingLinked = 'companies'")
-                        self.parent.parent.dbCursor.execute(sql)
-
-                        sql = ("UPDATE Xref SET ObjectIdToAddLinkTo = " + str(newCompanyId) +
-                               " WHERE ObjectToAddLinkTo = 'companies' AND" +
-                               " ObjectBeingLinked = 'projects' AND" +
-                               " ObjectIdBeingLinked = " + str(item.project.idNum))
-                        self.parent.parent.dbCursor.execute(sql)
-
-                        # Change company<->project links in dataConnection
-                        self.parent.dataConnection.companies[item.project.company.idNum].removeProject(item.project)
-                        item.project.addCompany(self.parent.dataConnection.companies[newCompanyId])
-                        self.parent.dataConnection.companies[newCompanyId].addProject(item.project)
-
-                    if dialog.glAccountChanged == True:
-                        oldGLAccountNum = item.project.glAccount.idNum
-                        newGLAccountNum = self.stripAllButNumbers(dialog.glAccountsBox.currentText())
-
-                        item.project.addGLAccount(self.parent.dataConnection.glAccounts[newGLAccountNum])
-                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='projects' AND ObjectIdToAddLinkTo=? AND Method='addGLAccount' AND ObjectIdBeingLinked=?",
-                                                            (newGLAccountNum, item.project.idNum, oldGLAccountNum))
-
-                    self.parent.parent.dbConnection.commit()
+                    colValDict = {"Description": dialog.descriptionText_edit.text(),
+                                  "DateStart": str(dateStart),
+                                  "DateEnd": dateEnd,
+                                  "Status": status,
+                                  "CompanyId": companyId,
+                                  "GLAccount": glAccount}
+                    whereDict = {"idNum": item.project}
+                    self.updateDatabase("Projects", colValDict, whereDict)
                     
-                    item.project.description = dialog.descriptionText_edit.text()
-                    item.project.dateStart = dateStart
-                    item.project.dateEnd = dateEnd
-                    
+                    self.dbConn.commit()
                     self.openProjectsTreeWidget.refreshData()
                     
     def deleteSelectedProjectFromList(self):
         # Check to see if the item to delete is in the open project tree widget
+        item = self.openProjectsTreeWidget.currentItem()
+        treeWidget = self.openProjectsTreeWidget
         idxToDelete = self.openProjectsTreeWidget.indexOfTopLevelItem(self.openProjectsTreeWidget.currentItem())
 
-        if idxToDelete >= 0:
-            item = self.openProjectsTreeWidget.takeTopLevelItem(idxToDelete)
-        else:
-            idxToDelete = self.completedProjectsTreeWidget.indexOfTopLevelItem(self.completedProjectsTreeWidget.currentItem())
-            if idxToDelete < 0:
-                idxToDelete = self.abandonedProjectsTreeWidget.indexOfTopLevelItem(self.abandonedProjectsTreeWidget.currentItem())
-            item = None
-            
-            if idxToDelete >= 0:
-                # Selected item not in open project tree widget--cannot delete
-                # because it could be converted to an asset.
+        if not item:
+            item = self.completedProjectsTreeWidget.currentItem()
+
+            if not item:
+                item = self.abandonedProjectsTreeWidget.currentItem()
+                treeWidget = self.abandonedProjectsTreeWidget
+            else:
+                item = None
                 deleteError = QMessageBox()
                 deleteError.setWindowTitle("Can't Delete")
                 deleteError.setText("Cannot delete a closed project")
                 deleteError.exec_()
         
         if item:
-            self.parent.parent.dbCursor.execute("DELETE FROM Projects WHERE idNum=?", (item.project.idNum,))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectToAddLinkTo='projects' AND ObjectIdToAddLinkTo=?)",
-                                                (item.project.idNum,))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE (ObjectIdBeingLinked=? AND ObjectBeingLinked='projects')",
-                                                (item.project.idNum,))
-
-            self.parent.dataConnection.companies[item.project.company.idNum].removeProject(item.project)
-            self.projectsDict.pop(item.project.idNum)
-
-            self.parent.parent.dbConnection.commit()
+            whereDict = {"idNum": item.project}
+            self.deleteFromDatabase("Projects", whereDict)
+            
+            self.dbConn.commit()
                 
             self.updateProjectsCount()
             
@@ -3365,43 +3232,34 @@ class GLTreeWidget(NewTreeWidget):
 
             self.topLevelItem(idx).refreshData(dbCur)
             
-class GLWidget(QWidget):
+class GLWidget(ObjectWidget):
     displayGLAcct = pyqtSignal(int)
     
-    def __init__(self, dbCursor, parent):
-        super().__init__()
-        self.dbCursor = dbCursor
-        self.parent = parent
-
-        mainLayout = QVBoxLayout()
-
-        self.chartOfAccountsLabel = QLabel("Chart of Accounts")
-        mainLayout.addWidget(self.chartOfAccountsLabel)
+    def __init__(self, parent, dbConn, dbCur):
+        super().__init__(parent, dbConn, dbCur)
+        mainLayout = QGridLayout()
 
         # Piece together the GL layout
-        subLayout = QHBoxLayout()
-        treeWidgetsLayout = QVBoxLayout()
-
-        self.chartOfAccountsTreeWidget = GLTreeWidget(self.dbCursor, constants.GL_HDR_LIST, constants.GL_HDR_WDTH)
-##        self.chartOfAccountsTreeWidget.currentItemChanged.connect(self.displayGLDetails)
+        self.chartOfAccountsLabel = QLabel("Chart of Accounts")
+        
+        self.chartOfAccountsTreeWidget = GLTreeWidget(dbCur, constants.GL_HDR_LIST, constants.GL_HDR_WDTH)
+        self.chartOfAccountsTreeWidget.currentItemChanged.connect(self.displayGLDetails)
         self.chartOfAccountsTreeWidget.moveGLAcctXToYFromZ.connect(self.moveAcctXToGrpY)
-
-        treeWidgetsLayout.addWidget(self.chartOfAccountsTreeWidget)
-        treeWidgetsLayout.addStretch(1)
 
         buttonWidget = StandardButtonWidget()
         buttonWidget.newButton.clicked.connect(self.showNewGLAccountDialog)
         buttonWidget.viewButton.clicked.connect(self.showViewGLAccountDialog)
         buttonWidget.deleteButton.clicked.connect(self.deleteGLAccount)
         
-        subLayout.addLayout(treeWidgetsLayout)
-        subLayout.addWidget(buttonWidget)
-        mainLayout.addLayout(subLayout)
+        mainLayout.addWidget(self.chartOfAccountsLabel, 0, 0)
+        mainLayout.addWidget(self.chartOfAccountsTreeWidget, 1, 0)
+        mainLayout.addWidget(buttonWidget, 1, 1)
+        mainLayout.setRowStretch(2, 1)
         
         self.setLayout(mainLayout)
 
     def displayGLDetails(self, newItem, oldItem):
-        self.displayGLAcct.emit(newItem.glAccount.idNum)
+        self.displayGLAcct.emit(newItem.glAccount)
         
     def moveAcctXToGrpY(self, acctId, newParentId, oldParentId):
         oldParentItem = self.getItem(oldParentId)
@@ -3413,14 +3271,6 @@ class GLWidget(QWidget):
                 
         newItem = GLTreeWidgetItem(oldItem.glAccount, newParentItem)
         self.chartOfAccountsTreeWidget.addItem(newItem)
-
-    def insertIntoDatabase(self, tblName, columns, values):
-        sql = "INSERT INTO " + tblName + " " + columns + " VALUES " + values
-        self.parent.parent.dbCursor.execute(sql)
-
-    def stripAllButNumbers(self, string):
-        regex = re.match(r"\s*([0-9]+).*", string)
-        return int(regex.groups()[0])
 
     def getParentItem(self, glNum):
         iterator = QTreeWidgetItemIterator(self.chartOfAccountsTreeWidget)
@@ -3512,81 +3362,75 @@ class GLWidget(QWidget):
             self.glAccountsDict.pop(item.glAccount.idNum)
 
 class GLPostingsTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, postingItem, parent):
+    def __init__(self, glPostingDet, dbCur, parent):
         super().__init__(parent)
-        self.glPosting = postingItem
+        self.glPostingDet = glPostingDet
+        self.refreshData(dbCur)
         
-        self.setText(0, str(self.glPosting.detailOf.date))
-        self.setText(1, self.glPosting.detailOf.description)
-        if self.glPosting.debitCredit == constants.DEBIT:
-            self.setText(2, "{: ,.2f}".format(self.glPosting.amount))
+    def refreshData(self, dbCur):
+        dbCur.execute("""SELECT Date, Description, Amount, DebitCredit
+                         FROM GLPostings JOIN GLPostingsDetails
+                         ON GLPostingsDetails.GLPostingId = GLPostings.idNum
+                         WHERE GLPostingsDetails.idNum=?""", (self.glPostingDet,))
+        date, desc, amt, drCr = dbCur.fetchone()
+        
+        self.setText(0, date)
+        self.setText(1, desc)
+        if drCr == constants.DEBIT:
+            self.setText(2, "{: ,.2f}".format(amt))
         else:
-            self.setText(2, "{:-,.2f}".format(-1 * self.glPosting.amount))
-        
-    def refreshData(self):
-        self.setText(0, str(self.glPosting.detailOf.date))
-        self.setText(1, self.glPosting.detailOf.description)
-        self.setText(2, "{:,.2f}".format(self.glPosting.amount))
+            self.setText(2, "{:-,.2f}".format(-1 * amt))
         
 class GLPostingsTreeWidget(NewTreeWidget):
-    def __init__(self, headerList, widthList):
+    def __init__(self, dbCur, headerList, widthList):
         super().__init__(headerList, widthList)
+        self.dbCursor = dbCur
         self.setColumnCount(3)
         self.sortItems(0, Qt.AscendingOrder)
 
-    def buildItems(self, parent, glPostingsDetDict):
-        for glKey in glPostingsDetDict:
-            item = GLPostingsTreeWidgetItem(glPostingsDetDict[glKey], parent)
+    def buildItems(self, parent, glAcct):
+        self.dbCursor.execute("""SELECT idNum FROM GLPostingsDetails
+                                 WHERE GLAccount=?""", (glAcct,))
+        results = self.dbCursor.fetchall()
+        
+        for idNum in results:
+            item = GLPostingsTreeWidgetItem(idNum[0], self.dbCursor, parent)
             self.addTopLevelItem(item)
 
-    def refreshData(self):
+    def refreshData(self, dbCur):
         for idx in range(self.topLevelItemCount()):
-            self.topLevelItem(idx).refreshData()
+            self.topLevelItem(idx).refreshData(dbCur)
 
-class GLPostingsWidget(QWidget):
+class GLPostingsWidget(ObjectWidget):
     postToGL = pyqtSignal(int, object, str, list)
     updateGLPost = pyqtSignal(object, str, str)
     updateGLDet = pyqtSignal(object, float, str)
     deleteGLPost = pyqtSignal(object)
     
-    def __init__(self, parent, companiesDict, glAcctsDict):
-        super().__init__()
-        mainLayout = QVBoxLayout()
-        self.parent = parent
-        self.companiesDict = companiesDict
-        self.glAcctsDict = glAcctsDict
-
-        self.glPostingsLabel = QLabel("Details")
-        mainLayout.addWidget(self.glPostingsLabel)
+    def __init__(self, parent, dbConn, dbCur):
+        super().__init__(parent, dbConn, dbCur)
+        mainLayout = QGridLayout()
 
         # Piece together the GL layout
-        subLayout = QHBoxLayout()
-        treeWidgetsLayout = QVBoxLayout()
-
-        self.glPostingsTreeWidget = GLPostingsTreeWidget(constants.GL_POST_HDR_LIST, constants.GL_POST_HDR_WDTH)
-
-        treeWidgetsLayout.addWidget(self.glPostingsTreeWidget)
-        treeWidgetsLayout.addStretch(1)
+        self.glPostingsLabel = QLabel("Details")
+        self.glPostingsTreeWidget = GLPostingsTreeWidget(dbCur, constants.GL_POST_HDR_LIST, constants.GL_POST_HDR_WDTH)
 
         buttonWidget = StandardButtonWidget()
         buttonWidget.newButton.clicked.connect(self.showNewGLPostingDialog)
         buttonWidget.viewButton.clicked.connect(self.showViewGLPostingDialog)
         buttonWidget.deleteButton.clicked.connect(self.deleteGLPostingAccount)
         
-        subLayout.addLayout(treeWidgetsLayout)
-        subLayout.addWidget(buttonWidget)
-        mainLayout.addLayout(subLayout)
+        mainLayout.addWidget(self.glPostingsLabel, 0, 0)
+        mainLayout.addWidget(self.glPostingsTreeWidget, 1, 0)
+        mainLayout.addWidget(buttonWidget, 1, 1)
+        mainLayout.setRowStretch(2, 1)
 
         self.setLayout(mainLayout)
 
-    def showDetail(self, glAcctNum, glPostingsDetDict):
+    def showDetail(self, glAcctNum):
         self.glPostingsTreeWidget.clear()
-        self.glPostingsTreeWidget.buildItems(self.glPostingsTreeWidget, glPostingsDetDict)
+        self.glPostingsTreeWidget.buildItems(self.glPostingsTreeWidget, glAcctNum)
         
-    def stripAllButNumbers(self, string):
-        regex = re.match(r"\s*([0-9]+).*", string)
-        return int(regex.groups()[0])
-
     def showNewGLPostingDialog(self):
         dialog = NewGLPostingDialog("New", self.companiesDict, self.glAcctsDict)
         if dialog.exec_():
@@ -3621,20 +3465,17 @@ class GLPostingsWidget(QWidget):
 class GLView(QWidget):
     updateGLTree = pyqtSignal()
     
-    def __init__(self, dataConnection, dbCursor, parent):
+    def __init__(self, parent, dbConn, dbCur):
         super().__init__(parent)
-        self.dataConnection = dataConnection
-        self.parent = parent
-
-        self.glWidget = GLWidget(dbCursor, self)
-##        self.glWidget.displayGLAcct.connect(self.displayGLDetails)
-##        self.glPostingsWidget = GLPostingsWidget(self, self.dataConnection.companies, self.dataConnection.glAccounts)
+        self.glWidget = GLWidget(self, dbConn, dbCur)
+        self.glWidget.displayGLAcct.connect(self.displayGLDetails)
+        self.glPostingsWidget = GLPostingsWidget(self, dbConn, dbCur)
 ##        self.glPostingsWidget.postToGL.connect(self.postToGL)
 ##        self.glPostingsWidget.deleteGLPost.connect(self.deleteGLPost)
 
         layout = QVBoxLayout()
         layout.addWidget(self.glWidget)
-##        layout.addWidget(self.glPostingsWidget)
+        layout.addWidget(self.glPostingsWidget)
 
         self.setLayout(layout)
 
@@ -3642,7 +3483,7 @@ class GLView(QWidget):
         self.glWidget.chartOfAccountsTreeWidget.refreshData()
 
     def displayGLDetails(self, glAcctNum):
-        self.glPostingsWidget.showDetail(glAcctNum, self.dataConnection.glAccounts[glAcctNum].postings)
+        self.glPostingsWidget.showDetail(glAcctNum)
 
     def nextIdNum(self, name):
         self.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
