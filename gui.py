@@ -154,7 +154,8 @@ class Window(QMainWindow):
                                      DatePaid      TEXT,
                                      AmountPaid    REAL,
                                      InvoiceId     INTEGER,
-                                     PaymentTypeId INTEGER
+                                     PaymentTypeId INTEGER,
+                                     GLPostingId   INTEGER
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE PaymentTypes

@@ -38,6 +38,7 @@ INV_PAID_STATUS = "Paid"
 # Strings
 GL_POST_PYMT_DESC = "Post payment for invoice %d from vendor %d on %s"
 GL_POST_INV_DESC = "Post invoice %d from vendor %d on %s"
+GL_POST_PROJ_COMP = "Allocated %d%% of project %d to asset %d"
 ASSET_HIST_INV = "Invoice %d posted"
 ASSET_HIST_PROJ_COMP = "Project %d completed"
 ASSET_HIST_DEP = "Depreciation"

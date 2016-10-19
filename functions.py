@@ -9,3 +9,20 @@ def CalculateCIP(dbCur, projectId):
         return 0.0
     else:
         return cip
+
+def CalculateInvoiceBalance(dbCur, invoiceId):
+    invoiceAmt = 0.0
+    paymentAmt = 0.0
+
+    dbCur.execute("""SELECT Cost FROM InvoicesDetails
+                     WHERE InvoiceId=?""",
+                  (invoiceId,))
+    for cost in dbCur:
+        invoiceAmt += cost[0]
+
+    dbCur.execute("""SELECT AmountPaid FROM InvoicesPayments
+                     WHERE InvoiceId=?""", (invoiceId,))
+    for payment in dbCur:
+        paymentAmt += payment[0]
+
+    return invoiceAmt - paymentAmt

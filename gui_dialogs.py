@@ -58,7 +58,7 @@ class VendorDialog(QDialog):
         super().__init__(parent)
         self.vendor = vendor
         self.hasChanges = False
-
+        
         self.layout = QGridLayout()
 
         nameLbl = QLabel("Name:")
@@ -78,12 +78,19 @@ class VendorDialog(QDialog):
         if mode == "View":
             dbCur.execute("SELECT * FROM Vendors WHERE idNum=?", (vendor,))
             idNum, name, address, city, state, zip_, phone, glAcct = dbCur.fetchone()
-            self.nameText = QLabel(name)
-            self.addressText = QLabel(address)
-            self.cityText = QLabel(city)
-            self.stateText = QLabel(state)
-            self.zipText = QLabel(zip_)
-            self.phoneText = QLabel(phone)
+            self.nameText = QLineEdit(name)
+            self.addressText = QLineEdit(address)
+            self.cityText = QLineEdit(city)
+            self.stateText = QLineEdit(state)
+            self.zipText = QLineEdit(zip_)
+            self.phoneText = QLineEdit(phone)
+
+            self.nameText.setEnabled(False)
+            self.addressText.setEnabled(False)
+            self.cityText.setEnabled(False)
+            self.stateText.setEnabled(False)
+            self.zipText.setEnabled(False)
+            self.phoneText.setEnabled(False)
             
             dbCur.execute("SELECT Description FROM GLAccounts WHERE idNum=?",
                           (glAcct,))
@@ -114,11 +121,12 @@ class VendorDialog(QDialog):
         self.layout.addWidget(self.glAccountsBox, 6, 1)
         nextRow = 7
         
-##        if mode == "View":
-##            invoicesWidget = gui_elements.InvoiceTreeWidget(self.vendor.invoices, constants.INVOICE_HDR_LIST, constants.INVOICE_HDR_WDTH)
-##            self.layout.addWidget(invoicesWidget, nextRow, 0, 1, 2)
-##            nextRow += 1
-##            
+        if mode == "View":
+            restriction = ".".join(["VendorId", str(vendor)])
+            invoicesWidget = gui_elements.InvoiceTreeWidget(dbCur, None, constants.INVOICE_HDR_LIST, constants.INVOICE_HDR_WDTH, restriction)
+            self.layout.addWidget(invoicesWidget, nextRow, 0, 1, 2)
+            nextRow += 1
+            
 ##            proposalsWidget = gui_elements.ProposalTreeWidget(self.vendor.proposals, constants.PROPOSAL_HDR_LIST, constants.PROPOSAL_HDR_WDTH)
 ##            self.layout.addWidget(proposalsWidget, nextRow, 0, 1, 2)
 ##            nextRow += 1
@@ -137,27 +145,21 @@ class VendorDialog(QDialog):
             self.setWindowTitle("New Vendor")
     
     def makeLabelsEditable(self):
-        self.nameText_edit = QLineEdit(self.nameText.text())
-        self.nameText_edit.textEdited.connect(self.changed)
-        self.addressText_edit = QLineEdit(self.addressText.text())
-        self.addressText_edit.textEdited.connect(self.changed)
-        self.cityText_edit = QLineEdit(self.cityText.text())
-        self.cityText_edit.textEdited.connect(self.changed)
-        self.stateText_edit = QLineEdit(self.stateText.text())
-        self.stateText_edit.textEdited.connect(self.changed)
-        self.zipText_edit = QLineEdit(self.zipText.text())
-        self.zipText_edit.textEdited.connect(self.changed)
-        self.phoneText_edit = QLineEdit(self.phoneText.text())
-        self.phoneText_edit.textEdited.connect(self.changed)
+        self.nameText.setEnabled(True)
+        self.addressText.setEnabled(True)
+        self.cityText.setEnabled(True)
+        self.stateText.setEnabled(True)
+        self.zipText.setEnabled(True)
+        self.phoneText.setEnabled(True)
+
+        self.nameText.textEdited.connect(self.changed)
+        self.addressText.textEdited.connect(self.changed)
+        self.cityText.textEdited.connect(self.changed)
+        self.stateText.textEdited.connect(self.changed)
+        self.zipText.textEdited.connect(self.changed)
+        self.phoneText.textEdited.connect(self.changed)
         self.glAccountsBox.setEnabled(True)
         self.glAccountsBox.currentIndexChanged.connect(self.changed)
-        
-        self.layout.addWidget(self.nameText_edit, 0, 1)
-        self.layout.addWidget(self.addressText_edit, 1, 1)
-        self.layout.addWidget(self.cityText_edit, 2, 1)
-        self.layout.addWidget(self.stateText_edit, 3, 1)
-        self.layout.addWidget(self.zipText_edit, 4, 1)
-        self.layout.addWidget(self.phoneText_edit, 5, 1)
         
     def changed(self):
         self.hasChanges = True
@@ -296,7 +298,7 @@ class InvoiceDialog(QDialog):
             self.setWindowTitle("New Invoice")
             
     def newPayment(self):
-        dialog = InvoicePaymentDialog("New", self.paymentTypesDict, self, self.invoice)
+        dialog = InvoicePaymentDialog("New", self.dbCur, self, self.invoice)
         if dialog.exec_():
             nextId = self.parent.nextIdNum("InvoicesPayments")
             paymentTypeId = self.parent.stripAllButNumbers(dialog.paymentTypeBox.currentText())
@@ -305,31 +307,34 @@ class InvoiceDialog(QDialog):
 
             # Create new payment and get necessary objects
             newPayment = classes.InvoicePayment(datePd, amtPd, nextId)
-            paymentType = self.paymentTypesDict[paymentTypeId]
             
             # Add to database and to data structure
-            self.parent.insertIntoDatabase("InvoicesPayments", "(DatePaid, AmountPaid)", "('" + str(newPayment.datePaid) + "', " + str(newPayment.amountPaid) + ")")
-            self.parent.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoices', " + str(self.invoice.idNum) + ", 'addPayment', 'invoicesPayments', " + str(nextId) + ")")
-            self.parent.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoicesPayments', " + str(newPayment.idNum) + ", 'addInvoice', 'invoices', " + str(self.invoice.idNum) + ")")
-            self.parent.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('invoicesPayments', " + str(newPayment.idNum) + ", 'addPaymentType', 'paymentTypes', " + str(paymentTypeId) + ")")
-            self.parent.parent.parent.dbConnection.commit()
-            
-            newPayment.addInvoice(self.invoice)
-            self.invoice.addPayment(newPayment)
-            newPayment.addPaymentType(paymentType)
-            self.parent.parent.dataConnection.invoicesPayments[newPayment.idNum] = newPayment
+            columns = ("DatePaid", "AmountPaid", "InvoiceId", "PaymentTypeId")
+            values = (str(datePd), amtPd, self.invoice, paymentTypeId)
+            self.parent.insertIntoDatabase("InvoicesPayments", columns, values)
+            self.parent.dbConn.commit()
             
             # Create GL posting
-            paymentTypeId = self.parent.stripAllButNumbers(dialog.paymentTypeBox.currentText())
-            description = constants.GL_POST_PYMT_DESC % (self.invoice.idNum, self.invoice.vendor.idNum, str(datePd))
-            details = []
-            details.append((amtPd, "CR", self.paymentTypesDict[paymentTypeId].glAccount.idNum, newPayment, "invoicesPayments"))
-            details.append((amtPd, "DR", self.invoice.vendor.glAccount.idNum, None, None))
-            
-            self.parent.postToGL.emit(self.invoice.company.idNum, datePd, description, details)
+            reference = ".".join(["InvoicesPayments", str(nextId)])
+            self.dbCur.execute("""SELECT PaymentTypes.GLAccount,
+                                         Vendors.GLAccount, Vendors.idNum,
+                                         Invoices.CompanyId
+                                  FROM InvoicesPayments
+                                  JOIN Invoices ON InvoicesPayments.InvoiceId = Invoices.idNum
+                                  JOIN Vendors ON Vendors.idNum = Invoices.VendorId
+                                  JOIN PaymentTypes ON InvoicesPayments.PaymentTypeId = PaymentTypes.idNum
+                                  WHERE InvoicesPayments.idNum=?""", (nextId,))
+            pymtGL, vendGL, vendId, compId = self.dbCur.fetchone()
+            description = constants.GL_POST_PYMT_DESC % (self.invoice, vendId, str(datePd))
+            details = [(amtPd, "CR", pymtGL),
+                       (amtPd, "DR", vendGL)]
+            self.parent.postToGL.emit(compId, datePd, description, reference,
+                                      details)
             
             # Add entry to payment tree
-            item = gui_elements.InvoicePaymentTreeWidgetItem(newPayment, self.paymentHistory)
+            item = gui_elements.InvoicePaymentTreeWidgetItem(newPayment.idNum,
+                                                             self.dbCur,
+                                                             self.paymentHistory)
             self.paymentHistory.addTopLevelItem(item)
             
             # Refresh AP info
@@ -337,30 +342,46 @@ class InvoiceDialog(QDialog):
             self.parent.refreshOpenInvoiceTree()
             
     def viewPayment(self):
-        idxToShow = self.paymentHistory.indexFromItem(self.paymentHistory.currentItem())
-        item = self.paymentHistory.itemFromIndex(idxToShow)
+        item = self.paymentHistory.currentItem()
 
         if item:
-            dialog = InvoicePaymentDialog("View", self.paymentTypesDict, self, self.invoice, item.invoicePayment)
+            dialog = InvoicePaymentDialog("View", self.dbCur, self, self.invoice, item.invoicePayment)
             if dialog.exec_():
                 if dialog.hasChanges == True:
-                    newAmtPaid = float(dialog.amountText_edit.text())
-                    newDatePaid = NewDate(dialog.datePaidText_edit.text())
-
+                    newAmtPaid = float(dialog.amountText.text())
+                    newDatePaid = classes.NewDate(dialog.datePaidText.text())
+                    
                     # Change values in data structure and database
-                    item.invoicePayment.datePaid = newDatePaid
-                    item.invoicePayment.amountPaid = newAmtPaid
-                    self.parent.parent.parent.dbCursor.execute("UPDATE InvoicesPayments SET DatePaid=?, AmountPaid=? WHERE idNum=?",
-                                                               (str(newDatePaid), newAmtPaid, item.invoicePayment.idNum))
-                    self.parent.parent.parent.dbConnection.commit()
+                    colValDict = {"DatePaid": str(newDatePaid),
+                                  "AmountPaid": newAmtPaid}
+                    whereDict = {"idNum": item.invoicePayment}
+                    
+                    self.parent.updateDatabase("InvoicesPayments",
+                                               colValDict,
+                                               whereDict)
                     
                     # Update GL post
-                    glDet = item.invoicePayment.glPosting
-                    glPost = glDet.detailOf
-                    glPostDesc = constants.GL_POST_PYMT_DESC % (self.invoice.idNum, self.invoice.vendor.idNum, newDatePaid)
-                    for detailKey, glDetail in glPost.details.items():
-                        self.parent.updateGLDet.emit(glDetail, newAmtPaid, glDetail.debitCredit)
-                    self.parent.updateGLPost.emit(glPost, glPostDesc, newDatePaid)
+                    reference = ".".join(["InvoicesPayments",
+                                          str(item.invoicePayment)])
+                    colValDict = {"Date": str(newDatePaid)}
+                    whereDict = {"Reference": reference}
+                    self.parent.updateDatabase("GLPostings",
+                                               colValDict,
+                                               whereDict)
+                    
+                    self.dbCur.execute("""SELECT GLPostingsDetails.idNum,
+                                                 DebitCredit
+                                          FROM GLPostingsDetails JOIN GLPostings
+                                          ON GLPostings.idNum = GLPostingsDetails.GLPostingId
+                                          WHERE Reference=?""", (reference,))
+                    glPostDetIds = self.dbCur.fetchall()
+                    for glPostDetId, drCr in glPostDetIds:
+                        colValDict = {"Amount": newAmtPaid}
+                        whereDict = {"idNum": glPostDetId}
+                        self.parent.updateDatabase("GLPostingsDetails",
+                                                   colValDict,
+                                                   whereDict)
+                    self.parent.dbConn.commit()
                     self.parent.parent.updateGLTree.emit()
                     
                     # Refresh data
@@ -370,34 +391,33 @@ class InvoiceDialog(QDialog):
                     self.parent.updateVendorTree.emit()
 
     def deletePayment(self):
-        idxToDelete = self.paymentHistory.indexOfTopLevelItem(self.paymentHistory.currentItem())
-
-        if idxToDelete >= 0:
-            item = self.paymentHistory.takeTopLevelItem(idxToDelete)
-
+        item = self.paymentHistory.currentItem()
+        
         if item:
             # Delete payment from database
-            self.parent.parent.parent.dbCursor.execute("DELETE FROM InvoicesPayments WHERE idNum=?",
-                                                       (item.invoicePayment.idNum,))
-            self.parent.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='invoicesPayments' AND ObjectIdToAddLinkTo=?",
-                                                       (item.invoicePayment.idNum,))
-            self.parent.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='invoicesPayments' AND ObjectIdBeingLinked=?",
-                                                       (item.invoicePayment.idNum,))
-            self.parent.parent.parent.dbConnection.commit()
+            self.dbCur.execute("""SELECT GLPostingId FROM InvoicesPayments
+                                  WHERE idNum=?""", (item.invoicePayment,))
+            glPostingId = self.dbCur.fetchone()[0]
             
-            # Delete payment from corporate structure
-            self.invoice.removePayment(item.invoicePayment)
-            self.parent.parent.dataConnection.invoicesPayments.pop(item.invoicePayment.idNum)
+            whereDict = {"idNum": item.invoicePayment}
+            self.parent.deleteFromDatabase("InvoicesPayments", whereDict)
             
-            # Delete GL posting
-            glDet = item.invoicePayment.glPosting
-            glPost = glDet.detailOf
-            self.parent.deleteGLPost.emit(glPost)
+            whereDict = {"idNum": glPostingId}
+            self.parent.deleteFromDatabase("GLPostings", whereDict)
+            
+            whereDict = {"GLPostingId": glPostingId}
+            self.parent.deleteFromDatabase("GLPostingsDetails", whereDict)
+            
+            self.parent.dbConn.commit()
             
             # Refresh data
             self.parent.refreshOpenInvoiceTree()
             self.parent.refreshPaidInvoicesTreeWidget()
             self.parent.updateVendorTree.emit()
+
+            # Remove payment from tree widget
+            idxToDelete = self.paymentHistory.indexOfTopLevelItem(item)
+            self.paymentHistory.takeTopLevelItem(idxToDelete)
     
     def getAcceptedProposalsOfAssetProject(self):
         listOfAcceptedProposals = []
@@ -980,10 +1000,10 @@ class AssetDialog(QDialog):
         self.setFixedSize(self.sizeHint())
 
 class InvoicePaymentDialog(QDialog):
-    def __init__(self, mode, parent=None, invoice=None, invoicePayment=None):
+    def __init__(self, mode, dbCur, parent=None, invoice=None, invoicePayment=None):
         super().__init__(parent)
         self.hasChanges = False
-
+        
         vendorLbl = QLabel("Vendor:")
         invoiceLbl = QLabel("Invoice:")
         paymentTypeLbl = QLabel("Payment Type:")
@@ -991,18 +1011,37 @@ class InvoicePaymentDialog(QDialog):
         amountLbl = QLabel("Amount:")
         
         self.paymentTypeBox = QComboBox()
-        self.paymentTypeBox.addItems(paymentTypeDict.sortedListOfKeysAndNames())
-        self.vendorText = QLabel(invoice.vendor.name)
-        self.invoiceText = QLabel(str(invoice.idNum))
+        dbCur.execute("SELECT idNum, Description FROM PaymentTypes")
+        for idNum, desc in dbCur:
+            self.paymentTypeBox.addItem(constants.ID_DESC % (idNum, desc))
+
+        dbCur.execute("""SELECT Name FROM Vendors
+                         JOIN Invoices ON Vendors.idNum = Invoices.VendorId
+                         WHERE Invoices.idNum=?""", (invoice,))
+        name = dbCur.fetchone()[0]
+        self.vendorText = QLabel(name)
+        self.invoiceText = QLabel(str(invoice))
         
         if mode == "View":
-            self.datePaidText = QLabel(str(invoicePayment.datePaid))
-            self.amountText = QLabel(str(invoicePayment.amountPaid))
-            self.paymentTypeBox.setCurrentIndex(self.paymentTypeBox.findText(constants.ID_DESC % (invoicePayment.paymentType.idNum, invoicePayment.paymentType.description)))
+            dbCur.execute("""SELECT DatePaid, AmountPaid, PaymentTypeId,
+                                    Description
+                             FROM InvoicesPayments JOIN PaymentTypes
+                             ON InvoicesPayments.PaymentTypeId = PaymentTypes.idNum
+                             WHERE InvoicesPayments.idNum=?""",
+                          (invoicePayment,))
+            datePd, amtPd, pymtTypeId, pymtTypeDesc = dbCur.fetchone()
+            
+            self.datePaidText = gui_elements.DateLineEdit(datePd)
+            self.datePaidText.setEnabled(False)
+            self.amountText = QLineEdit(str(amtPd))
+            self.amountText.setEnabled(False)
+            self.paymentTypeBox.setCurrentIndex(self.paymentTypeBox.findText(constants.ID_DESC % (pymtTypeId, pymtTypeDesc)))
             self.paymentTypeBox.setEnabled(False)
         else:
+            balance = functions.CalculateInvoiceBalance(dbCur, invoice)
+            
             self.datePaidText = gui_elements.DateLineEdit()
-            self.amountText = QLineEdit(str(invoice.balance()))
+            self.amountText = QLineEdit(str(balance))
         
         self.layout = QGridLayout()
         self.layout.addWidget(vendorLbl, 0, 0)
@@ -1033,13 +1072,10 @@ class InvoicePaymentDialog(QDialog):
         self.hasChanges = True
 
     def makeLabelsEditable(self):
-        self.datePaidText_edit = gui_elements.DateLineEdit(self.datePaidText.text())
-        self.datePaidText_edit.textEdited.connect(self.changed)
-        self.amountText_edit = QLineEdit(self.amountText.text())
-        self.amountText_edit.textEdited.connect(self.changed)
-
-        self.layout.addWidget(self.datePaidText_edit, 3, 1)
-        self.layout.addWidget(self.amountText_edit, 4, 1)
+        self.datePaidText.setEnabled(True)
+        self.datePaidText.textEdited.connect(self.changed)
+        self.amountText.setEnabled(True)
+        self.amountText.textEdited.connect(self.changed)
         
 class ChangeProposalStatusDialog(QDialog):
     def __init__(self, proposalStatus, parent=None):
@@ -1135,6 +1171,7 @@ class CloseProjectDialog(QDialog):
     def __init__(self, status, dbCur, parent=None, assetName=""):
         super().__init__(parent)
         self.parent = parent
+        self.dbCur = dbCur
 
         layout = QGridLayout()
         
@@ -1232,9 +1269,10 @@ class CloseProjectDialog(QDialog):
 
     def showHideDisposalInfo(self):
         assetTypeId = self.parent.stripAllButNumbers(self.assetTypeBox.currentText())
-        assetType = self.parent.parent.dataConnection.assetTypes[assetTypeId]
-        
-        if assetType.depreciable == False:
+        self.dbCur.execute("SELECT Depreciable FROM AssetTypes WHERE idNum=?",
+                           (assetTypeId,))
+        depreciable = bool(self.dbCur.fetchone()[0])
+        if depreciable == False:
             self.usefulLifeLbl.hide()
             self.usefulLifeTxt.hide()
             self.depMethodLbl.hide()
@@ -1499,10 +1537,9 @@ class DisposeAssetDialog(QDialog):
         self.setWindowTitle("Dispose of Asset")
 
 class GLAccountDialog(QDialog):
-    def __init__(self, mode, parent=None, glAccount=None):
+    def __init__(self, mode, dbCur, parent=None, glAccount=None):
         super().__init__(parent)
         self.hasChanges = False
-        self.accountGroupChanged = False
 
         self.layout = QGridLayout()
         
@@ -1512,19 +1549,32 @@ class GLAccountDialog(QDialog):
         self.listOfAcctGrpsLbl = QLabel("Group under...")
         
         self.acctGrpsBox = QComboBox()
-        self.acctGrpsBox.addItems(parent.parent.dataConnection.glAccounts.accountGroups().sortedListOfKeysAndNames())
+        dbCur.execute("""SELECT idNum, Description FROM GLAccounts
+                         WHERE Placeholder=1""")
+        for idNum, desc in dbCur:
+            self.acctGrpsBox.addItem(constants.ID_DESC % (idNum, desc))
         
         if mode == "View":
-            self.accountNumText = QLabel(str(glAccount.idNum))
-            self.descriptionText = QLabel(glAccount.description)
+            dbCur.execute("""SELECT Description, Placeholder FROM GLAccounts
+                             WHERE idNum=?""", (glAccount,))
+            desc, placeHolder = dbCur.fetchone()
+            
+            self.accountNumText = QLabel(str(glAccount))
+            self.descriptionText = QLabel(desc)
             self.acctGrpChk = QCheckBox()
-            if glAccount.placeHolder == True:
+            if bool(placeHolder) == True:
                 self.acctGrpChk.setCheckState(Qt.Checked)
                 self.listOfAcctGrpsLbl.hide()
                 self.acctGrpsBox.hide()
             else:
+                dbCur.execute("""SELECT a.ParentGL, b.Description
+                                 FROM GLAccounts a
+                                 JOIN GLAccounts b
+                                 ON a.ParentGL = b.idNum
+                                 WHERE a.idNum=?""", (glAccount,))
+                parentGL, parentDesc = dbCur.fetchone()
                 self.acctGrpChk.setCheckState(Qt.Unchecked)
-                self.acctGrpsBox.setCurrentIndex(self.acctGrpsBox.findText(constants.ID_DESC % (glAccount.childOf.idNum, glAccount.childOf.description)))
+                self.acctGrpsBox.setCurrentIndex(self.acctGrpsBox.findText(constants.ID_DESC % (parentGL, parentDesc)))
             self.acctGrpsBox.setEnabled(False)
             self.acctGrpChk.setEnabled(False)
         else:
@@ -1586,20 +1636,31 @@ class GLAccountDialog(QDialog):
             self.acctGrpsBox.show()
 
 class NewPaymentTypeDialog(QDialog):
-    def __init__(self, mode, GLDict, parent=None, paymentType=None):
+    def __init__(self, mode, dbCur, parent=None, paymentType=None):
         super().__init__(parent)
         self.hasChanges = False
-        self.glAccountChanged = False
         
         nameLbl = QLabel("Name:")
         glLbl = QLabel("GL Account:")
         
         self.glAccountsBox = QComboBox()
-        self.glAccountsBox.addItems(GLDict.accounts().sortedListOfKeysAndNames())
+        dbCur.execute("""SELECT idNum, Description FROM GLAccounts
+                         WHERE Placeholder=0""")
+        for idNum, desc in dbCur:
+            self.glAccountsBox.addItem(constants.ID_DESC % (idNum, desc))
         
         if mode == "View":
-            self.nameTxt = QLabel(paymentType.description)
-            self.glAccountsBox.setCurrentIndex(self.glAccountsBox.findText(constants.ID_DESC % (paymentType.glAccount.idNum, paymentType.glAccount.description)))
+            dbCur.execute("""SELECT PaymentTypes.Description, GLAccount,
+                                    GLAccounts.Description
+                             FROM PaymentTypes
+                             JOIN GLAccounts
+                             ON PaymentTypes.GLAccount = GLAccounts.idNUM
+                             WHERE PaymentTypes.idNum=?""", (paymentType,))
+            desc, glAcct, glDesc = dbCur.fetchone()
+            
+            self.nameTxt = QLineEdit(desc)
+            self.nameTxt.setEnabled(False)
+            self.glAccountsBox.setCurrentIndex(self.glAccountsBox.findText(constants.ID_DESC % (glAcct, glDesc)))
             self.glAccountsBox.setEnabled(False)
         else:
             self.nameTxt = QLineEdit()
@@ -1609,14 +1670,14 @@ class NewPaymentTypeDialog(QDialog):
         buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
         buttonWidget.cancelButton.clicked.connect(self.reject)
         
-        layout = QGridLayout()
-        layout.addWidget(nameLbl, 0, 0)
-        layout.addWidget(self.nameTxt, 0, 1)
-        layout.addWidget(glLbl, 2, 0)
-        layout.addWidget(self.glAccountsBox, 2, 1)
-        layout.addWidget(buttonWidget, 5, 0, 1, 2)
+        self.layout = QGridLayout()
+        self.layout.addWidget(nameLbl, 0, 0)
+        self.layout.addWidget(self.nameTxt, 0, 1)
+        self.layout.addWidget(glLbl, 2, 0)
+        self.layout.addWidget(self.glAccountsBox, 2, 1)
+        self.layout.addWidget(buttonWidget, 5, 0, 1, 2)
         
-        self.setLayout(layout)
+        self.setLayout(self.layout)
 
         if mode == "View":
             self.setWindowTitle("View/Edit Payment Type")
@@ -1631,23 +1692,24 @@ class NewPaymentTypeDialog(QDialog):
         self.glAccountChanged = True
 
     def makeLabelsEditable(self):
-        self.nameTxt_edit = QLineEdit(self.nameTxt.text())
-        self.nameTxt_edit.textEdited.connect(self.changed)
+        self.nameTxt.setEnabled(True)
+        self.nameTxt.textEdited.connect(self.changed)
         
         self.glAccountsBox.setEnabled(True)
         self.glAccountsBox.currentIndexChanged.connect(self.glAccountChange)
             
 class PaymentTypeDialog(QDialog):
-    def __init__(self, paymentTypeDict, GLDict, parent=None):
+    def __init__(self, dbCur, parent=None):
         super().__init__(parent)
-        self.paymentTypeDict = paymentTypeDict
-        self.GLDict = GLDict
         self.parent = parent
+        self.dbCur = dbCur
         
         layout = QHBoxLayout()
 
         self.listWidget = QListWidget()
-        self.listWidget.addItems(self.paymentTypeDict.sortedListOfKeysAndNames())
+        dbCur.execute("SELECT idNum, Description FROM PaymentTypes")
+        for idNum, desc in dbCur:
+            self.listWidget.addItem(constants.ID_DESC % (idNum, desc))
         self.listWidget.setCurrentRow(0)
 
         buttonLayout = gui_elements.StandardButtonWidget()
@@ -1667,44 +1729,36 @@ class PaymentTypeDialog(QDialog):
         self.setWindowTitle("Payment Types")
 
     def newPaymentType(self):
-        dialog = NewPaymentTypeDialog("New", self.GLDict, self)
+        dialog = NewPaymentTypeDialog("New", self.dbCur, self)
         if dialog.exec_():
             nextPaymentTypeId = self.parent.nextIdNum("PaymentTypes")
+            desc = dialog.nameTxt.text()
             paymentGLAccountNum = self.parent.stripAllButNumbers(dialog.glAccountsBox.currentText())
             
-            newPaymentType = classes.PaymentType(dialog.nameTxt.text(),
-                                                 nextPaymentTypeId)
-            newPaymentType.addGLAccount(self.GLDict[paymentGLAccountNum])
+            self.listWidget.addItem(constants.ID_DESC % (nextPaymentTypeId, desc))
             
-            self.listWidget.addItem(constants.ID_DESC % (newPaymentType.idNum, newPaymentType.description))
-            self.paymentTypeDict[newPaymentType.idNum] = newPaymentType
+            columns = ("Description", "GLAccount")
+            values = (desc, paymentGLAccountNum)
+            self.parent.insertIntoDatabase("PaymentTypes", columns, values)
+            self.parent.dbConn.commit()
             
-            self.parent.insertIntoDatabase("PaymentTypes", "(Description)", "('" + newPaymentType.description + "')")
-            self.parent.insertIntoDatabase("Xref", "", "('paymentTypes', " + str(newPaymentType.idNum) + ", 'addGLAccount', 'glAccounts', " + str(paymentGLAccountNum) + ")")
-            
-            self.parent.parent.parent.dbConnection.commit()
-
     def showPaymentType(self):
-        idxToShow = self.listWidget.currentRow()
-        item = self.listWidget.item(idxToShow)
-        paymentTypeId = self.parent.stripAllButNumbers(item.text())
-        paymentType = self.paymentTypeDict[paymentTypeId]
+        item = self.listWidget.currentItem()
+        paymentType = self.parent.stripAllButNumbers(item.text())
         
-        dialog = NewPaymentTypeDialog("View", self.GLDict, self, paymentType)
+        dialog = NewPaymentTypeDialog("View", self.dbCur, self, paymentType)
         if dialog.exec_():
             if dialog.hasChanges == True:
-                paymentType.description = dialog.nameTxt_edit.text()
+                desc = dialog.nameTxt.text()
+                glAcct = self.parent.stripAllButNumbers(dialog.glAccountsBox.currentText())
 
-                self.parent.parent.parent.dbCursor.execute("UPDATE PaymentTypes SET Description=? WHERE idNum=?", (paymentType.description, paymentType.idNum))
+                colValDict = {"Description": desc,
+                              "GLAccount": glAcct}
+                whereDict = {"idNum": paymentType}
+                self.parent.updateDatabase("PaymentTypes", colValDict, whereDict)
+                self.parent.dbConn.commit()
 
-                if dialog.glAccountChanged == True:
-                    paymentGLNum = self.parent.stripAllButNumbers(dialog.glAccountsBox.currentText())
-                    paymentType.addGLAccount(self.GLDict[paymentGLNum])
-                    self.parent.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='paymentTypes' AND ObjectIdToAddLinkTo=? AND Method='addGLAccount'",
-                                                               (paymentGLNum, paymentTypeId))
-                self.parent.parent.parent.dbConnection.commit()
-
-                item.setText(constants.ID_DESC % (paymentType.idNum, paymentType.description))
+                item.setText(constants.ID_DESC % (paymentType, desc))
 
     def deletePaymentType(self):
         idxToDelete = self.listWidget.currentRow()
