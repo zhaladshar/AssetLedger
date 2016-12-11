@@ -89,38 +89,127 @@ class NewTreeWidget(QTreeWidget):
             self.header().resizeSection(index, size)
             index += 1
 
-##class AssetCostTreeWidgetItem(QTreeWidgetItem):
-##    def __init__(self, assetItem, parent):
-##        super().__init__(parent)
-##        self.asset = assetItem
-##
-##        self.setText(0, self.asset.idNum)
-##        self.setText(1, self.asset.description)
-##
-##    def refreshData(self):
-##        self.setText(0, self.asset.idNum)
-##        self.setText(1, self.asset.description)
-##
-##class AssetCostTreeWidget(NewTreeWidget):
-##    def __init__(self, asset, headerList, widthList):
-##        super().__init__(headerList, widthList)
-##        self.buildItems(self, asset.costs)
-##        self.setColumnCount(len(headerList))
-##        self.sortItems(0, Qt.AscendingOrder)
-##
-##    def buildItems(self, parent, assetCostDict):
-##        for assetCostKey in assetCostDict:
-##            item = AssetCostTreeWidgetItem(assetCostDict[assetCostKey], parent)
-##            self.addTopLevelItem(item)
-##
-##    def refreshData(self):
-##        for idx in range(self.topLevelItemCount()):
-##            self.topLevelItem(idx).refreshData()
-
-class DepHistoryWidget(QWidget):
+class DeleteButton(QPushButton):
     def __init__(self):
-        super().__init__()
+        super().__init__("-")
+        self.setFixedWidth(30)
+
+class CIPAllocationDetailItem(QWidget):
+    validity = pyqtSignal(bool)
+    delete = pyqtSignal(object)
     
+    def __init__(self, parent, costAmt=""):
+        super().__init__(parent)
+        self.valid = False
+        
+        # Create major GUI elements
+        self.assetTxt = QLineEdit()
+        self.costTxt = QLineEdit(str(costAmt))
+        self.deleteBtn = DeleteButton()
+
+        # Add GUI functionality
+        self.assetTxt.setFixedWidth(133)
+        self.assetTxt.editingFinished.connect(self.validate)
+        self.costTxt.setFixedWidth(60)
+        self.costTxt.editingFinished.connect(self.validate)
+        self.deleteBtn.released.connect(self.deleteLine)
+
+        # Add GUI elements to layout
+        layout = QHBoxLayout()
+        layout.addWidget(self.assetTxt)
+        layout.addWidget(self.costTxt)
+        layout.addWidget(self.deleteBtn)
+        layout.setContentsMargins(0, 1, 0, 1)
+
+        self.setLayout(layout)
+
+    def deleteLine(self):
+        self.delete.emit(self)
+
+    def hasBlanks(self):
+        if self.assetTxt.text() == "" or self.costTxt.text() == "":
+            return True
+
+    def validate(self):
+        self.valid = True
+        if self.assetTxt.text() != "" and self.costTxt.text() != "":
+            try:
+                float(self.costTxt.text())
+            except:
+                self.valid = False
+        else:
+            self.valid = False
+        self.validity.emit(self.valid)
+        
+class CIPAllocationDetailWidget(QWidget):
+    def __init__(self, parent, cipAmt):
+        super().__init__(parent)
+        self.cipAmt = cipAmt
+        
+        self.layout = QVBoxLayout()
+        self.subLayout = QVBoxLayout()
+
+        # Create header
+        headerLayout = QHBoxLayout()
+        
+        hdrAssetLbl = QLabel("Asset Desc")
+        hdrAssetLbl.setFixedWidth(133)
+        hdrAssetLbl.setAlignment(Qt.AlignCenter)
+        self.hdrAmtLbl = QLabel("Cost")
+        self.hdrAmtLbl.setFixedWidth(60)
+        self.hdrAmtLbl.setAlignment(Qt.AlignCenter)
+        
+        headerLayout.addWidget(hdrAssetLbl)
+        headerLayout.addWidget(self.hdrAmtLbl)
+        headerLayout.addSpacing(30)
+        headerLayout.setContentsMargins(0, 1, 0, 1)
+        
+        # Create first blank line
+        self.newLine()
+
+        # Assemble layout
+        self.subLayout.setSpacing(0)
+        
+        self.layout.addLayout(headerLayout)
+        self.layout.addLayout(self.subLayout)
+        self.layout.addStretch(1)
+
+        self.setLayout(self.layout)
+
+    def allocatedCIP(self):
+        allocCIP = 0.0
+
+        for n in range(self.subLayout.count()):
+            costTxt = self.subLayout.itemAt(n).widget().costTxt.text()
+            allocCIP += float(costTxt)
+        return allocCIP
+    
+    def newLine(self):
+        cipAmt = round(self.cipAmt - self.allocatedCIP(), 2)
+
+        if cipAmt > 0.0:
+            detItem = CIPAllocationDetailItem(self, cipAmt)
+            detItem.validity.connect(self.validate)
+            detItem.delete.connect(self.deleteLine)
+
+            self.subLayout.addWidget(detItem)
+        
+    def validate(self):
+        detailsValid = True
+        for n in range(self.subLayout.count()):
+            if self.subLayout.itemAt(n).widget().valid == False:
+                detailsValid = False
+
+        if detailsValid == True:
+            self.newLine()
+            
+    def deleteLine(self, objToDel):
+        index = self.subLayout.indexOf(objToDel)
+        layoutItem = self.subLayout.takeAt(index)
+        widget = layoutItem.widget()
+        widget.close()
+        del widget
+        
 class DepAssetTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, assetItem, parent):
         super().__init__(parent)
@@ -407,13 +496,16 @@ class AssetProjSelector(QGroupBox):
         # unclicked.
         if checked == True:
             self.clear()
-            
+            oldEmit = self.dontEmit
+
+            self.dontEmitSignals(True)
             self.dbCur.execute("""SELECT idNum, Description FROM Assets
                                   WHERE CompanyId=?""",
                                (self.company,))
             for idNum, desc in self.dbCur:
                 self.selector.addItem(constants.ID_DESC % (idNum, desc))
             self.selector.show()
+            self.dontEmitSignals(oldEmit)
             
             self.emitRdoBtnChange()
 
@@ -422,14 +514,17 @@ class AssetProjSelector(QGroupBox):
         # unclicked.
         if checked == True:
             self.clear()
+            oldEmit = self.dontEmit
 
+            self.dontEmitSignals(True)
             self.dbCur.execute("""SELECT idNum, Description FROM Projects
                                   WHERE CompanyId=?""",
                                (self.company,))
             for idNum, desc in self.dbCur:
                 self.selector.addItem(constants.ID_DESC % (idNum, desc))
             self.selector.show()
-
+            self.dontEmitSignals(oldEmit)
+            
             self.emitRdoBtnChange()
 
     def dontEmitSignals(self, tf):
@@ -834,35 +929,38 @@ class ButtonToggleBox(QWidget):
         self.selectionChanged.emit(btnText)
 
 class AssetHistoryTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, historyItem, parent):
+    def __init__(self, historyItem, dbCur, parent):
         super().__init__(parent)
         self.history = historyItem
+        self.refreshData(dbCur)
 
-        self.setText(0, self.history.date)
-        self.setText(1, self.history.text)
-        if self.history.posNeg == constants.POSITIVE:
-            self.setText(2, "{:,.2f}".format(self.history.amount))
+    def refreshData(self, dbCur):
+        dbCur.execute("""SELECT Date, Description, Dollars, PosNeg
+                         FROM AssetHistory WHERE idNum=?""", (self.history,))
+        date, desc, cost, posNeg = dbCur.fetchone()
+        
+        self.setText(0, date)
+        self.setText(1, desc)
+        if posNeg == constants.POSITIVE:
+            self.setText(2, "{:,.2f}".format(cost))
         else:
-            self.setText(2, "{:,.2f}".format(-1 * self.history.amount))
-
-    def refreshData(self):
-        self.setText(0, self.history.date)
-        self.setText(1, self.history.text)
-        if self.history.posNeg == constants.POSITIVE:
-            self.setText(2, "{:,.2f}".format(self.history.amount))
-        else:
-            self.setText(2, "{:,.2f}".format(-1 * self.history.amount))
+            self.setText(2, "{:,.2f}".format(-1 * cost))
 
 class AssetHistoryTreeWidget(NewTreeWidget):
-    def __init__(self, historyDict, headerList, widthList):
+    def __init__(self, dbCur, headerList, widthList, assetId):
         super().__init__(headerList, widthList)
-        self.buildItems(self, historyDict)
+        self.dbCursor = dbCur
+        self.asset = assetId
+        self.buildItems(self)
         self.setColumnCount(len(headerList))
         self.sortItems(0, Qt.AscendingOrder)
 
-    def buildItems(self, parent, historyDict):
-        for historyKey in historyDict:
-            item = AssetHistoryTreeWidgetItem(historyDict[historyKey], parent)
+    def buildItems(self, parent):
+        self.dbCursor.execute("""SELECT idNum FROM AssetHistory
+                                 WHERE AssetId=?""", (self.asset,))
+        histories = self.dbCursor.fetchall()
+        for history in histories:
+            item = AssetHistoryTreeWidgetItem(history[0], self.dbCursor, parent)
             self.addTopLevelItem(item)
 
     def refreshData(self):
@@ -965,27 +1063,21 @@ class VendorWidget(ObjectWidget):
             nextId = self.nextIdNum("Vendors")
             GLNumber = self.stripAllButNumbers(dialog.glAccountsBox.currentText())
             
-            # Create new vendor and add it to database and company data
-            newVendor = Vendor(dialog.nameText.text(),
-                               dialog.addressText.text(),
-                               dialog.cityText.text(),
-                               dialog.stateText.text(),
-                               dialog.zipText.text(),
-                               dialog.phoneText.text(),
-                               GLNumber,
-                               nextId)
-            
             vendTblCols = ("Name", "Address", "City", "State",
                            "ZIP", "Phone", "GLAccount")
-            vendTblVals = (newVendor.name, newVendor.address,
-                           newVendor.city, newVendor.state,
-                           newVendor.zip, newVendor.phone, GLNumber)
+            vendTblVals = (dialog.nameText.text(),
+                           dialog.addressText.text(),
+                           dialog.cityText.text(),
+                           dialog.stateText.text(),
+                           dialog.zipText.text(),
+                           dialog.phoneText.text(),
+                           GLNumber)
             self.insertIntoDatabase("Vendors", vendTblCols, vendTblVals)
             
             self.dbConn.commit()
             
             # Make vendor into a VendorTreeWidgetItem and add it to VendorTree
-            item = VendorTreeWidgetItem(newVendor.idNum, self.dbCur,
+            item = VendorTreeWidgetItem(nextId, self.dbCur,
                                         self.vendorTreeWidget)
             self.vendorTreeWidget.addTopLevelItem(item)
             self.updateVendorCount()
@@ -1078,7 +1170,7 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
                          WHERE InvoiceId=?""", (self.invoice,))
         for payment in dbCur:
             paymentAmt += payment[0]
-            
+        
         self.setText(0, str(self.invoice))
         self.setText(1, vendorName)
         self.setText(2, invoiceDate)
@@ -1088,8 +1180,7 @@ class InvoiceTreeWidgetItem(QTreeWidgetItem):
         self.setText(6, "{:,.2f}".format(invoiceAmt - paymentAmt))
 
 class InvoiceTreeWidget(NewTreeWidget):
-    balanceZero = pyqtSignal(int)
-    balanceNotZero = pyqtSignal(int)
+    moveItem = pyqtSignal(int, str, str)
     
     def __init__(self, dbCursor, status, headerList, widthList, restriction=None):
         super().__init__(headerList, widthList)
@@ -1135,10 +1226,14 @@ class InvoiceTreeWidget(NewTreeWidget):
                 item.refreshData(self.dbCursor)
 
                 balance = float(item.text(6).replace(",", ""))
-                if balance == 0.0:
-                    self.balanceZero.emit(idx)
-                else:
-                    self.balanceNotZero.emit(idx)
+                if self.status == constants.INV_OPEN_STATUS and balance == 0.0:
+                    self.moveItem.emit(idx,
+                                       constants.INV_OPEN_STATUS,
+                                       constants.INV_PAID_STATUS)
+                elif self.status == constants.INV_PAID_STATUS and balance != 0.0:
+                    self.moveItem.emit(idx,
+                                       constants.INV_PAID_STATUS,
+                                       constants.INV_OPEN_STATUS)
             except:
                 pass
 
@@ -1152,19 +1247,19 @@ class InvoiceWidget(ObjectWidget):
     updateGLDet = pyqtSignal(object, float, str, object)
     deleteGLPost = pyqtSignal(object)
     
-    def __init__(self, invoicesDict, invoicesDetailsDict, proposalsDetailsDict, paymentTypesDict, invoicePaymentsDict, parent, dbConn, dbCur):
+    def __init__(self, parent, dbConn, dbCur):
         super().__init__(parent, dbConn, dbCur)
         mainLayout = QGridLayout()
         
         # Piece together the invoices layout
         self.openInvoicesTreeWidget = InvoiceTreeWidget(self.dbCur, constants.INV_OPEN_STATUS, constants.INVOICE_HDR_LIST, constants.INVOICE_HDR_WDTH)
         self.openInvoicesTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(1))
-        self.openInvoicesTreeWidget.balanceZero.connect(self.moveOpenInvoiceToPaid)
+        self.openInvoicesTreeWidget.moveItem.connect(self.moveFromTreeXToTreeY)
 
         self.paidInvoicesTreeWidget = InvoiceTreeWidget(self.dbCur, constants.INV_PAID_STATUS, constants.INVOICE_HDR_LIST, constants.INVOICE_HDR_WDTH)
-        self.paidInvoicesTreeWidget.balanceNotZero.connect(self.movePaidInvoiceToOpen)
         self.paidInvoicesTreeWidget.itemClicked.connect(lambda: self.removeSelectionsFromAllBut(2))
-
+        self.paidInvoicesTreeWidget.moveItem.connect(self.moveFromTreeXToTreeY)
+        
         self.openInvoicesLabel = QLabel()
         self.paidInvoicesLabel = QLabel()
         
@@ -1206,16 +1301,13 @@ class InvoiceWidget(ObjectWidget):
             if dialog.exec_():
                 nextId = self.nextIdNum("InvoicesPayments")
                 paymentTypeId = self.stripAllButNumbers(dialog.paymentTypeBox.currentText())
-                datePd = NewDate(dialog.datePaidText.text())
+                datePd = dialog.datePaidText.text()
                 amtPd = float(dialog.amountText.text())
-                
-                # Create new payment and get necessary objects
-                newPayment = InvoicePayment(datePd, amtPd, nextId)
                 
                 # Add to database and to data structure
                 columns = ("DatePaid", "AmountPaid", "InvoiceId",
                            "PaymentTypeId")
-                values = (str(datePd), amtPd, item.invoice, paymentTypeId)
+                values = (datePd, amtPd, item.invoice, paymentTypeId)
                 self.insertIntoDatabase("InvoicesPayments", columns, values)
                 self.dbConn.commit()
                 
@@ -1256,23 +1348,19 @@ class InvoiceWidget(ObjectWidget):
         dialog.exec_()
 
     def createCostHistory(self, invDate, invoiceId, cost, assetId):
-        costId = self.nextIdNum("AssetCosts")
         reference = ".".join(["Invoices", str(invoiceId)])
-        cost = AssetCost(cost, invDate, assetId, reference, costId)
         
         columns = ("Cost", "Date", "AssetId", "Reference")
-        values = (cost.cost, invDate, assetId, reference)
+        values = (cost, invDate, assetId, reference)
         self.insertIntoDatabase("AssetCosts", columns, values)
 
     def createAssetHistory(self, invDate, invoiceId, cost, assetId):
-        histId = self.nextIdNum("AssetHistory")
-        history = AssetHistory(invDate, constants.ASSET_HIST_INV % invoiceId, cost, constants.POSITIVE, histId)
         reference = ".".join(["Invoices", str(invoiceId)])
         
         columns = ("Date", "Description", "Dollars", "PosNeg",
                    "AssetId", "Reference")
-        values = (invDate, history.text, history.amount,
-                  history.posNeg, assetId, reference)
+        values = (invDate, constants.ASSET_HIST_INV % invoiceId, cost,
+                  constants.POSITIVE, assetId, reference)
         self.insertIntoDatabase("AssetHistory", columns, values)
                 
     def showNewInvoiceDialog(self):
@@ -1282,37 +1370,33 @@ class InvoiceWidget(ObjectWidget):
             invoiceCost = 0.0
             
             # Create new invoice
-            invoiceDate = NewDate(dialog.invoiceDateText.text())
-            dueDate = NewDate(dialog.dueDateText.text())
+            invoiceDate = dialog.invoiceDateText.text()
+            dueDate = dialog.dueDateText.text()
             companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
             vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
-            newInvoice = Invoice(invoiceDate,
-                                 dueDate,
-                                 companyId,
-                                 vendorId,
-                                 nextId)
             
             # Create invoice detail items
-            nextInvoiceDetId = self.nextIdNum("InvoicesDetails")
-            
-            for key in dialog.detailsWidget.details:
-                if dialog.detailsWidget.details[key][2].text() == "":
+            for row, detTuple in dialog.detailsWidget.details.items():
+                detId, detLine, costLine, propBox, rowToUse = detTuple
+                
+                if costLine.text() == "":
                     invoiceDetail = None
                 else:
-                    invoiceDetail = InvoiceDetail(dialog.detailsWidget.details[key][1].text(), float(dialog.detailsWidget.details[key][2].text()), nextInvoiceDetId)
-                    proposalDetId = self.stripAllButNumbers(dialog.detailsWidget.details[key][3].currentText())
+                    invoiceDetail = 1
+                    proposalDetId = self.stripAllButNumbers(propBox.currentText())
                 
                 # Last item in the dialog is a blank line, so a blank invoice
                 # detail will be created.  Ignore it.
                 if invoiceDetail:
-                    invoiceCost += invoiceDetail.cost
+                    cost = float(costLine.text())
+                    invoiceCost += cost
                     columns = ("InvoiceId", "Description", "Cost",
                                "ProposalDetId")
-                    values = (newInvoice.idNum, invoiceDetail.description,
-                              invoiceDetail.cost, proposalDetId)
+                    values = (nextId,
+                              detLine.text(),
+                              cost,
+                              proposalDetId)
                     self.insertIntoDatabase("InvoicesDetails", columns, values)
-                    
-                    nextInvoiceDetId += 1
             
             # Add invoice<->project/asset links
             type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
@@ -1321,13 +1405,13 @@ class InvoiceWidget(ObjectWidget):
                 type_ = "assets"
                 
                 # Create new cost element for asset
-                self.createCostHistory(str(invoiceDate),
+                self.createCostHistory(invoiceDate,
                                        nextId,
                                        invoiceCost,
                                        type_Id)
                 
                 # Create history entry for asset
-                self.createAssetHistory(str(invoiceDate),
+                self.createAssetHistory(invoiceDate,
                                         nextId,
                                         invoiceCost,
                                         type_Id)
@@ -1337,17 +1421,17 @@ class InvoiceWidget(ObjectWidget):
             # Add the invoice to the corporate data structure and update the
             # invoice and the link information to the database
             columns = ("InvoiceDate", "DueDate", "CompanyId", "VendorId")
-            values = (str(invoiceDate), str(dueDate), companyId, vendorId)
+            values = (invoiceDate, dueDate, companyId, vendorId)
             self.insertIntoDatabase("Invoices", columns, values)
             
             columns = ("InvoiceId", "ObjectType", "ObjectId")
-            values = (newInvoice.idNum, type_, type_Id)
+            values = (nextId, type_, type_Id)
             self.insertIntoDatabase("InvoicesObjects", columns, values)
             
             self.dbConn.commit()
             
             # Make invoice into an InvoiceTreeWidgetItem and add it to VendorTree
-            item = InvoiceTreeWidgetItem(newInvoice.idNum,
+            item = InvoiceTreeWidgetItem(nextId,
                                          self.dbCur,
                                          self.openInvoicesTreeWidget)
             self.openInvoicesTreeWidget.addTopLevelItem(item)
@@ -1357,10 +1441,8 @@ class InvoiceWidget(ObjectWidget):
             self.dbCur.execute("SELECT GLAccount FROM Vendors WHERE idNum=?",
                                (vendorId,))
             vendorGLAccount = self.dbCur.fetchone()[0]
-            date = newInvoice.date
-            description = constants.GL_POST_INV_DESC % (newInvoice.idNum, vendorId, date)
-            reference = ".".join(["Invoices", str(newInvoice.idNum)])
-            details = [(invoiceCost, "CR", vendorGLAccount)]
+            description = constants.GL_POST_INV_DESC % (nextId, vendorId, invoiceDate)
+            reference = ".".join(["Invoices", str(nextId)])
             if type_ == "projects":
                 self.dbCur.execute("""SELECT GLAccount FROM Projects
                                     WHERE idNum=?""", (type_Id,))
@@ -1371,8 +1453,9 @@ class InvoiceWidget(ObjectWidget):
                                       ON Assets.AssetTypeId = AssetTypes.idNum
                                       WHERE Assets.idNum=?""", (type_Id,))
             glAcct = self.dbCur.fetchone()[0]
-            details.append((invoiceCost, "DR", glAcct))
-            self.postToGL.emit(companyId, date, description, reference, details)
+            details = [(invoiceCost, "CR", vendorGLAccount),
+                       (invoiceCost, "DR", glAcct)]
+            self.postToGL.emit(companyId, invoiceDate, description, reference, details)
             
             # Update vendor tree widget to display new information based on
             # invoice just created
@@ -1427,7 +1510,7 @@ class InvoiceWidget(ObjectWidget):
                     # it equals 0, this is a newly added detail and so it must
                     # be created and added to database.
                     for row, detTuple in dialog.detailsWidget.details.items():
-                        detId, detLine, costLine, propBox = detTuple
+                        detId, detLine, costLine, propBox, rowToUse = detTuple
                         propDetId = self.stripAllButNumbers(propBox.currentText())
                         if dialog.detailsWidget.details[row][0] > 0:
                             colValDict = {"Description": detLine.text(),
@@ -1441,14 +1524,14 @@ class InvoiceWidget(ObjectWidget):
                             # Make sure description is not blank - if so, this
                             # is the usual blank line at the end of the widget
                             if detLine.text() != "":
-                                columns = ("Invoice", "Description", "Cost",
+                                columns = ("InvoiceId", "Description", "Cost",
                                            "ProposalDetId")
-                                values = (item.proposal, detLine.text(),
+                                values = (item.invoice, detLine.text(),
                                           costLine.text(), propDetId)
                                 self.insertIntoDatabase("InvoicesDetails",
                                                         columns,
                                                         values)
-
+                    
                     # Make any changes to which object the invoice is allocated
                     # to.  If an asset, cascade this change down through the
                     # asset info.
@@ -1621,15 +1704,17 @@ class InvoiceWidget(ObjectWidget):
         self.openInvoicesLabel.setText("Open Invoices: %d" % self.openInvoicesTreeWidget.topLevelItemCount())
         self.paidInvoicesLabel.setText("Paid Invoices: %d" % self.paidInvoicesTreeWidget.topLevelItemCount())
 
-    def moveOpenInvoiceToPaid(self, idx):
-        item = self.openInvoicesTreeWidget.takeTopLevelItem(idx)
-        newItem = InvoiceTreeWidgetItem(item.invoice, self.dbCur, self.paidInvoicesTreeWidget)
-        self.paidInvoicesTreeWidget.addTopLevelItem(newItem)
-
-    def movePaidInvoiceToOpen(self, idx):
-        item = self.paidInvoicesTreeWidget.takeTopLevelItem(idx)
-        newItem = InvoiceTreeWidgetItem(item.invoice, self.dbCur, self.openInvoicesTreeWidget)
-        self.openInvoicesTreeWidget.addTopLevelItem(newItem)
+    def moveFromTreeXToTreeY(self, fromIdx, fromTree, toTree):
+        list_ = [fromTree, toTree]
+        for n in range(len(list_)):
+            if list_[n] == constants.INV_OPEN_STATUS:
+                list_[n] = self.openInvoicesTreeWidget
+            elif list_[n] == constants.INV_PAID_STATUS:
+                list_[n] = self.paidInvoicesTreeWidget
+        
+        item = list_[0].takeTopLevelItem(fromIdx)
+        newItem = InvoiceTreeWidgetItem(item.invoice, self.dbCur, list_[1])
+        list_[1].addTopLevelItem(newItem)
 
 class APView(ObjectWidget):
     updateProjectTree = pyqtSignal()
@@ -1637,14 +1722,12 @@ class APView(ObjectWidget):
     updateCompanyTree = pyqtSignal()
     updateGLTree = pyqtSignal()
     
-    def __init__(self, dataConnection, parent, dbConnection, dbCursor):
+    def __init__(self, parent, dbConnection, dbCursor):
         super().__init__(parent, dbConnection, dbCursor)
-        self.dataConnection = dataConnection
-
         layout = QVBoxLayout()
         
         self.vendorWidget = VendorWidget(self, dbConnection, dbCursor)
-        self.invoiceWidget = InvoiceWidget(self.dataConnection.invoices, self.dataConnection.invoicesDetails, self.dataConnection.proposalsDetails, self.dataConnection.paymentTypes, self.dataConnection.invoicesPayments, self, dbConnection, dbCursor)
+        self.invoiceWidget = InvoiceWidget(self, dbConnection, dbCursor)
         self.invoiceWidget.updateVendorTree.connect(self.updateVendorWidget)
         self.invoiceWidget.updateProjectTree.connect(self.emitUpdateProjectTree)
         self.invoiceWidget.updateAssetTree.connect(self.emitUpdateAssetTree)
@@ -1772,12 +1855,13 @@ class ProposalTreeWidgetItem(QTreeWidgetItem):
             dbCur.execute("SELECT Description FROM Assets WHERE idNum=?",
                           (objectId,))
         desc = dbCur.fetchone()[0]
+        proposalCost = functions.CalculateProposalCost(dbCur, self.proposal)
         
         self.setText(0, str(self.proposal))
         self.setText(1, vendName)
         self.setText(2, propDate)
         self.setText(3, desc)
-##        self.setText(4, "{:,.2f}".format(self.proposal.totalCost()))
+        self.setText(4, "{:,.2f}".format(proposalCost))
         
 class ProposalTreeWidget(NewTreeWidget):
     moveItem = pyqtSignal(int, str, str)
@@ -1909,13 +1993,9 @@ class ProposalWidget(ObjectWidget):
             nextId = self.nextIdNum("Proposals")
             
             # Create proposal and add to database
-            date = classes.NewDate(dialog.dateText.text())
+            date = dialog.dateText.text()
             companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
             vendorId = self.stripAllButNumbers(dialog.vendorBox.currentText())
-            newProposal = Proposal(date,
-                                   constants.OPN_PROPOSAL_STATUS,
-                                   "",
-                                   nextId)
             
             # Add proposal<->project/asset links
             type_Id = self.stripAllButNumbers(dialog.assetProjSelector.selector.currentText())
@@ -1926,7 +2006,7 @@ class ProposalWidget(ObjectWidget):
             
             # Add to database
             columns = ("ProposalDate", "Status", "CompanyId", "VendorId")
-            values = (str(date), constants.OPN_PROPOSAL_STATUS, companyId,
+            values = (date, constants.OPN_PROPOSAL_STATUS, companyId,
                       vendorId)
             self.insertIntoDatabase("Proposals", columns, values)
             
@@ -1938,23 +2018,23 @@ class ProposalWidget(ObjectWidget):
             nextProposalDetId = self.nextIdNum("ProposalsDetails")
             columns = ("ProposalId", "Description", "Cost")
             
-            for key in dialog.detailsWidget.details.keys():
-                if dialog.detailsWidget.details[key][2].text() == "":
+            for row, detTuple in dialog.detailsWidget.details.items():
+                detIdNum, detLine, costLine = detTuple
+                if costLine.text() == "":
                     proposalDetail = None
                 else:
-                    proposalDetail = ProposalDetail(dialog.detailsWidget.details[key][1].text(), float(dialog.detailsWidget.details[key][2].text()), nextProposalDetId)
+                    proposalDetail = 1
 
                 # Last item in the dialog is a blank line, so a blank proposal
                 # detail will be created.  Ignore it.
                 if proposalDetail:
-                    values = (nextId, proposalDetail.description,
-                              proposalDetail.cost)
+                    values = (nextId, detLine.text(), costLine.text())
                     self.insertIntoDatabase("ProposalsDetails", columns, values)
             
             self.dbConn.commit()
 
             # Make proposal into a ProposalTreeWidgetItem and add it to ProposalTree
-            item = ProposalTreeWidgetItem(newProposal.idNum, self.dbCur, self.openProposalsTreeWidget)
+            item = ProposalTreeWidgetItem(nextId, self.dbCur, self.openProposalsTreeWidget)
             self.openProposalsTreeWidget.addTopLevelItem(item)
             self.updateProposalsCount()
             self.updateVendorWidgetTree.emit()
@@ -2236,8 +2316,9 @@ class ProjectWidget(ObjectWidget):
                         assetId = self.nextIdNum("Assets")
                         costId = self.nextIdNum("AssetCosts")
                         histId = self.nextIdNum("AssetHistory")
-                        dateEnd = classes.NewDate(dialog.dateTxt.text())
+                        dateEnd = dialog.dateTxt.text()
                         assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
+                        parentAssetId = self.stripAllButNumbers(parentAssetTxt)
                         if dialog.inSvcChk.isChecked() == True:
                             inSvcDate = str(dateEnd)
                         else:
@@ -2258,31 +2339,8 @@ class ProjectWidget(ObjectWidget):
                             salvageValue = None
                             depMethod = None
                         
-                        # Create new asset and cost
-                        newAsset = Asset(dialog.assetNameTxt.text(),
-                                         dateEnd,
-                                         inSvcDate,
-                                         "",
-                                         None,
-                                         usefulLife,
-                                         salvageValue,
-                                         depMethod,
-                                         int(False),
-                                         assetId)
-                        
-                        parentAssetTxt = dialog.childOfAssetBox.currentText()
-                        cost = AssetCost(assetCost, inSvcDate, costId)
-                        history = AssetHistory(dateEnd,
-                                               constants.ASSET_HIST_PROJ_COMP % item.project.idNum,
-                                               cost.cost,
-                                               constants.POSITIVE,
-                                               histId)
-                        
-                        if parentAssetTxt != "":
-                            parentAssetId = self.stripAllButNumbers(parentAssetTxt)
-                        
                         # Add to database
-                        colValDict = {"DateEnd": str(dateEnd),
+                        colValDict = {"DateEnd": dateEnd,
                                       "Status": constans.CMP_PROJECT_STATUS}
                         whereDict = {"idNum": item.project}
                         self.updateDatabase("Projects", colValDict, whereDict)
@@ -2291,20 +2349,20 @@ class ProjectWidget(ObjectWidget):
                                    "UsefulLife", "SalvageAmount",
                                    "DepreciationMethod", "PartiallyDisposed",
                                    "CompanyId", "AssetTypeId")
-                        values = (newAsset.description, str(dateEnd), inSvcDate,
+                        values = (newAsset.description, dateEnd, inSvcDate,
                                   usefulLife, salvageValue, depMethod, 0,
                                   companyId, assetTypeId)
                         self.insertIntoDatabase("Assets", columns, values)
 
                         columns = ("Date", "Description", "Dollars", "PosNeg",
                                    "AssetId", "Reference")
-                        values = (str(dateEnd), constants.ASSET_HIST_PROJ_COMP % item.project,
+                        values = (dateEnd, constants.ASSET_HIST_PROJ_COMP % item.project,
                                   assetCost, constants.POSITIVE, assetId,
                                   reference)
                         self.insertIntoDatabase("AssetHistory", columns, values)
 
                         columns = ("Cost", "Date", "AssetId", "Reference")
-                        values = (assetCost, str(dateEnd), assetId, reference)
+                        values = (assetCost, dateEnd, assetId, reference)
                         self.insertIntoDatabase("AssetCosts", columns, values)
                         
                         self.addAssetToAssetView.emit(newAsset)
@@ -2339,10 +2397,26 @@ class ProjectWidget(ObjectWidget):
                 dateEnd = dialog.dateTxt.text()
                 notes = dialog.reasonTxt.text()
                 expGLAcct = self.stripAllButNumbers(dialog.glBox.currentText())
-
-                colValDict = {"DateEnd": dateEnd, "Notes": notes}
+                cipAmt = functions.CalculateCIP(self.dbCur, item.project)
+                reference = ".".join(["Projects", str(item.project)])
+                
+                self.dbCur.execute("SELECT CompanyId, GLAccount FROM Projects WHERE idNum=?",
+                                   (item.project,))
+                compId, projectGLAcct = self.dbCur.fetchone()[0]
+                
+                colValDict = {"DateEnd": dateEnd,
+                              "Status": constants.ABD_PROJECT_STATUS,
+                              "Notes": notes}
                 whereDict = {"idNum": item.project}
                 self.updateDatabase("Projects", colValDict, whereDict)
+
+                # Post to GL
+                description = constants.GL_POST_PROJ_ABD % (item.project, notes)
+                details = [(cipAmt, "CR", projectGLAcct),
+                           (cipAmt, "DR", expGLAcct)]
+                self.postToGL.emit(compId, dateEnd, description, reference,
+                                   details)
+                
                 self.dbConn.commit()
 
         self.refreshOpenProjectTree()
@@ -2644,10 +2718,11 @@ class AssetTreeWidgetItem(QTreeWidgetItem):
         dbCur.execute("""SELECT Description, AcquireDate, InSvcDate
                          FROM Assets WHERE idNum=?""", (self.asset,))
         desc, acqDate, svcDate = dbCur.fetchone()
-        
+
+        cost = functions.CalculateAssetCost(dbCur, self.asset)
         self.setText(0, str(self.asset))
         self.setText(1, desc)
-##        self.setText(2, "{:,.2f}".format(self.asset.cost()))
+        self.setText(2, "{:,.2f}".format(cost))
 ##        self.setText(3, "{:,.2f}".format(self.asset.depreciatedAmount()))
         self.setText(4, acqDate)
         self.setText(5, svcDate)
@@ -2672,53 +2747,55 @@ class AssetTreeWidget(NewTreeWidget):
         super().__init__(headerList, widthList)
         self.dbCursor = dbCur
         self.disposedFg = not notDisposed
-        self.itemsInTree = []
         self.buildItems(self)
         self.setColumnCount(6)
         self.sortItems(0, Qt.AscendingOrder)
 
     def buildItems(self, parent):
-        # This function will check to make sure the asset's service status
-        # matches that required by the TreeWidget and also that its idNum has not
-        # already been added to the tree (this condition is caused when an asset
-        # and its subasset have both been disposed; the flat dictionary passed
-        # to the tree will end up adding the subasset when it adds the parent
-        # item's subassets and then again when it reaches that item in the flat
-        # dictionary).  If not, it will create the item, add it to the tree,
-        # and then go through its subassets and add them if their statuses meet
-        # the requirements.  Otherwise, it will cycle to the next
-        self.dbCursor.execute("SELECT idNum, DisposeDate FROM Assets")
+        if self.disposedFg == True:
+            self.dbCursor.execute("""SELECT idNum, DisposeDate
+                                     FROM Assets
+                                     WHERE ParentAssetId IS NULL
+                                     OR ParentAssetId IN
+                                        (SELECT idNum FROM Assets
+                                        WHERE DisposeDate IS NULL)""")
+        else:
+            self.dbCursor.execute("""SELECT idNum, DisposeDate FROM Assets
+                                     WHERE ParentAssetId IS NULL""")
         assetIds = self.dbCursor.fetchall()
         for assetId, dispDate in assetIds:
             if bool(dispDate) == self.disposedFg:
-                if assetId not in self.itemsInTree:
-                    item = AssetTreeWidgetItem(assetId, self.dbCursor, parent)
-                    self.addTopLevelItem(item)
-                    self.itemsInTree.append(assetId)
+                item = AssetTreeWidgetItem(assetId, self.dbCursor, parent)
+                self.addTopLevelItem(item)
 
-                    self.dbCursor.execute(
-                    if assetsDict[assetKey].subAssets:
-                        self.buildChildren(item, assetsDict[assetKey].subAssets)
+                self.dbCursor.execute("""SELECT idNum, DisposeDate
+                                         FROM Assets
+                                         WHERE ParentAssetId=?""",
+                                      (assetId,))
+                childAssets = self.dbCursor.fetchall()
+                for childId, dispDate in childAssets:
+                    self.buildChildren(item, childId, dispDate)
 
-    def buildChildren(self, parent, assetsDict):
-        for assetKey in assetsDict:
-            item = parent
+    def buildChildren(self, parent, childAssetId, dispDate):
+        if bool(dispDate) == self.disposedFg:
+            item = AssetTreeWidgetItem(childAssetId, self.dbCursor, parent)
+            parent.addChild(item)
 
-            if assetsDict[assetKey].disposed() == self.disposedFg:
-                if assetKey not in self.itemsInTree:
-                    item = AssetTreeWidgetItem(assetsDict[assetKey], parent)
-                    parent.addChild(item)
-                    self.itemsInTree.append(assetKey)
-
-                    if assetsDict[assetKey].subAssets:
-                        self.buildChildren(item, assetsDict[assetKey].subAssets)
+            self.dbCursor.execute("""SELECT idNum, DisposeDate
+                                     FROM Assets
+                                     WHERE ParentAssetId=?""",
+                                  (childAssetId,))
+            childAssets = self.dbCursor.fetchall()
+            for childId, dispDate in childAssets:
+                self.buildChildren(item, childId, dispDate)
 
     def refreshChildren(self, parentItem):
         for idx in range(parentItem.childCount()):
-            parentItem.child(idx).refreshData()
-
-            if parentItem.child(idx).asset.disposeDate != "" and self.topLevelItem(idx).asset.disposeDate != None:
-                self.disposeAsset.emit(parentItem.child(idx).asset.idNum)
+            parentItem.child(idx).refreshData(self.dbCursor)
+            childAssetId = parentItem.child(idx).asset
+            
+            if functions.AssetIsDisposed(self.dbCursor, childAssetId):
+                self.disposeAsset.emit(childAssetId)
                 
             if parentItem.child(idx).childCount() > 0:
                 self.refreshChildren(parentItem.child(idx))
@@ -2726,10 +2803,11 @@ class AssetTreeWidget(NewTreeWidget):
     def refreshData(self):
         for idx in range(self.topLevelItemCount()):
             try:
-                self.topLevelItem(idx).refreshData()
-
-                if self.topLevelItem(idx).asset.disposeDate != "" and self.topLevelItem(idx).asset.disposeDate != None:
-                    self.disposeAsset.emit(self.topLevelItem(idx).asset.idNum)
+                self.topLevelItem(idx).refreshData(self.dbCursor)
+                assetId = self.topLevelItem(idx).asset
+                
+                if functions.AssetIsDisposed(self.dbCursor, assetId):
+                    self.disposeAsset.emit(assetId)
                     
                 if self.topLevelItem(idx).childCount() > 0:
                     self.refreshChildren(self.topLevelItem(idx))
@@ -2775,19 +2853,21 @@ class AssetWidget(ObjectWidget):
         mainLayout.addWidget(self.disposedAssetsLabel, 2, 0)
         mainLayout.addWidget(self.disposedAssetsTreeWidget, 3, 0)
         mainLayout.addWidget(buttonWidget, 1, 1, 3, 1)
+        mainLayout.setRowStretch(4, 1)
         
         self.setLayout(mainLayout)
+        self.updateAssetsCount()
 
     def openDepreciationWindow(self):
         dialog = DepreciationDialog(self.assetsDict, self.parent.dataConnection.companies)
         dialog.exec_()
     
     def updateAssetsCount(self):
-        self.currentAssetsLabel.setText("Current Assets: %d / %.02f" % (len(self.assetsDict.currentAssets()), self.assetsDict.currentCost()))
-        self.disposedAssetsLabel.setText("Disposed Assets: %d / %.02f" % (len(self.assetsDict.disposedAssets()), self.assetsDict.disposedCost()))
+        self.currentAssetsLabel.setText("Current Assets: %d / .02f" % self.currentAssetsTreeWidget.topLevelItemCount())
+        self.disposedAssetsLabel.setText("Disposed Assets: %d / .02f" % self.disposedAssetsTreeWidget.topLevelItemCount())
 
     def showAssetTypeDialog(self):
-        dialog = AssetTypeDialog(self.parent.dataConnection.assetTypes, self.parent.dataConnection.glAccounts, self)
+        dialog = AssetTypeDialog(self.dbCur, self)
         dialog.exec_()
 
     def removeSelectionsFromAllBut(self, but):
@@ -2798,108 +2878,131 @@ class AssetWidget(ObjectWidget):
 
     def moveCurrentAssetToDisposed(self, assetId):
         item = self.getItem(assetId)
+        newItem = AssetTreeWidgetItem(item.asset,
+                                      self.dbCur,
+                                      self.disposedAssetsTreeWidget)
         
-        newItem = AssetTreeWidgetItem(item.asset, self.disposedAssetsTreeWidget)
-        # If disposed asset has subassets, we must dispose of them and move them over to newItem
+        # If disposed asset has subassets, we must dispose of them and move them
+        # over to newItem
         if item.childCount() > 0:
             self.moveChildren(item, newItem)
+        
+        # If disposed asset already has a subasset that has been disposed, we
+        # want to merge the newly disposed asset into the tree rather than
+        # create a new entry. Otherwise, make it a top level item in the
+        # disposed asset tree.
+        self.dbCur.execute("""SELECT PartiallyDisposed, ParentAssetId
+                              FROM Assets
+                              WHERE idNum=?""", (assetId,))
+        partiallyDisposed, parentAssetId = self.dbCur.fetchone()
+        if bool(partiallyDisposed) == True:
+            self.dbCur.execute("""SELECT idNum FROM Assets
+                                  WHERE DisposeDate IS NOT NULL AND
+                                        ParentAssetId=?""",
+                               (assetId,))
+            for idNum in self.dbCur:
+                oldItem = self.getItem(idNum[0], self.disposedAssetsTreeWidget)
+                idx = self.disposedAssetsTreeWidget.indexOfTopLevelItem(oldItem)
+                self.disposedAssetsTreeWidget.takeTopLevelItem(idx)
 
-        # If disposed asset already has a subasset that has been disposed, we want to merge the newly
-        # disposed asset into the tree rather than create a new entry.  Otherwise, make it a top level
-        # item in the disposed asset tree
-        if item.asset.partiallyDisposed == True:
-            pass
-        else:
-            self.disposedAssetsTreeWidget.addTopLevelItem(newItem)
-
-        # Remove the top-most disposed item from the list.  If it is a subasset, we must remove it as
-        # a child of its parent.  If it is not, we can remove it through the takeTopLevelItem() method.
-        if item.asset.subAssetOf:
-            parentItem = self.getParentItem(item.asset.idNum)
-            for idx in range(parentItem.childCount()):
-                if parentItem.child(idx).asset.idNum == item.asset.idNum:
-                    childToTake = idx
+                newChildItem = AssetTreeWidgetItem(oldItem.asset,
+                                                   self.dbCur,
+                                                   newItem)
+                self.moveChildren(oldItem, newChildItem)
+                
+                newItem.addChild(newChildItem)
+                
+        self.disposedAssetsTreeWidget.addTopLevelItem(newItem)
+        
+        # Remove the top-most disposed item from the list.  If it is a subasset,
+        # we must remove it as a child of its parent.  If it is not, we can
+        # remove it through the takeTopLevelItem() method.
+        if parentAssetId:
+            parentItem = item.parent()
+            childToTake = parentItem.indexOfChild(item)
             parentItem.takeChild(childToTake)
         else:
             idx = self.currentAssetsTreeWidget.indexOfTopLevelItem(item)
             self.currentAssetsTreeWidget.takeTopLevelItem(idx)
         
         # Make all asset disposal indicator changes
-        item.asset.markDisposals(self.parent.parent.dbCursor, self.parent.parent.dbConnection)
-
+        functions.MarkPartialDisposals(self.dbCur, parentAssetId)
+        self.dbConn.commit()
+        
     def moveChildren(self, oldParentItem, newParentItem):
         while oldParentItem.childCount() > 0:
             child = oldParentItem.takeChild(0)
-            newChild = AssetTreeWidgetItem(child.asset, newParentItem)
+            newChild = AssetTreeWidgetItem(child.asset,
+                                           self.dbCur,
+                                           newParentItem)
             newParentItem.addChild(newChild)
 
             if child.childCount() > 0:
                 self.moveChildren(child, newChild)
                 
-    def getItem(self, assetNum):
-        iterator = QTreeWidgetItemIterator(self.currentAssetsTreeWidget)
-
+    def getItem(self, assetNum, treeWidget=None):
+        if not treeWidget:
+            treeWidget = self.currentAssetsTreeWidget
+            
+        iterator = QTreeWidgetItemIterator(treeWidget)
         while iterator.value():
-            if iterator.value().asset.idNum == assetNum:
+            if iterator.value().asset == assetNum:
                 return iterator.value()
 
             iterator += 1
-            
-    def getParentItem(self, assetNum):
-        iterator = QTreeWidgetItemIterator(self.currentAssetsTreeWidget)
-        
-        while iterator.value():
-            if iterator.value().asset.subAssets:
-                if assetNum in iterator.value().asset.subAssets.keys():
-                    return iterator.value()
-            
-            iterator += 1
-
+    
     def disposeChildAssets(self, parentItem, amt, date):
         for idx in range(parentItem.childCount()):
-            self.parent.parent.dbCursor.execute("UPDATE Assets SET DisposeDate=?, DisposeAmount=? WHERE idNum=?", (str(date), amt, parentItem.child(idx).asset.idNum))
-            parentItem.child(idx).asset.disposeDate = date
-            parentItem.child(idx).asset.disposeAmount = amt
-
+            colValDict = {"DisposeDate": date,
+                          "DisposeAmount": amt}
+            whereDict = {"idNum": parentItem.child(idx).asset}
+            self.updateDatabase("Assets", colValDict, whereDict)
+            
             if parentItem.child(idx).childCount() > 0:
                 self.disposeChildAssets(parentItem.child(idx), amt, date)
 
     def disposeAsset(self):
         # Need to dispose not only given item, but also any child items it may have.
-        idxToDispose = self.currentAssetsTreeWidget.indexFromItem(self.currentAssetsTreeWidget.currentItem())
-        item = self.currentAssetsTreeWidget.itemFromIndex(idxToDispose)
+        item = self.currentAssetsTreeWidget.currentItem()
 
         if item:
             dialog = DisposeAssetDialog(self)
             if dialog.exec_():
-                self.parent.parent.dbCursor.execute("UPDATE Assets SET DisposeDate=?, DisposeAmount=? WHERE idNum=?", (dialog.dispDateTxt.text(), float(dialog.dispAmtTxt.text()), item.asset.idNum))
-                item.asset.disposeDate = classes.NewDate(dialog.dispDateTxt.text())
-                item.asset.disposeAmount = float(dialog.dispAmtTxt.text())
-
+                dispDate = dialog.dispDateTxt.text()
+                dispAmt = float(dialog.dispAmtTxt.text())
+                colValDict = {"DisposeDate": dispDate,
+                              "DisposeAmount": dispAmt}
+                whereDict = {"idNum": item.asset}
+                self.updateDatabase("Assets", colValDict, whereDict)
+                
                 if item.childCount() > 0:
-                    self.disposeChildAssets(item, float(dialog.dispAmtTxt.text()), item.asset.disposeDate)
-
-                self.parent.parent.dbConnection.commit()
+                    self.disposeChildAssets(item, dispAmt, dispDate)
+                
+                self.dbConn.commit()
                 self.refreshAssetTree()
                 self.updateAssetsCount()
 
     def showNewAssetDialog(self):
-        dialog = AssetDialog("New", self)
+        dialog = AssetDialog("New", self.dbCur, self)
         if dialog.exec_():
             # Find current largest id and increment by one
             nextId = self.nextIdNum("Assets")
             companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
             assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
+            description = dialog.descriptionText.text()
+            self.dbCur.execute("""SELECT Depreciable FROM AssetTypes
+                                  WHERE idNum=?""",
+                               (assetTypeId,))
+            depreciable = bool(self.dbCur.fetchone()[0])
             
             # Get and/or set some data elements
-            assetType = self.parent.dataConnection.assetTypes[assetTypeId]
-            dateAcq = classes.NewDate(dialog.dateAcquiredText.text())
+            dateAcq = dialog.dateAcquiredText.text()
             if dialog.dateInSvcText.text() == "":
-                dateInSvc = ""
+                dateInSvc = None
             else:
-                dateInSvc = classes.NewDate(dialog.dateInSvcText.text())
+                dateInSvc = dialog.dateInSvcText.text()
             
-            if assetType.depreciable == True:
+            if depreciable:
                 usefulLife = float(dialog.usefulLifeText.text())
                 depMethod = dialog.depMethodBox.currentText()
                 salvageAmount = float(dialog.salvageValueText.text())
@@ -2909,203 +3012,114 @@ class AssetWidget(ObjectWidget):
                 salvageAmount = None
             
             if dialog.childOfAssetBox.currentText() == "":
-                subAssetOfId = None
+                parentAssetId = None
             else:
-                subAssetOfId = self.stripAllButNumbers(dialog.childOfAssetBox.currentText())
+                parentAssetId = self.stripAllButNumbers(dialog.childOfAssetBox.currentText())
             
-            # Create asset and add to database
-            newAsset = Asset(dialog.descriptionText.text(),
-                             dateAcq,
-                             dateInSvc,
-                             None,
-                             None,
-                             usefulLife,
-                             salvageAmount,
-                             depMethod,
-                             False,
-                             nextId)
+            columns = ("Description", "AcquireDate", "InSvcDate", "UsefulLife",
+                       "SalvageAmount", "DepreciationMethod",
+                       "PartiallyDisposed", "CompanyId", "AssetTypeId",
+                       "ParentAssetId")
+            values = (description, dateAcq, dateInSvc, usefulLife,
+                      salvageAmount, depMethod, 0, companyId, assetTypeId,
+                      parentAssetId)
+            self.insertIntoDatabase("Assets", columns, values)
             
-            self.assetsDict[newAsset.idNum] = newAsset
-            newAsset.addCompany(self.parent.dataConnection.companies[companyId])
-            newAsset.addAssetType(assetType)
-            self.parent.dataConnection.companies[companyId].addAsset(newAsset)
-            
-            self.parent.parent.dbCursor.execute("INSERT INTO Assets (Description, AcquireDate, InSvcDate, UsefulLife, SalvageAmount, DepreciationMethod, PartiallyDisposed) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                                (newAsset.description, str(newAsset.acquireDate), str(newAsset.inSvcDate), newAsset.usefulLife, newAsset.salvageAmount, newAsset.depMethod, int(newAsset.partiallyDisposed)))
-            self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('companies', " + str(companyId) + ", 'addAsset', 'assets', " + str(nextId) + ")")
-            self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addCompany', 'companies', " + str(companyId) + ")")
-            self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addAssetType', 'assetTypes', " + str(assetTypeId) + ")")
-            
-            # Add subasset info, if it exists
-            if subAssetOfId:
-                newAsset.addSubAssetOf(self.parent.dataConnection.assets[subAssetOfId])
-                self.parent.dataConnection.assets[subAssetOfId].addSubAsset(newAsset)
-                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(nextId) + ", 'addSubAssetOf', 'assets', " + str(subAssetOfId) + ")")
-                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(subAssetOfId) + ", 'addSubAsset', 'assets', " + str(nextId) + ")")
-            
-            self.parent.parent.dbConnection.commit()
+            self.dbConn.commit()
             
             # Make asset into an AssetTreeWidgetItem and add it to AssetTree
-            if subAssetOfId == None:
-                item = AssetTreeWidgetItem(newAsset, self.currentAssetsTreeWidget)
+            if parentAssetId == None:
+                item = AssetTreeWidgetItem(nextId, self.dbCur, self.currentAssetsTreeWidget)
                 self.currentAssetsTreeWidget.addTopLevelItem(item)
             else:
-                parentItem = self.getItem(subAssetOfId)
-                item = AssetTreeWidgetItem(newAsset, parentItem)
+                parentItem = self.getItem(parentAssetId)
+                item = AssetTreeWidgetItem(nextId, self.dbCur, parentItem)
                 parentItem.addChild(item)
             
             self.updateAssetsCount()
             
     def showViewAssetDialog(self):
-        # Determine which tree the asset is in--if any.  If none, don't
-        # display dialog
-        idxToShow = self.currentAssetsTreeWidget.indexFromItem(self.currentAssetsTreeWidget.currentItem())
-        item = self.currentAssetsTreeWidget.itemFromIndex(idxToShow)
+        item = self.currentAssetsTreeWidget.currentItem()
 
         if item:
-            dialog = AssetDialog("View", self, item.asset)
-            dialog.setWindowTitle("View Asset")
+            dialog = AssetDialog("View", self.dbCur, self, item.asset)
             
             if dialog.exec_():
                 if dialog.hasChanges == True:
-                    dateAcq = classes.NewDate(dialog.dateAcquiredText_edit.text())
-                    dateInSvc = classes.NewDate(dialog.dateInSvcText_edit.text())
+                    companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
+                    desc = dialog.descriptionText.text()
+                    assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
+                    parentAssetId = self.stripAllButNumbers(dialog.childOfAssetBox.currentText())
+                    if parentAssetId == "":
+                        parentAssetId = None
+                    dateAcq = dialog.dateAcquiredText.text()
+                    dateInSvc = dialog.dateInSvcText.text()
+                    usefulLife = dialog.usefulLifeText.text()
+                    if usefulLife:
+                        depMethod = None
+                        salvageValue = None
+                    else:
+                        usefulLife = float(usefulLife)
+                        depMethod = dialog.depMethodBox.currentText()
+                        salvageValue = float(dialog.salvageValueText.text())
                     
                     # Commit changes to database and to vendor entry
-                    sql = ("UPDATE Assets SET Description = '" + dialog.descriptionText_edit.text() +
-                           "', AcquireDate = '" + str(dateAcq) +
-                           "', InSvcDate = '" + str(dateInSvc) + 
-                           "', UsefulLife = " + dialog.usefulLifeText_edit.text() +
-                           ", SalvageAmount = " + str(dialog.salvageValueText_edit.text()) +
-                           ", DepreciationMethod = '" + dialog.depMethodBox.currentText() + 
-                           "' WHERE idNum = " + str(item.asset.idNum))
-                    self.parent.parent.dbCursor.execute(sql)
-
-                    item.asset.description = dialog.descriptionText_edit.text()
-                    item.asset.acquireDate = dateAcq
-                    item.asset.inSvcDate = dateInSvc
-                    item.asset.usefulLife = dialog.usefulLifeText_edit.text()
-                    item.asset.salvageAmount = float(dialog.salvageValueText_edit.text())
-                    item.asset.depMethod = dialog.depMethodBox.currentText()
-
-                    if dialog.companyChanged == True:
-                        companyId = self.stripAllButNumbers(dialog.companyBox.currentText())
-                        
-                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo='companies' AND ObjectBeingLinked='assets' AND ObjectIdBeingLinked=?", (companyId, item.asset.idNum))
-                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectBeingLinked='companies' AND ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=?", (companyId, item.asset.idNum))
-                        
-                        item.asset.company.removeAsset(item.asset)
-                        item.asset.addCompany(self.parent.dataConnection.companies[companyId])
-                        item.asset.company.addAsset(item.asset)
-                        
-                    if dialog.assetTypeChanged == True:
-                        assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
-                        
-                        self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectBeingLinked='assetTypes' AND ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=?", (assetTypeId, item.asset.idNum))
-                        
-                        item.asset.addAssetType(self.parent.dataConnection.assetTypes[assetTypeId])
-
-                    if dialog.parentAssetChanged == True:
-                        # Check to see if the asset has been changed to be the
-                        # child of a different asset or is now a top-level asset
-                        if dialog.childOfAssetBox.currentText() == "":
-                            # The case where an item is not a subasset, changed
-                            # to a subasset, and then changed back to no subasset
-                            # will flag the parentAssetChanged flag to be true
-                            # even though there is no real change.  Need to make
-                            # sure that item.asset.subAssetOf exists
-                            if item.asset.subAssetOf:
-                                oldParentItem = self.getParentItem(item.asset.idNum)
-                                
-                                item.asset.subAssetOf.removeSubAsset(item.asset)
-                                item.asset.removeSubAssetOf()
-                                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=? AND Method='addSubAssetOf'",
-                                                                    (item.asset.idNum,))
-                                self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='assets' AND ObjectIdBeingLinked=? AND Method='addSubAsset'",
-                                                                    (item.asset.idNum,))
-                                
-                                oldItemIdx = oldParentItem.indexOfChild(item)
-                                oldParentItem.takeChild(oldItemIdx)
-                                newItem = AssetTreeWidgetItem(item.asset, self.currentAssetsTreeWidget)
-                                self.currentAssetsTreeWidget.addTopLevelItem(newItem)
-                        else:
-                            newParentAssetId = self.stripAllButNumbers(dialog.childOfAssetBox.currentText())
-                            
-                            # Make sure subAssetOf exists.  If it doesn't, some
-                            # code will not be used.
-                            if item.asset.subAssetOf:
-                                oldParentItem = self.getParentItem(item.asset.idNum)
-                                
-                                item.asset.subAssetOf.removeSubAsset(item.asset)
-                                item.asset.addSubAssetOf(self.parent.dataConnection.assets[newParentAssetId])
-                                item.asset.subAssetOf.addSubAsset(item.asset)
-                                
-                                oldItemIdx = oldParentItem.indexOfChild(item)
-                                oldParentItem.takeChild(oldItemIdx)
-                                newParentItem = self.getParentItem(item.asset.idNum)
-                                newItem = AssetTreeWidgetItem(item.asset, newParentItem)
-
-                                # Move children of old item to newItem
-                                newItem.assignChildren(item.takeChildren(), newItem)
-                                
-                                childrenIterator = QTreeWidgetItemIterator(newItem)
-                                while childrenIterator.value():
-                                    self.currentAssetsTreeWidget.addItem(childrenIterator.value())
-                                    childrenIterator += 1
-                                
-                                self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=? AND Method='addSubAssetOf' AND ObjectBeingLinked='assets'",
-                                                                    (newParentAssetId, item.asset.idNum))
-                                self.parent.parent.dbCursor.execute("UPDATE Xref SET ObjectIdToAddLinkTo=? WHERE ObjectToAddLinkTo='assets' AND Method='addSubAsset' AND ObjectBeingLinked='assets' AND ObjectIdBeingLinked=?",
-                                                                    (newParentAssetId, item.asset.idNum))
-                            else:
-                                # Changing from no parent asset to a parent
-                                # asset.
-                                item.asset.addSubAssetOf(self.parent.dataConnection.assets[newParentAssetId])
-                                item.asset.subAssetOf.addSubAsset(item.asset)
-                                
-                                oldItemIdx = self.currentAssetsTreeWidget.indexOfTopLevelItem(item)
-                                self.currentAssetsTreeWidget.takeTopLevelItem(oldItemIdx)
-                                parentItem = self.getParentItem(item.asset.idNum)
-                                
-                                newItem = AssetTreeWidgetItem(item.asset, parentItem)
-                                parentItem.addChild(newItem)
-                                
-                                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(item.asset.idNum) + ", 'addSubAssetOf', 'assets', " + str(newParentAssetId) + ")")
-                                self.insertIntoDatabase("Xref", "(ObjectToAddLinkTo, ObjectIdToAddLinkTo, Method, ObjectBeingLinked, ObjectIdBeingLinked)", "('assets', " + str(newParentAssetId) + ", 'addSubAsset', 'assets', " + str(item.asset.idNum) + ")")
-                                
-                    self.parent.parent.dbConnection.commit()
+                    colValDict = {"Description": desc,
+                                  "AcquireDate": dateAcq,
+                                  "InSvcDate": dateInSvc,
+                                  "UsefulLife": usefulLife,
+                                  "SalvageAmount": salvageValue,
+                                  "DepreciationMethod": depMethod,
+                                  "CompanyId": companyId,
+                                  "AssetTypeId": assetTypeId, 
+                                  "ParentAssetId": parentAssetId}
+                    whereDict = {"idNum": item.asset}
+                    self.updateDatabase("Assets", colValDict, whereDict)
+                    
+                    self.dbConn.commit()
                     self.refreshAssetTree()
 
     def deleteSelectedAssetFromList(self):
         # Get the index of the item in the company list to delete
-        idxToDelete = self.currentAssetsTreeWidget.indexOfTopLevelItem(self.currentAssetsTreeWidget.currentItem())
-
-        if idxToDelete >= 0:
-            item = self.currentAssetsTreeWidget.takeTopLevelItem(idxToDelete)
-        else:
-            item = None
+        item = self.currentAssetsTreeWidget.currentItem()
         
         if item:
-            self.parent.parent.dbCursor.execute("DELETE FROM Assets WHERE idNum=?", (item.asset.idNum,))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='assets' AND ObjectIdToAddLinkTo=?", (item.asset.idNum,))
-            self.parent.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='assets' AND ObjectIdBeingLinked=?", (item.asset.idNum,))
-            
-            self.assetsDict.pop(item.asset.idNum)
-            item.asset.company.removeAsset(item.asset)
-            self.parent.parent.dbConnection.commit()
-            
-            self.updateAssetsCount()
+            self.dbCur.execute("""SELECT ProposalId FROM ProposalsObjects
+                                  WHERE ObjectType=? AND ObjectId=?
+                                  UNION
+                                  SELECT InvoiceId FROM InvoicesObjects
+                                  WHERE ObjectType=? AND ObjectId=?""",
+                               ("assets", item.asset, "assets", item.asset))
+            results = self.dbCur.fetchall()
+            if results:
+                deleteError = QMessageBox()
+                deleteError.setWindowTitle("Can't delete")
+                deleteError.setText("Cannot delete an asset that has proposals or invoices.")
+                deleteError.exec_()
+            else:
+                whereDict = {"idNum": item.asset}
+                self.deleteFromDatabase("Assets", whereDict)
+                self.dbConn.commit()
+                
+                if item.parent():
+                    parentItem = item.parent()
+                    idxToDelete = parentItem.indexOfChild(item)
+                    parentItem.takeChild(idxToDelete)
+                else:
+                    idxToDelete = self.currentAssetsTreeWidget.indexOfTopLevelItem(item)
+                    self.currentAssetsTreeWidget.takeTopLevelItem(idxToDelete)
+                
+                self.updateAssetsCount()
 
     def refreshAssetTree(self):
         self.currentAssetsTreeWidget.refreshData()
         
 class AssetView(QWidget):
-    def __init__(self, dataConnection, parent):
+    def __init__(self, parent, dbConn, dbCur):
         super().__init__(parent)
-        self.dataConnection = dataConnection
         self.parent = parent
 
-        self.assetWidget = AssetWidget(self.dataConnection.assets, self)
+        self.assetWidget = AssetWidget(self, dbConn, dbCur)
 
         layout = QVBoxLayout()
         layout.addWidget(self.assetWidget)

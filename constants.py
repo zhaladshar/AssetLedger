@@ -39,9 +39,11 @@ INV_PAID_STATUS = "Paid"
 GL_POST_PYMT_DESC = "Post payment for invoice %d from vendor %d on %s"
 GL_POST_INV_DESC = "Post invoice %d from vendor %d on %s"
 GL_POST_PROJ_COMP = "Allocated %d%% of project %d to asset %d"
+GL_POST_PROJ_ABD = "Abandoned project %d. Reason: %s"
 ASSET_HIST_INV = "Invoice %d posted"
 ASSET_HIST_PROJ_COMP = "Project %d completed"
 ASSET_HIST_DEP = "Depreciation"
+ASSET_HIST_IMP = "Impaired"
 ASSET_HIST_DISP = "Disposed"
 
 #############################

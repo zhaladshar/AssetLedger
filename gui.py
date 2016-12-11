@@ -12,25 +12,24 @@ from gui_dialogs import *
 class Window(QMainWindow):
     def __init__(self, dbName):
         super().__init__()
-        self.data = CorporateStructure()
         self.mainMenu = self.menuBar()
         self.mainWidget = QWidget()
-
+        
         # Import data
         self.importData(dbName)
-
+        
         # Provide layout for views
         self.views = QStackedWidget()
         self.generalView = QWidget()
         self.companyOverview = CompanyView(self, self.dbConnection, self.dbCursor)
         self.proposalOverview = ProposalView(self, self.dbConnection, self.dbCursor)
         self.projectOverview = ProjectView(self, self.dbConnection, self.dbCursor)
-        self.assetOverview = AssetView(self.data, self)
+        self.assetOverview = AssetView(self, self.dbConnection, self.dbCursor)
         self.glOverview = GLView(self, self.dbConnection, self.dbCursor)
-        self.APOverview = APView(self.data, self, self.dbConnection, self.dbCursor)
+        self.APOverview = APView(self, self.dbConnection, self.dbCursor)
         self.companyViewSelected = None
         self.detailViewSelected = None
-
+        
         # Make signal-slot connections
         self.companyOverview.addNewCompany.connect(self.addNewCompanyButton)
         self.companyOverview.deleteCompany.connect(self.deleteCompanyButton)
@@ -41,15 +40,15 @@ class Window(QMainWindow):
         self.APOverview.updateAssetTree.connect(self.assetOverview.assetWidget.refreshAssetTree)
         self.APOverview.updateCompanyTree.connect(self.companyOverview.companyWidget.refreshCompanyTree)
         self.APOverview.updateGLTree.connect(self.glOverview.refreshGL)
-
+        
         # Build menus
         self.buildMenus()
-
+        
         # Build layout
         self.buildLayout()
-
+        
         self.setWindowTitle("AssetLedger")
-
+    
     def importData(self, dbName):
         # Check if database exists.  If so, import; otherwise, initialize db.
         databaseExists = os.path.exists(constants.DB_NAME)
@@ -75,9 +74,12 @@ class Window(QMainWindow):
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE AssetTypes
-                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
-                                     AssetType   TEXT,
-                                     Depreciable INTEGER
+                                    (idNum        INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     AssetType    TEXT,
+                                     Depreciable  INTEGER,
+                                     AssetGL      INTEGER,
+                                     AmortGL      INTEGER,
+                                     AccumAmortGL INTEGER
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE Assets
@@ -92,7 +94,8 @@ class Window(QMainWindow):
                                      DepreciationMethod TEXT,
                                      PartiallyDisposed  INTEGER,
                                      CompanyId          INTEGER,
-                                     AssetTypeId        INTEGER
+                                     AssetTypeId        INTEGER,
+                                     ParentAssetId      INTEGER
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE Companies
