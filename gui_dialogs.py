@@ -1108,47 +1108,69 @@ class CIPAllocationDialog(QDialog):
         
         self.gridLayout = QGridLayout()
         cipLbl = QLabel("CIP")
-        cipAmt = QLabel(str(self.cip))
-        self.details = gui_elements.CIPAllocationDetailWidget(self, self.cip)
-        buttonWidget = gui_elements.SaveViewCancelButtonWidget("New")
+        cipAmt = QLabel(str(round(self.cip, 2)))
+        closeDateLbl = QLabel("Project end date")
+        self.closeDateTxt = gui_elements.DateLineEdit()
+        self.details = gui_elements.CIPAllocationDetailWidget(self,
+                                                              self.cip,
+                                                              dbCur)
+        self.buttonWidget = gui_elements.SaveViewCancelButtonWidget("New")
 
         self.gridLayout.addWidget(cipLbl, 0, 0)
         self.gridLayout.addWidget(cipAmt, 0, 1)
+        self.gridLayout.addWidget(closeDateLbl, 1, 0)
+        self.gridLayout.addWidget(self.closeDateTxt, 1, 1)
         self.gridLayout.addWidget(self.details, 2, 0, 1, 2)
-        self.gridLayout.addWidget(buttonWidget)
+        self.gridLayout.addWidget(self.buttonWidget)
         
         # Add functionality
-        buttonWidget.saveButton.clicked.connect(self.accept)
-        buttonWidget.cancelButton.clicked.connect(self.reject)
+        self.closeDateTxt.editingFinished.connect(self.validateDetails)
+        self.details.validity.connect(self.validate)
+        self.buttonWidget.saveButton.clicked.connect(self.accept)
+        self.buttonWidget.cancelButton.clicked.connect(self.reject)
         
         self.setLayout(self.gridLayout)
         self.setWindowTitle("Allocate Project Costs")
+        self.validate()
+
+    def validateDetails(self):
+        self.details.validateDetails()
         
+    def validate(self, detailsValidity=False):
+        valid = True
+        if self.closeDateTxt.text() == "":
+            valid = False
+        if detailsValidity == False:
+            valid = False
+            
+        if valid == True:
+            self.buttonWidget.enableSave()
+        else:
+            self.buttonWidget.disableSave()
+            
 class CloseProjectDialog(QDialog):
-    def __init__(self, status, dbCur, parent=None, assetName=""):
+    def __init__(self, status, dbCur, parent=None, assetName="", acqDate=""):
         super().__init__(parent)
         self.parent = parent
         self.dbCur = dbCur
-
+        
         layout = QGridLayout()
         
         dateLbl = QLabel("Date:")
-        self.dateTxt = gui_elements.DateLineEdit()
-
+        self.dateTxt = gui_elements.DateLineEdit(acqDate)
+        
         layout.addWidget(dateLbl, 0, 0)
         layout.addWidget(self.dateTxt, 0, 1)
         nextRow = 1
-
+        
         if status == constants.ABD_PROJECT_STATUS:
             reasonLbl = QLabel("Reason:")
             self.reasonTxt = QLineEdit()
 
             glLbl = QLabel("Expense Acct:")
             self.glBox = QComboBox()
-            dbCur.execute("""SELECT idNum, Description FROM GLAccounts
-                             WHERE Placeholder=0""")
-            for idNum, desc in dbCur:
-                self.glBox.addItem(constants.ID_DESC % (idNum, desc))
+            glAccounts = functions.GetListOfGLAccounts(self.dbCur)
+            self.glBox.addItems(glAccounts)
                 
             layout.addWidget(reasonLbl, nextRow, 0)
             layout.addWidget(self.reasonTxt, nextRow, 1)
@@ -1160,21 +1182,23 @@ class CloseProjectDialog(QDialog):
         elif status == constants.CMP_PROJECT_STATUS:
             assetNameLbl = QLabel("Asset Name:")
             self.assetNameTxt = QLineEdit(assetName)
-
+            
             inSvcLbl = QLabel("In Use:")
             self.inSvcChk = QCheckBox()
-
+            
             childOfLbl = QLabel("Child of:")
             self.childOfAssetBox = QComboBox()
+            assets = functions.GetListOfAssets(self.dbCur)
             self.childOfAssetBox.addItem("")
-            self.childOfAssetBox.addItems(parent.parent.dataConnection.assets.sortedListOfKeysAndNames())
-
+            self.childOfAssetBox.addItems(assets)
+            
             self.usefulLifeLbl = QLabel("Useful Life:")
             self.usefulLifeTxt = QLineEdit()
-
+            
             assetTypeLbl = QLabel("Asset Type:")
             self.assetTypeBox = QComboBox()
-            self.assetTypeBox.addItems(parent.parent.dataConnection.assetTypes.sortedListOfKeysAndNames())
+            assetTypes = functions.GetListOfAssetTypes(self.dbCur)
+            self.assetTypeBox.addItems(assetTypes)
             self.assetTypeBox.currentIndexChanged.connect(self.showHideDisposalInfo)
 
             self.depMethodLbl = QLabel("Depreciation Method:")

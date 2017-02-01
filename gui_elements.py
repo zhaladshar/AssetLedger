@@ -94,31 +94,60 @@ class DeleteButton(QPushButton):
         super().__init__("-")
         self.setFixedWidth(30)
 
+class CIPAllocationDetailExpenseItem(QWidget):
+    def __init__(self, parent, dbCur):
+        super().__init__(parent)
+        
+        # Create major GUI elements
+        expenseAcctLbl = QLabel("Expense Acct:")
+        self.glBox = QComboBox()
+        glAccounts = functions.GetListOfGLAccounts(dbCur)
+        self.glBox.addItems(glAccounts)
+        
+        # Add GUI elements to layout
+        layout = QHBoxLayout()
+        layout.addWidget(expenseAcctLbl)
+        layout.addWidget(self.glBox)
+        layout.setContentsMargins(0, 1, 0, 1)
+        
+        self.setLayout(layout)
+        
 class CIPAllocationDetailItem(QWidget):
     validity = pyqtSignal(bool)
     delete = pyqtSignal(object)
     
-    def __init__(self, parent, costAmt=""):
+    def __init__(self, parent, dbCur, costAmt=""):
         super().__init__(parent)
         self.valid = False
         
         # Create major GUI elements
         self.assetTxt = QLineEdit()
-        self.costTxt = QLineEdit(str(costAmt))
+        self.costTxt = QLineEdit(str(round(float(costAmt), 2)))
+        self.expenseChk = QCheckBox()
         self.deleteBtn = DeleteButton()
-
+        self.expenseDetailWidget = CIPAllocationDetailExpenseItem(self, dbCur)
+        
         # Add GUI functionality
         self.assetTxt.setFixedWidth(133)
         self.assetTxt.editingFinished.connect(self.validate)
         self.costTxt.setFixedWidth(60)
         self.costTxt.editingFinished.connect(self.validate)
+        self.expenseChk.stateChanged.connect(self.showHideExpenseGL)
         self.deleteBtn.released.connect(self.deleteLine)
-
+        self.expenseDetailWidget.hide()
+        
         # Add GUI elements to layout
-        layout = QHBoxLayout()
-        layout.addWidget(self.assetTxt)
-        layout.addWidget(self.costTxt)
-        layout.addWidget(self.deleteBtn)
+        layout = QVBoxLayout()
+        
+        layoutRow1 = QHBoxLayout()
+        layoutRow1.addWidget(self.assetTxt)
+        layoutRow1.addWidget(self.costTxt)
+        layoutRow1.addWidget(self.expenseChk)
+        layoutRow1.addWidget(self.deleteBtn)
+        layoutRow1.setContentsMargins(0, 1, 0, 1)
+
+        layout.addLayout(layoutRow1)
+        layout.addWidget(self.expenseDetailWidget)
         layout.setContentsMargins(0, 1, 0, 1)
 
         self.setLayout(layout)
@@ -140,11 +169,20 @@ class CIPAllocationDetailItem(QWidget):
         else:
             self.valid = False
         self.validity.emit(self.valid)
+
+    def showHideExpenseGL(self):
+        if self.expenseChk.isChecked() == True:
+            self.expenseDetailWidget.show()
+        else:
+            self.expenseDetailWidget.hide()
         
 class CIPAllocationDetailWidget(QWidget):
-    def __init__(self, parent, cipAmt):
+    validity = pyqtSignal(bool)
+    
+    def __init__(self, parent, cipAmt, dbCur):
         super().__init__(parent)
         self.cipAmt = cipAmt
+        self.dbCur = dbCur
         
         self.layout = QVBoxLayout()
         self.subLayout = QVBoxLayout()
@@ -158,15 +196,20 @@ class CIPAllocationDetailWidget(QWidget):
         self.hdrAmtLbl = QLabel("Cost")
         self.hdrAmtLbl.setFixedWidth(60)
         self.hdrAmtLbl.setAlignment(Qt.AlignCenter)
+        hdrExpLbl = QLabel("Exp")
+        hdrExpLbl.setFixedWidth(30)
+        hdrExpLbl.setAlignment(Qt.AlignCenter)
         
         headerLayout.addWidget(hdrAssetLbl)
         headerLayout.addWidget(self.hdrAmtLbl)
+        headerLayout.addWidget(hdrExpLbl)
         headerLayout.addSpacing(30)
+        headerLayout.addStretch(1)
         headerLayout.setContentsMargins(0, 1, 0, 1)
         
         # Create first blank line
-        self.newLine()
-
+        self.newLine(cipAmt)
+        
         # Assemble layout
         self.subLayout.setSpacing(0)
         
@@ -184,24 +227,29 @@ class CIPAllocationDetailWidget(QWidget):
             allocCIP += float(costTxt)
         return allocCIP
     
-    def newLine(self):
-        cipAmt = round(self.cipAmt - self.allocatedCIP(), 2)
-
-        if cipAmt > 0.0:
-            detItem = CIPAllocationDetailItem(self, cipAmt)
-            detItem.validity.connect(self.validate)
-            detItem.delete.connect(self.deleteLine)
-
-            self.subLayout.addWidget(detItem)
+    def newLine(self, cipAmt):
+        detItem = CIPAllocationDetailItem(self, self.dbCur, cipAmt)
+        detItem.validity.connect(self.validateDetails)
+        detItem.delete.connect(self.deleteLine)
         
-    def validate(self):
+        self.subLayout.addWidget(detItem)
+        
+    def validateDetails(self):
         detailsValid = True
         for n in range(self.subLayout.count()):
             if self.subLayout.itemAt(n).widget().valid == False:
                 detailsValid = False
-
+        
         if detailsValid == True:
-            self.newLine()
+            cipAmt = round(self.cipAmt - self.allocatedCIP(), 2)
+        
+            if cipAmt > 0.0:
+                self.newLine(cipAmt)
+                self.validity.emit(False)
+            else:
+                self.validity.emit(True)
+        else:
+            self.validity.emit(False)
             
     def deleteLine(self, objToDel):
         index = self.subLayout.indexOf(objToDel)
@@ -253,6 +301,12 @@ class SaveViewCancelButtonWidget(QWidget):
         layout.addWidget(self.cancelButton)
         
         self.setLayout(layout)
+
+    def disableSave(self):
+        self.saveButton.setEnabled(False)
+
+    def enableSave(self):
+        self.saveButton.setEnabled(True)
         
 class GLPostingLineItem(QWidget):
     deleteRow = pyqtSignal(int)
@@ -387,7 +441,8 @@ class InvoicePaymentTreeWidget(NewTreeWidget):
     def buildItems(self, parent):
         self.dbCursor.execute("""SELECT idNum FROM InvoicesPayments
                                  WHERE InvoiceId=?""", (self.invoice,))
-        for idNum in self.dbCursor:
+        results = self.dbCursor.fetchall()
+        for idNum in results:
             item = InvoicePaymentTreeWidgetItem(idNum[0], self.dbCursor, parent)
             self.addTopLevelItem(item)
 
@@ -1321,8 +1376,8 @@ class InvoiceWidget(ObjectWidget):
                                       ON Invoices.idNum = InvoicesPayments.InvoiceID
                                       JOIN PaymentTypes
                                       ON PaymentTypes.idNum = InvoicesPayments.PaymentTypeId
-                                      WHERE Invoices.idNum=?""",
-                                   (item.invoice,))
+                                      WHERE Invoices.idNum=? AND InvoicesPayments.idNum=?""",
+                                   (item.invoice, nextId))
                 companyId, vendorId, vendGLAcct, pymtGLAccount = self.dbCur.fetchone()
                 reference = ".".join(["InvoicesPayments", str(nextId)])
                 
@@ -2234,7 +2289,7 @@ class ProjectTreeWidget(NewTreeWidget):
                 pass
 
 class ProjectWidget(ObjectWidget):
-    addAssetToAssetView = pyqtSignal(object)
+    addAssetToAssetView = pyqtSignal(int)
     postToGL = pyqtSignal(int, object, str, str, list)
     
     def __init__(self, parent, dbConn, dbCur):
@@ -2300,84 +2355,107 @@ class ProjectWidget(ObjectWidget):
         if item:
             preDialog = CIPAllocationDialog(item.project, self.dbCur)
             if preDialog.exec_():
-                lastRowOfLayout = preDialog.gridLayout.rowCount() - 1
+                entryCount = preDialog.details.subLayout.count()
                 
                 self.dbCur.execute("""SELECT CompanyId, GLAccount
                                       FROM Projects
                                       WHERE idNum=?""", (item.project,))
                 companyId, projGLAcct = self.dbCur.fetchone()
-
                 cipAmt = functions.CalculateCIP(self.dbCur, item.project)
-                for n in range(2, lastRowOfLayout):
-                    assetName = preDialog.gridLayout.itemAtPosition(n, 0).widget().text()
-                    assetCost = round(float(preDialog.gridLayout.itemAtPosition(n, 1).widget().text()), 2)
-                    dialog = CloseProjectDialog(constants.CMP_PROJECT_STATUS, self.dbCur, self, assetName)
-                    if dialog.exec_():
-                        assetId = self.nextIdNum("Assets")
-                        costId = self.nextIdNum("AssetCosts")
-                        histId = self.nextIdNum("AssetHistory")
-                        dateEnd = dialog.dateTxt.text()
-                        assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
-                        parentAssetId = self.stripAllButNumbers(parentAssetTxt)
-                        if dialog.inSvcChk.isChecked() == True:
-                            inSvcDate = str(dateEnd)
-                        else:
-                            inSvcDate = None
-                        
-                        reference = ".".join(["Projects", item.project])
-                        
-                        self.dbCur.execute("""SELECT Depreciable, AssetGL
-                                              FROM AssetTypes
-                                              WHERE idNum=?""", (assetTypeId,))
-                        depreciable, assetGL = self.dbCur.fetchone()
-                        if bool(depreciable) == True:
-                            usefulLife = float(dialog.usefulLifeTxt.text())
-                            salvageValue = float(dialog.salvageValueText.text())
-                            depMethod = dialog.depMethodBox.currentText()
-                        else:
-                            usefulLife = None
-                            salvageValue = None
-                            depMethod = None
-                        
-                        # Add to database
-                        colValDict = {"DateEnd": dateEnd,
-                                      "Status": constans.CMP_PROJECT_STATUS}
-                        whereDict = {"idNum": item.project}
-                        self.updateDatabase("Projects", colValDict, whereDict)
-
-                        columns = ("Description", "AcquireDate", "InSvcDate",
-                                   "UsefulLife", "SalvageAmount",
-                                   "DepreciationMethod", "PartiallyDisposed",
-                                   "CompanyId", "AssetTypeId")
-                        values = (newAsset.description, dateEnd, inSvcDate,
-                                  usefulLife, salvageValue, depMethod, 0,
-                                  companyId, assetTypeId)
-                        self.insertIntoDatabase("Assets", columns, values)
-
-                        columns = ("Date", "Description", "Dollars", "PosNeg",
-                                   "AssetId", "Reference")
-                        values = (dateEnd, constants.ASSET_HIST_PROJ_COMP % item.project,
-                                  assetCost, constants.POSITIVE, assetId,
-                                  reference)
-                        self.insertIntoDatabase("AssetHistory", columns, values)
-
-                        columns = ("Cost", "Date", "AssetId", "Reference")
-                        values = (assetCost, dateEnd, assetId, reference)
-                        self.insertIntoDatabase("AssetCosts", columns, values)
-                        
-                        self.addAssetToAssetView.emit(newAsset)
-
-                        # Create GL entry
-                        description = constants.GL_POST_PROJ_COMP % (cipAmt / assetCost,
-                                                                     item.project,
-                                                                     assetId)
-                        details = [(assetCost, "CR", projGLAcct),
-                                   (assetCost, "DR", assetGL)]
-                        self.postToGL.emit(companyId, dateEnd, description,
-                                           reference, details)
-                self.dbConn.commit()
+                acqDate = preDialog.closeDateTxt.text()
+                glDict = {}
                 
-                self.openProjectsTreeWidget.takeTopLevelItem(idxToComplete.row())
+                for n in range(entryCount):
+                    widgetItem = preDialog.details.subLayout.itemAt(n).widget()
+                    assetName = widgetItem.assetTxt.text()
+                    assetCost = round(float(widgetItem.costTxt.text()), 2)
+                    expenseFg = widgetItem.expenseChk.checkState()
+
+                    if expenseFg == 0:
+                        dialog = CloseProjectDialog(constants.CMP_PROJECT_STATUS, self.dbCur, self, assetName, acqDate)
+                        if dialog.exec_():
+                            assetId = self.nextIdNum("Assets")
+                            costId = self.nextIdNum("AssetCosts")
+                            histId = self.nextIdNum("AssetHistory")
+                            dateEnd = dialog.dateTxt.text()
+                            description = dialog.assetNameTxt.text()
+                            assetTypeId = self.stripAllButNumbers(dialog.assetTypeBox.currentText())
+                            parentAssetId = self.stripAllButNumbers(dialog.childOfAssetBox.currentText())
+                            
+                            if dialog.inSvcChk.isChecked() == True:
+                                inSvcDate = dateEnd
+                            else:
+                                inSvcDate = None
+                            
+                            reference = ".".join(["Projects", str(item.project)])
+                            
+                            self.dbCur.execute("""SELECT Depreciable, AssetGL
+                                                  FROM AssetTypes
+                                                  WHERE idNum=?""", (assetTypeId,))
+                            depreciable, assetGL = self.dbCur.fetchone()
+                            
+                            if bool(depreciable) == True:
+                                usefulLife = float(dialog.usefulLifeTxt.text())
+                                salvageValue = float(dialog.salvageValueText.text())
+                                depMethod = dialog.depMethodBox.currentText()
+                            else:
+                                usefulLife = None
+                                salvageValue = None
+                                depMethod = None
+                            
+                            # Add to database
+                            colValDict = {"DateEnd": dateEnd,
+                                          "Status": constants.CMP_PROJECT_STATUS}
+                            whereDict = {"idNum": item.project}
+                            self.updateDatabase("Projects", colValDict, whereDict)
+                            
+                            columns = ("Description", "AcquireDate", "InSvcDate",
+                                       "UsefulLife", "SalvageAmount",
+                                       "DepreciationMethod", "PartiallyDisposed",
+                                       "CompanyId", "AssetTypeId", "ParentAssetId")
+                            values = (description, dateEnd, inSvcDate,
+                                      usefulLife, salvageValue, depMethod, 0,
+                                      companyId, assetTypeId, parentAssetId)
+                            self.insertIntoDatabase("Assets", columns, values)
+                            
+                            columns = ("Date", "Description", "Dollars", "PosNeg",
+                                       "AssetId", "Reference")
+                            values = (dateEnd,
+                                      constants.ASSET_HIST_PROJ_COMP % item.project,
+                                      assetCost, constants.POSITIVE, assetId,
+                                      reference)
+                            self.insertIntoDatabase("AssetHistory", columns, values)
+                            
+                            columns = ("Cost", "Date", "AssetId", "Reference")
+                            values = (assetCost, dateEnd, assetId, reference)
+                            self.insertIntoDatabase("AssetCosts", columns, values)
+                            
+                            self.addAssetToAssetView.emit(assetId)
+
+                            # Add info to GL dict
+                            if assetGL in glDict.keys():
+                                glDict[assetGL] += assetCost
+                            else:
+                                glDict[assetGL] = assetCost
+                    else:
+                        expGL = widgetItem.expenseDetailWidget.glBox.currentText()
+                        expGL = self.stripAllButNumbers(expGL)
+                        if expGL in glDict.keys():
+                            glDict[expGL] += assetCost
+                        else:
+                            glDict[expGL] = assetCost
+                            
+                # Create GL entry
+                description = constants.GL_POST_PROJ_COMP % (item.project,)
+                details = [(cipAmt, "CR", projGLAcct)]
+                for glAcct, amount in glDict.items():
+                    details.append((amount, "DR", glAcct))
+                self.postToGL.emit(companyId, dateEnd, description,
+                                   reference, details)
+                
+                self.dbConn.commit()
+                idxToTake = self.openProjectsTreeWidget.indexOfTopLevelItem(item)
+                self.openProjectsTreeWidget.takeTopLevelItem(idxToTake)
                 newItem = ProjectTreeWidgetItem(item.project,
                                                 self.dbCur,
                                                 self.completedProjectsTreeWidget)
@@ -2535,22 +2613,45 @@ class ProjectWidget(ObjectWidget):
     def refreshOpenProjectTree(self):
         self.openProjectsTreeWidget.refreshData()
         
-class ProjectView(QWidget):
-    addAssetToAssetView = pyqtSignal(object)
+class ProjectView(ObjectWidget):
+    addAssetToAssetView = pyqtSignal(int)
+    updateGLTree = pyqtSignal()
     
     def __init__(self, parent, dbConn, dbCur):
-        super().__init__(parent)
+        super().__init__(parent, dbConn, dbCur)
         self.parent = parent
 
         self.projectWidget = ProjectWidget(self, dbConn, dbCur)
         self.projectWidget.addAssetToAssetView.connect(self.emitAddAssetToAssetView)
+        self.projectWidget.postToGL.connect(self.postToGL)
         layout = QVBoxLayout()
         layout.addWidget(self.projectWidget)
 
         self.setLayout(layout)
 
-    def emitAddAssetToAssetView(self, asset):
-        self.addAssetToAssetView.emit(asset)
+    def postToGL(self, companyId, dateEnd, description, reference, details):
+        glPostingIdNum = self.nextIdNum("GLPostings")
+        glPostingDetailIdNum = self.nextIdNum("GLPostingsDetails")
+        
+        columns = ("Date", "Description", "CompanyId", "Reference")
+        values = (dateEnd, description, companyId, reference)
+        self.insertIntoDatabase("GLPostings", columns, values)
+        
+        columnValDict = {"GLPostingId": glPostingIdNum}
+        whereDict = {"idNum": reference.split(".")[1]}
+        self.updateDatabase(reference.split(".")[0], columnValDict, whereDict)
+        
+        for amount, drCr, glAcct in details:
+            columns = ("GLPostingId", "GLAccount", "Amount", "DebitCredit")
+            values = (glPostingIdNum, glAcct, amount, drCr)
+            self.insertIntoDatabase("GLPostingsDetails", columns, values)
+            
+            self.dbConn.commit()
+            glPostingDetailIdNum += 1
+        self.updateGLTree.emit()
+        
+    def emitAddAssetToAssetView(self, assetId):
+        self.addAssetToAssetView.emit(assetId)
 
 class CompanyTreeWidgetItem(QTreeWidgetItem):
     def __init__(self, idNum, dbCur, parent):

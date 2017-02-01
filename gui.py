@@ -35,6 +35,7 @@ class Window(QMainWindow):
         self.companyOverview.deleteCompany.connect(self.deleteCompanyButton)
         self.proposalOverview.updateVendorWidgetTree.connect(self.APOverview.vendorWidget.refreshVendorTree)
         self.projectOverview.addAssetToAssetView.connect(self.addAssetToAssetModule)
+        self.projectOverview.updateGLTree.connect(self.glOverview.refreshGL)
         self.glOverview.updateGLTree.connect(self.glOverview.refreshGL)
         self.APOverview.updateProjectTree.connect(self.projectOverview.projectWidget.refreshOpenProjectTree)
         self.APOverview.updateAssetTree.connect(self.assetOverview.assetWidget.refreshAssetTree)
@@ -174,7 +175,8 @@ class Window(QMainWindow):
                                      DateEnd     TEXT,
                                      Notes       TEXT,
                                      CompanyId   INTEGER,
-                                     GLAccount   INTEGER
+                                     GLAccount   INTEGER,
+                                     GLPostingId INTEGER
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE Proposals
@@ -338,13 +340,17 @@ class Window(QMainWindow):
         button = [shortName]
         self.companyLayout.deleteButtons(button)
 
-    def addAssetToAssetModule(self, asset):
-        if asset.subAssetOf:
-            parentItem = self.assetOverview.assetWidget.getParentItem(asset.idNum)
-            assetItem = AssetTreeWidgetItem(asset, parentItem)
+    def addAssetToAssetModule(self, assetId):
+        self.dbCursor.execute("SELECT ParentAssetId FROM Assets WHERE idNum=?",
+                              (assetId,))
+        parentAssetId = self.dbCursor.fetchone()[0]
+        
+        if parentAssetId:
+            parentItem = self.assetOverview.assetWidget.getItem(parentAssetId)
+            assetItem = AssetTreeWidgetItem(assetId, self.dbCursor, parentItem)
             parentItem.addChild(assetItem)
         else:
-            assetItem = AssetTreeWidgetItem(asset, self.assetOverview.assetWidget.currentAssetsTreeWidget)
+            assetItem = AssetTreeWidgetItem(assetId, self.dbCursor, self.assetOverview.assetWidget.currentAssetsTreeWidget)
             self.assetOverview.assetWidget.currentAssetsTreeWidget.addTopLevelItem(assetItem)
         
         self.assetOverview.assetWidget.updateAssetsCount()

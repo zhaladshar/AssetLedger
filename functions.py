@@ -1,3 +1,5 @@
+import constants
+
 def CalculateCIP(dbCur, projectId):
     dbCur.execute("""SELECT Sum(Cost) FROM InvoicesDetails
                      JOIN InvoicesObjects
@@ -64,3 +66,25 @@ def CalculateProposalCost(dbCur, proposalId):
         return cost
     else:
         return 0.0
+
+def GetListOfAssets(dbCur):
+    assets = []
+    dbCur.execute("SELECT idNum, Description FROM Assets")
+    for idNum, asset in dbCur:
+        assets.append(constants.ID_DESC % (idNum, asset))
+    return assets
+
+def GetListOfAssetTypes(dbCur):
+    assetTypes = []
+    dbCur.execute("SELECT idNum, AssetType FROM AssetTypes")
+    for idNum, assetType in dbCur:
+        assetTypes.append(constants.ID_DESC % (idNum, assetType))
+    return assetTypes
+
+def GetListOfGLAccounts(dbCur):
+    glAccounts = []
+    dbCur.execute("""SELECT idNum, Description FROM GLAccounts
+                     WHERE Placeholder=0""")
+    for idNum, glAccount in dbCur:
+        glAccounts.append(constants.ID_DESC % (idNum, glAccount))
+    return glAccounts
