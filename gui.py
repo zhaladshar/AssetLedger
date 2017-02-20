@@ -168,6 +168,14 @@ class Window(QMainWindow):
                                      GLAccount   INTEGER
                                     )""")
 
+            self.dbCursor.execute("""CREATE TABLE ProjectClosureItems
+                                    (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     ProjectId   INTEGER,
+                                     Description TEXT,
+                                     GLAccount   INTEGER,
+                                     Cost        REAL
+                                    )""")
+
             self.dbCursor.execute("""CREATE TABLE Projects
                                     (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
                                      Description TEXT,

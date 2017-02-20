@@ -2364,13 +2364,14 @@ class ProjectWidget(ObjectWidget):
                 cipAmt = functions.CalculateCIP(self.dbCur, item.project)
                 acqDate = preDialog.closeDateTxt.text()
                 glDict = {}
+                closureItems = []
                 
                 for n in range(entryCount):
                     widgetItem = preDialog.details.subLayout.itemAt(n).widget()
                     assetName = widgetItem.assetTxt.text()
                     assetCost = round(float(widgetItem.costTxt.text()), 2)
                     expenseFg = widgetItem.expenseChk.checkState()
-
+                    
                     if expenseFg == 0:
                         dialog = CloseProjectDialog(constants.CMP_PROJECT_STATUS, self.dbCur, self, assetName, acqDate)
                         if dialog.exec_():
@@ -2438,13 +2439,22 @@ class ProjectWidget(ObjectWidget):
                             else:
                                 glDict[assetGL] = assetCost
                     else:
-                        expGL = widgetItem.expenseDetailWidget.glBox.currentText()
-                        expGL = self.stripAllButNumbers(expGL)
-                        if expGL in glDict.keys():
-                            glDict[expGL] += assetCost
+                        assetGL = widgetItem.expenseDetailWidget.glBox.currentText()
+                        assetGL = self.stripAllButNumbers(assetGL)
+                        if assetGL in glDict.keys():
+                            glDict[assetGL] += assetCost
                         else:
-                            glDict[expGL] = assetCost
-                            
+                            glDict[assetGL] = assetCost
+                    
+                    closureItems.append((assetName, assetGL, assetCost))
+                
+                # Insert closure items
+                columns = ("ProjectId", "Description", "GLAccount", "Cost")
+                for assetName, assetGL, assetCost in closureItems:
+                    values = (item.project, assetName, assetGL, assetCost)
+                    self.insertIntoDatabase("ProjectClosureItems",
+                                            columns,
+                                            values)
                 # Create GL entry
                 description = constants.GL_POST_PROJ_COMP % (item.project,)
                 details = [(cipAmt, "CR", projGLAcct)]
