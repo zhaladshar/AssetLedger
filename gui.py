@@ -36,7 +36,7 @@ class Window(QMainWindow):
         self.proposalOverview.updateVendorWidgetTree.connect(self.APOverview.vendorWidget.refreshVendorTree)
         self.projectOverview.addAssetToAssetView.connect(self.addAssetToAssetModule)
         self.projectOverview.updateGLTree.connect(self.glOverview.refreshGL)
-        self.glOverview.updateGLTree.connect(self.glOverview.refreshGL)
+        self.glOverview.updateAssetTree.connect(self.assetOverview.assetWidget.refreshAssetTree)
         self.APOverview.updateProjectTree.connect(self.projectOverview.projectWidget.refreshOpenProjectTree)
         self.APOverview.updateAssetTree.connect(self.assetOverview.assetWidget.refreshAssetTree)
         self.APOverview.updateCompanyTree.connect(self.companyOverview.companyWidget.refreshCompanyTree)
@@ -69,7 +69,6 @@ class Window(QMainWindow):
                                      Date        TEXT,
                                      Description TEXT,
                                      Dollars     REAL,
-                                     PosNeg      TEXT,
                                      AssetId     INTEGER,
                                      Reference   TEXT
                                     )""")
@@ -125,8 +124,14 @@ class Window(QMainWindow):
             self.dbCursor.execute("""CREATE TABLE GLPostingsDetails
                                     (idNum       INTEGER PRIMARY KEY AUTOINCREMENT,
                                      GLPostingId INTEGER,
-                                     Amount      REAL,
-                                     DebitCredit TEXT
+                                     Amount      REAL
+                                    )""")
+
+            self.dbCursor.execute("""CREATE TABLE GLPostingsDetailsObjects
+                                    (idNum             INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     GLPostingDetailId INTEGER,
+                                     ObjectType        TEXT,
+                                     ObjectId          INTEGER
                                     )""")
 
             self.dbCursor.execute("""CREATE TABLE Invoices

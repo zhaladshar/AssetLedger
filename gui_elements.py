@@ -310,25 +310,50 @@ class SaveViewCancelButtonWidget(QWidget):
         
 class GLPostingLineItem(QWidget):
     deleteRow = pyqtSignal(int)
-    validateRow = pyqtSignal(int)
+    validate = pyqtSignal()
     
-    def __init__(self, glAcctsList, rowNum, glAcct=None, debit=None, credit=None):
-        super().__init__()
+    def __init__(self, parent, dbCur, rowNum, glAcct=None, debit=None, credit=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.dbCur = dbCur
         self.row = rowNum
         
         if glAcct and (debit or credit):
             pass
         else:
-            self.glBox = QComboBox()
-            self.glBox.addItems(glAcctsList)
-            self.debitBox = QLineEdit()
+            self.assetRBtn = QRadioButton(self)
+            self.assetRBtn.setFixedWidth(13)
+            self.assetRBtn.clicked.connect(self.fillBoxWithAssets)
+            
+            self.projectRBtn = QRadioButton(self)
+            self.projectRBtn.setFixedWidth(13)
+            self.projectRBtn.clicked.connect(self.fillBoxWithProjects)
+            
+            self.glRBtn = QRadioButton(self)
+            self.glRBtn.setFixedWidth(13)
+            self.glRBtn.setChecked(True)
+            self.glRBtn.clicked.connect(self.fillBoxWithGLAccounts)
+            
+            glAcctsList = functions.GetListOfGLAccounts(self.dbCur)
+            self.box = QComboBox()
+            self.box.setFixedWidth(280)
+            self.box.addItems(glAcctsList)
+            
+            self.debitBox = gui_elements.NewLineEdit()
+            self.debitBox.setFixedWidth(60)
+            
             self.creditBox = gui_elements.NewLineEdit()
-            self.creditBox.lostFocus.connect(lambda: self.validateRow.emit(self.row))
-            deleteButton = QPushButton("-")
+            self.creditBox.setFixedWidth(60)
+            self.creditBox.lostFocus.connect(self.validate.emit)
+            
+            deleteButton = gui_elements.DeleteButton()
             deleteButton.clicked.connect(lambda: self.deleteRow.emit(self.row))
 
         layout = QHBoxLayout()
-        layout.addWidget(self.glBox)
+        layout.addWidget(self.assetRBtn)
+        layout.addWidget(self.projectRBtn)
+        layout.addWidget(self.glRBtn)
+        layout.addWidget(self.box)
         layout.addWidget(self.debitBox)
         layout.addWidget(self.creditBox)
         layout.addWidget(deleteButton)
@@ -336,6 +361,23 @@ class GLPostingLineItem(QWidget):
 
         self.setLayout(layout)
 
+    def fillBoxWithAssets(self):
+        company = self.parent.parent.company
+        assetsList = functions.GetListOfAssets(self.dbCur, company)
+        self.box.clear()
+        self.box.addItems(assetsList)
+
+    def fillBoxWithProjects(self):
+        company = self.parent.parent.company
+        projectsList = functions.GetListOfProjects(self.dbCur, company)
+        self.box.clear()
+        self.box.addItems(projectsList)
+
+    def fillBoxWithGLAccounts(self):
+        glAcctsList = functions.GetListOfGLAccounts(self.dbCur)
+        self.box.clear()
+        self.box.addItems(glAcctsList)
+        
     def balanceType(self):
         if self.debitBox.text() != "":
             return constants.DEBIT
@@ -344,6 +386,12 @@ class GLPostingLineItem(QWidget):
         else:
             return "NONE"
 
+    def isBlank(self):
+        if self.debitBox.text() == "" and self.creditBox.text() == "":
+            return True
+        else:
+            return False
+        
     def balance(self):
         if self.debitBox.text() == "":
             debit = 0
@@ -354,55 +402,113 @@ class GLPostingLineItem(QWidget):
             credit = 0
         else:
             credit = float(self.creditBox.text())
-        return abs(debit - credit)
+        return round(debit - credit, 2)
 
 class GLPostingsSection(QWidget):
-    def __init__(self, glAcctsList, glPosting=None):
-        super().__init__()
+    valid = pyqtSignal(bool)
+    
+    def __init__(self, parent, dbCur, glPosting=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.dbCur = dbCur
         self.layout = QVBoxLayout()
+        headerLayout = QHBoxLayout()
+        self.detailsLayout = QVBoxLayout()
+        
         self.numEntries = 0
-        self.glAcctsList = glAcctsList
         self.details = {}
 
+        # Add heading
+        assetLbl = QLabel("A")
+        assetLbl.setFixedWidth(16)
+        
+        projectLbl = QLabel("P")
+        projectLbl.setFixedWidth(16)
+        
+        glLbl = QLabel("J")
+        glLbl.setFixedWidth(16)
+        
+        selectionLbl = QLabel("Selection")
+        selectionLbl.setFixedWidth(280)
+        
+        debitLbl = QLabel("Debit")
+        debitLbl.setFixedWidth(60)
+        
+        creditLbl = QLabel("Credit")
+        creditLbl.setFixedWidth(60)
+        
+        # Initialize layout
+        headerLayout.addWidget(assetLbl)
+        headerLayout.addWidget(projectLbl)
+        headerLayout.addWidget(glLbl)
+        headerLayout.addWidget(selectionLbl)
+        headerLayout.addWidget(debitLbl)
+        headerLayout.addWidget(creditLbl)
+        headerLayout.addSpacing(30)
+        headerLayout.setContentsMargins(0, 1, 0, 1)
+
+        self.detailsLayout.setContentsMargins(0, 1, 0, 1)
+        
         if glPosting:
             pass
         else:
             self.addLine()
-
+        
+        self.layout.addLayout(headerLayout)
+        self.layout.addLayout(self.detailsLayout)
         self.layout.setSpacing(0)
+        self.layout.setContentsMargins(0, 1, 0, 1)
         self.setLayout(self.layout)
-
+        
     def addLine(self, glAcct=None, debit=None, credit=None):
         if glAcct and debit and credit:
             pass
         else:
-            newEntry = GLPostingLineItem(self.glAcctsList, self.numEntries)
-            newEntry.validateRow.connect(self.validateRow)
+            newEntry = GLPostingLineItem(self, self.dbCur, self.numEntries)
+            newEntry.validate.connect(self.validate)
             newEntry.deleteRow.connect(self.deleteRow)
-            
-        self.details[self.numEntries] = newEntry
-        self.layout.addWidget(newEntry)
-        self.numEntries += 1
+            newEntry.deleteRow.connect(self.validate)
 
-    def validateRow(self, rowNum):
-        item = self.details[rowNum]
-        if item.debitBox.text() != "" or item.creditBox.text() != "":
+        numEntries = len(self.details)
+        self.details[numEntries] = newEntry
+        self.detailsLayout.addWidget(newEntry)
+
+    def validate(self):
+        valid = True
+        
+        for entryNum, lineItem in self.details.items():
+            if lineItem.balance() == 0 and lineItem.isBlank() != True:
+                valid = False
+        if self.inBalance() == False:
+            valid = False
+        
+        if len(self.details) > 0:
+            lastIndex = list(self.details.keys())[len(self.details) - 1]
+            item = self.details[lastIndex]
+            if item.debitBox.text() != "" or item.creditBox.text() != "":
+                self.addLine()
+        else:
             self.addLine()
+        self.valid.emit(valid)
 
     def deleteRow(self, rowNum):
         item = self.details.pop(rowNum)
-        self.layout.removeWidget(item)
+        self.detailsLayout.removeWidget(item)
         item.deleteLater()
+
+    def clear(self):
+        listOfKeys = list(self.details.keys())
+        while len(listOfKeys) > 0:
+            key = listOfKeys.pop(0)
+            self.deleteRow(key)
+        self.validate()
 
     def inBalance(self):
         # If credits = debits and credit are negative, the posting is in balance
         # if the balance == 0.
         balance = 0.0
         for key, entry in self.details.items():
-            if entry.balanceType() == constants.DEBIT:
-                balance += entry.balance()
-            elif entry.balanceType() == constants.CREDIT:
-                balance -= entry.balance()
+            balance -= entry.balance()
         if balance == 0.0:
             return True
         else:
@@ -736,7 +842,7 @@ class InvoiceDetailWidget(QWidget):
             proposalBox.setEnabled(False)
             proposalBox.currentIndexChanged.connect(self.emitChange)
             
-        deleteButton = QPushButton("-")
+        deleteButton = DeleteButton()
         deleteButton.clicked.connect(lambda: self.deleteLine(rowToUse))
         if showDelBtn == False:
             deleteButton.hide()
@@ -844,7 +950,7 @@ class ProposalDetailWidget(QWidget):
             detailLine = QLabel(detail)
             costLine = QLabel(str(cost))
 
-        deleteButton = QPushButton("-")
+        deleteButton = DeleteButton()
         deleteButton.clicked.connect(lambda: self.deleteLine(rowToUse))
         if showDelBtn == False:
             deleteButton.hide()
@@ -990,16 +1096,13 @@ class AssetHistoryTreeWidgetItem(QTreeWidgetItem):
         self.refreshData(dbCur)
 
     def refreshData(self, dbCur):
-        dbCur.execute("""SELECT Date, Description, Dollars, PosNeg
+        dbCur.execute("""SELECT Date, Description, Dollars
                          FROM AssetHistory WHERE idNum=?""", (self.history,))
-        date, desc, cost, posNeg = dbCur.fetchone()
+        date, desc, cost = dbCur.fetchone()
         
         self.setText(0, date)
         self.setText(1, desc)
-        if posNeg == constants.POSITIVE:
-            self.setText(2, "{:,.2f}".format(cost))
-        else:
-            self.setText(2, "{:,.2f}".format(-1 * cost))
+        self.setText(2, "{:,.2f}".format(cost))
 
 class AssetHistoryTreeWidget(NewTreeWidget):
     def __init__(self, dbCur, headerList, widthList, assetId):
@@ -1298,8 +1401,6 @@ class InvoiceWidget(ObjectWidget):
     updateAssetTree = pyqtSignal()
     updateCompanyTree = pyqtSignal()
     postToGL = pyqtSignal(int, object, str, str, list)
-    updateGLPost = pyqtSignal(object, int, object, str, list)
-    updateGLDet = pyqtSignal(object, float, str, object)
     deleteGLPost = pyqtSignal(object)
     
     def __init__(self, parent, dbConn, dbCur):
@@ -1382,8 +1483,8 @@ class InvoiceWidget(ObjectWidget):
                 reference = ".".join(["InvoicesPayments", str(nextId)])
                 
                 description = constants.GL_POST_PYMT_DESC % (item.invoice, vendorId, str(datePd))
-                details = [(amtPd, "CR", pymtGLAccount),
-                           (amtPd, "DR", vendGLAcct)]
+                details = [(-1 * amtPd, pymtGLAccount, None, None),
+                           (amtPd, vendGLAcct, None, None)]
                 self.postToGL.emit(companyId, datePd, description,
                                    reference, details)
                 
@@ -1405,17 +1506,16 @@ class InvoiceWidget(ObjectWidget):
     def createCostHistory(self, invDate, invoiceId, cost, assetId):
         reference = ".".join(["Invoices", str(invoiceId)])
         
-        columns = ("Cost", "Date", "AssetId", "Reference")
+        columns = constants.ASSET_COSTS_COLUMNS
         values = (cost, invDate, assetId, reference)
         self.insertIntoDatabase("AssetCosts", columns, values)
 
     def createAssetHistory(self, invDate, invoiceId, cost, assetId):
         reference = ".".join(["Invoices", str(invoiceId)])
         
-        columns = ("Date", "Description", "Dollars", "PosNeg",
-                   "AssetId", "Reference")
+        columns = constants.ASSET_HISTORY_COLUMNS
         values = (invDate, constants.ASSET_HIST_INV % invoiceId, cost,
-                  constants.POSITIVE, assetId, reference)
+                  assetId, reference)
         self.insertIntoDatabase("AssetHistory", columns, values)
                 
     def showNewInvoiceDialog(self):
@@ -1508,8 +1608,8 @@ class InvoiceWidget(ObjectWidget):
                                       ON Assets.AssetTypeId = AssetTypes.idNum
                                       WHERE Assets.idNum=?""", (type_Id,))
             glAcct = self.dbCur.fetchone()[0]
-            details = [(invoiceCost, "CR", vendorGLAccount),
-                       (invoiceCost, "DR", glAcct)]
+            details = [(-1 * invoiceCost, vendorGLAccount, None, None),
+                       (invoiceCost, glAcct, None, None)]
             self.postToGL.emit(companyId, invoiceDate, description, reference, details)
             
             # Update vendor tree widget to display new information based on
@@ -1662,20 +1762,19 @@ class InvoiceWidget(ObjectWidget):
                     whereDict = {"Reference": reference}
                     self.updateDatabase("GLPostings", colValDict, whereDict)
 
-                    self.dbCur.execute("""SELECT GLPostingsDetails.idNum,
-                                                 DebitCredit
+                    self.dbCur.execute("""SELECT GLPostingsDetails.idNum, Amount
                                           FROM GLPostingsDetails JOIN GLPostings
                                           ON GLPostings.idNum = GLPostingsDetails.GLPostingId
                                           WHERE Reference=?""", (reference,))
                     glPostDetIds = self.dbCur.fetchall()
-                    for glPostDetId, drCr in glPostDetIds:
+                    for glPostDetId, amt in glPostDetIds:
                         whereDict = {"idNum": glPostDetId}
-                        if drCr == constants.DEBIT:
+                        if amt >= 0:
                             colValDict = {"GLAccount": newDebitGLAcct,
                                           "Amount": cost}
                         else:
                             colValDict = {"GLAccount": vendGLAcct,
-                                          "Amount": cost}
+                                          "Amount": round(-1 * cost)}
                         self.updateDatabase("GLPostingsDetails",
                                             colValDict,
                                             whereDict)
@@ -1788,8 +1887,6 @@ class APView(ObjectWidget):
         self.invoiceWidget.updateAssetTree.connect(self.emitUpdateAssetTree)
         self.invoiceWidget.updateCompanyTree.connect(self.emitUpdateCompanyTree)
         self.invoiceWidget.postToGL.connect(self.postToGL)
-        self.invoiceWidget.updateGLPost.connect(self.updateGLPost)
-        self.invoiceWidget.updateGLDet.connect(self.updateGLDet)
         self.invoiceWidget.deleteGLPost.connect(self.deleteGLPost)
         
         layout.addWidget(self.vendorWidget)
@@ -1809,34 +1906,6 @@ class APView(ObjectWidget):
 
     def emitUpdateCompanyTree(self):
         self.updateCompanyTree.emit()
-
-    def updateGLPost(self, glPost, companyId, postingDate, description, glDetList):
-        glPost.description = description
-        glPost.date = postingDate
-        
-        for glDet in glDetList:
-            self.updateGLDet(glDet[0], glDet[1], glDet[2], glDet[3])
-        
-        self.parent.dbCursor.execute("UPDATE GLPostings SET Date=?, Description=? WHERE idNum=?",
-                                     (str(postingDate), description, glPost.idNum))
-        self.parent.dbConnection.commit()
-        self.updateGLTree.emit()
-
-    def updateGLDet(self, glDet, amtPd, debitCredit, glAccount):
-        glDet.amount = amtPd
-        glDet.debitCredit = debitCredit
-        
-        glDet.glAccount.removePosting(glDet)
-        glDet.glAccount = glAccount
-        glAccount.addPosting(glDet)
-        
-        self.parent.dbCursor.execute("UPDATE GLPostingsDetails SET Amount=?, DebitCredit=? WHERE idNum=?",
-                                     (amtPd, debitCredit, glDet.idNum))
-        self.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='glPostingsDetails' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='glAccounts'",
-                                     (glAccount.idNum, glDet.idNum))
-        self.parent.dbCursor.execute("UPDATE Xref SET ObjectIdBeingLinked=? WHERE ObjectToAddLinkTo='glAccounts' AND ObjectIdToAddLinkTo=? AND ObjectBeingLinked='glPostingsDetails'",
-                                     (glAccount.idNum, glDet.idNum))
-        self.parent.dbConnection.commit()
 
     def deleteGLPost(self, GLPost):
         self.dataConnection.glPostings.pop(GLPost.idNum)
@@ -1867,8 +1936,8 @@ class APView(ObjectWidget):
         
         glPosting = GLPosting(date, description, companyNum, glPostingIdNum)
         
-        columns = ("Date", "Description", "CompanyId", "Reference")
-        values = (str(date), description, companyNum, reference)
+        columns = constants.GL_POSTING_COLUMNS
+        values = (date, description, companyNum, reference)
         self.insertIntoDatabase("GLPostings", columns, values)
 
         columnValDict = {"GLPostingId": glPostingIdNum}
@@ -1876,13 +1945,13 @@ class APView(ObjectWidget):
         self.updateDatabase(reference.split(".")[0], columnValDict, whereDict)
         
         for amount, drCr, glAcct in listOfDetails:
-            glPostingDetail = GLPostingDetail(amount, drCr, glAcct, glPostingIdNum, glPostingDetailIdNum)
-
-            columns = ("GLPostingId", "GLAccount", "Amount", "DebitCredit")
-            values = (glPostingIdNum, glAcct, amount, drCr)
+            if drCr == constants.CREDIT:
+                amount = -1 * amount
+            columns = constants.GL_POSTING_DETAIL_COLUMNS
+            values = (glPostingIdNum, glAcct, amount)
             self.insertIntoDatabase("GLPostingsDetails", columns, values)
             
-            self.parent.dbConnection.commit()
+            self.dbConn.commit()
 
             glPostingDetailIdNum += 1
         self.updateGLTree.emit()
@@ -3259,15 +3328,13 @@ class GLTreeWidgetItem(QTreeWidgetItem):
                 self.setFont(n, font)
 
     def balance(self, dbCur):
-        balance = 0.0
-        dbCur.execute("""SELECT Amount, DebitCredit FROM GLPostingsDetails
+        dbCur.execute("""SELECT Sum(Amount) FROM GLPostingsDetails
                          WHERE GLAccount=?""", (self.glAccount,))
-        for amount, drCr in dbCur:
-            if drCr == constants.DEBIT:
-                balance += amount
-            else:
-                balance -= amount
-        return balance
+        balance = dbCur.fetchone()[0]
+        if balance:
+            return balance
+        else:
+            return 0.0
 
     def balanceOfGroup(self):
         balance = 0.0
@@ -3475,18 +3542,16 @@ class GLPostingsTreeWidgetItem(QTreeWidgetItem):
         self.refreshData(dbCur)
         
     def refreshData(self, dbCur):
-        dbCur.execute("""SELECT Date, Description, Amount, DebitCredit
+        dbCur.execute("""SELECT Date, Description, Amount
                          FROM GLPostings JOIN GLPostingsDetails
                          ON GLPostingsDetails.GLPostingId = GLPostings.idNum
-                         WHERE GLPostingsDetails.idNum=?""", (self.glPostingDet,))
-        date, desc, amt, drCr = dbCur.fetchone()
+                         WHERE GLPostingsDetails.idNum=?""",
+                      (self.glPostingDet,))
+        date, desc, amt = dbCur.fetchone()
         
         self.setText(0, date)
         self.setText(1, desc)
-        if drCr == constants.DEBIT:
-            self.setText(2, "{: ,.2f}".format(amt))
-        else:
-            self.setText(2, "{:-,.2f}".format(-1 * amt))
+        self.setText(2, "{: ,.2f}".format(amt))
         
 class GLPostingsTreeWidget(NewTreeWidget):
     def __init__(self, dbCur, headerList, widthList):
@@ -3509,14 +3574,16 @@ class GLPostingsTreeWidget(NewTreeWidget):
             self.topLevelItem(idx).refreshData(dbCur)
 
 class GLPostingsWidget(ObjectWidget):
-    postToGL = pyqtSignal(int, object, str, list)
+    refreshGL = pyqtSignal()
     updateGLPost = pyqtSignal(object, str, str)
     updateGLDet = pyqtSignal(object, float, str)
-    deleteGLPost = pyqtSignal(object)
+    deleteGLPost = pyqtSignal(int)
+    updateAssetTree = pyqtSignal()
     
     def __init__(self, parent, dbConn, dbCur):
         super().__init__(parent, dbConn, dbCur)
         mainLayout = QGridLayout()
+        self.glAcctNum = None
 
         # Piece together the GL layout
         self.glPostingsLabel = QLabel("Details")
@@ -3535,50 +3602,96 @@ class GLPostingsWidget(ObjectWidget):
         self.setLayout(mainLayout)
 
     def showDetail(self, glAcctNum):
+        self.glAcctNum = glAcctNum
         self.glPostingsTreeWidget.clear()
         self.glPostingsTreeWidget.buildItems(self.glPostingsTreeWidget, glAcctNum)
         
     def showNewGLPostingDialog(self):
-        dialog = NewGLPostingDialog("New", self.companiesDict, self.glAcctsDict)
+        dialog = NewGLPostingDialog("New", self.dbCur, self)
         if dialog.exec_():
+            glPostingIdNum = self.nextIdNum("GLPostings")
             companyNum = self.stripAllButNumbers(dialog.companyBox.currentText())
-            date = classes.NewDate(dialog.dateText.text())
+            date = dialog.dateText.text()
             description = dialog.memoText.text()
-            
+            reference = ".".join(["GLPostings", str(glPostingIdNum)])
             details = []
             for detailKey, detail in dialog.postingsWidget.details.items():
                 if detail.balanceType() != "NONE":
-                    glAccountNum = self.stripAllButNumbers(detail.glBox.currentText())
-                    details.append((detail.balance(), detail.balanceType(), glAccountNum, None, None))
+                    boxText = detail.box.currentText()
+                    
+                    if detail.assetRBtn.isChecked() == True:
+                        print("asset begin")
+                        type_ = "assets"
+                        type_Id = self.stripAllButNumbers(boxText)
+                        self.dbCur.execute("""SELECT AssetGL FROM Assets
+                                              JOIN AssetTypes
+                                              ON Assets.AssetTypeId = AssetTypes.idNum
+                                              WHERE Assets.idNum=?""", (type_Id,))
+                        glAccountNum = self.dbCur.fetchone()[0]
+                        print("asset end")
+                        # Create asset cost and history entries
+                        columns = constants.ASSET_COSTS_COLUMNS
+                        values = (detail.balance(), date, type_Id, reference)
+                        self.insertIntoDatabase("AssetCosts", columns, values)
+                        print("made asset cost")
+                        columns = constants.ASSET_HISTORY_COLUMNS
+                        print(columns)
+                        values = (date, description, detail.balance(),
+                                  type_Id, reference)
+                        print(values)
+                        self.insertIntoDatabase("AssetHistory",
+                                                 columns,
+                                                 values)
+                        self.updateAssetTree.emit()
+                        print("made asset history")
+                    elif detail.projectRBtn.isChecked() == True:
+                        print("project begin")
+                        type_ = "projects"
+                        type_Id = self.stripAllButNumbers(boxText)
+                        self.dbCur.execute("""SELECT GLAccount FROM Projects
+                                              WHERE idNum=?""", (type_Id,))
+                        glAccountNum = self.dbCur.fetchone()[0]
+                        print("project end")
+                    elif detail.glRBtn.isChecked() == True:
+                        type_ = None
+                        type_Id = None
+                        glAccountNum = self.stripAllButNumbers(boxText)
+
+                    details.append((detail.balance(), glAccountNum, type_, type_Id))
             
-            self.postToGL.emit(companyNum, date, description, details)
+            functions.PostToGL(self.dbCur,
+                               companyNum,
+                               date,
+                               description,
+                               reference,
+                               details)
+            self.dbConn.commit()
+            self.refreshGL.emit()
             
     def showViewGLPostingDialog(self):
         pass
 
     def deleteGLPostingAccount(self):
-        idxToDelete = self.glPostingsTreeWidget.indexOfTopLevelItem(self.glPostingsTreeWidget.currentItem())
+        item = self.glPostingsTreeWidget.currentItem()
 
-        if idxToDelete >= 0:
-            item = self.glPostingsTreeWidget.takeTopLevelItem(idxToDelete)
-        else:
-            item = None
-        
         if item:
-            glDet = item.glPosting
-            glPost = glDet.detailOf
-            self.deleteGLPost.emit(glPost)
+            idxToDelete = self.glPostingsTreeWidget.indexOfTopLevelItem(item)
+            self.glPostingsTreeWidget.takeTopLevelItem(idxToDelete)
+            
+            glDet = item.glPostingDet
+            self.deleteGLPost.emit(glDet)
         
-class GLView(QWidget):
-    updateGLTree = pyqtSignal()
+class GLView(ObjectWidget):
+    updateAssetTree = pyqtSignal()
     
     def __init__(self, parent, dbConn, dbCur):
-        super().__init__(parent)
+        super().__init__(parent, dbConn, dbCur)
         self.glWidget = GLWidget(self, dbConn, dbCur)
         self.glWidget.displayGLAcct.connect(self.displayGLDetails)
         self.glPostingsWidget = GLPostingsWidget(self, dbConn, dbCur)
-##        self.glPostingsWidget.postToGL.connect(self.postToGL)
-##        self.glPostingsWidget.deleteGLPost.connect(self.deleteGLPost)
+        self.glPostingsWidget.refreshGL.connect(self.refreshGL)
+        self.glPostingsWidget.updateAssetTree.connect(self.updateAssetTree.emit)
+        self.glPostingsWidget.deleteGLPost.connect(self.deleteGLPost)
 
         layout = QVBoxLayout()
         layout.addWidget(self.glWidget)
@@ -3589,82 +3702,25 @@ class GLView(QWidget):
     def refreshGL(self):
         self.glWidget.chartOfAccountsTreeWidget.refreshData()
 
+        glAcctNum = self.glPostingsWidget.glAcctNum
+        self.displayGLDetails(glAcctNum)
+
     def displayGLDetails(self, glAcctNum):
         self.glPostingsWidget.showDetail(glAcctNum)
 
-    def nextIdNum(self, name):
-        self.parent.dbCursor.execute("SELECT seq FROM sqlite_sequence WHERE name = '" + name + "'")
-        largestId = self.parent.dbCursor.fetchone()
-        if largestId != None:
-            return largestId[0] + 1
-        else:
-            return 1
+    def deleteGLPost(self, GLDetId):
+        self.dbCur.execute("""SELECT GLPostingId FROM GLPostingsDetails
+                              WHERE idNum=?""", (GLDetId,))
+        glPostId = self.dbCur.fetchone()[0]
 
-    def deleteGLPost(self, GLPost):
-        self.dataConnection.glPostings.pop(GLPost.idNum)
-        self.dataConnection.companies[GLPost.company.idNum].removePosting(GLPost)
-        self.parent.dbCursor.execute("DELETE FROM GLPostings WHERE idNum=?",
-                                     (GLPost.idNum,))
-        self.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='glPostings' AND ObjectIdToAddLinkTo=?",
-                                     (GLPost.idNum,))
-        self.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='glPostings' AND ObjectIdBeingLinked=?",
-                                     (GLPost.idNum,))
-        for glDetKey, glDet in GLPost.details.items():
-            self.dataConnection.glPostingsDetails.pop(glDetKey)
-            glAccount = glDet.glAccount
-            glAccount.removePosting(glDet)
-            self.parent.dbCursor.execute("DELETE FROM GLPostingsDetails WHERE idNum=?",
-                                         (glDetKey,))
-            self.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectToAddLinkTo='glPostingsDetails' AND ObjectIdToAddLinkTo=?",
-                                         (glDetKey,))
-            self.parent.dbCursor.execute("DELETE FROM Xref WHERE ObjectBeingLinked='glPostingsDetails' AND ObjectIdBeingLinked=?",
-                                         (glDetKey,))
-
-        self.parent.dbConnection.commit()
-        self.updateGLTree.emit()
+        whereDict = {"idNum": glPostId}
+        self.deleteFromDatabase("GLPostings", whereDict)
         
-    def postToGL(self, companyNum, date, description, listOfDetails):
-        glPostingIdNum = self.nextIdNum("GLPostings")
-        glPostingDetailIdNum = self.nextIdNum("GLPostingsDetails")
-        
-        glPosting = GLPosting(date, description, glPostingIdNum)
-        glPosting.addCompany(self.dataConnection.companies[companyNum])
-        self.dataConnection.companies[companyNum].addPosting(glPosting)
-        self.dataConnection.glPostings[glPosting.idNum] = glPosting
-        self.parent.dbCursor.execute("INSERT INTO GLPostings (Date, Description) VALUES (?, ?)",
-                                            (str(glPosting.date), glPosting.description))
-        self.parent.dbCursor.execute("INSERT INTO Xref VALUES ('glPostings', ?, 'addCompany', 'companies', ?)",
-                                     (glPosting.idNum, companyNum))
-        self.parent.dbCursor.execute("INSERT INTO Xref VALUES ('companies', ?, 'addPosting', 'glPostings', ?)",
-                                     (companyNum, glPosting.idNum))
+        whereDict = {"GLPostingId": glPostId}
+        self.deleteFromDatabase("GLPostingsDetails", whereDict)
 
-        for detail in listOfDetails:
-            glPostingDetail = GLPostingDetail(detail[0], detail[1], glPostingDetailIdNum)
-            
-            glPosting.addDetail(glPostingDetail)
-            glPostingDetail.addDetailOf(glPosting)
-            glPostingDetail.addGLAccount(self.dataConnection.glAccounts[detail[2]])
-            glPostingDetail.glAccount.addPosting(glPostingDetail)
+        whereDict = {"GLPostingDetailId": GLDetId}
+        self.deleteFromDatabase("GLPostingsDetailsObjects", whereDict)
 
-            if detail[3]:
-                detail[3].addGLPosting(glPostingDetail)
-                self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                             (detail[4], detail[3].idNum, "addGLPosting", "glPostingsDetails", glPostingDetail.idNum))
-            
-            self.dataConnection.glPostingsDetails[glPostingDetail.idNum] = glPostingDetail
-
-            self.parent.dbCursor.execute("INSERT INTO GLPostingsDetails (Amount, DebitCredit) VALUES (?, ?)",
-                                         (glPostingDetail.amount, glPostingDetail.debitCredit))
-            self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                         ("glPostings", glPosting.idNum, "addDetail", "glPostingsDetails", glPostingDetail.idNum))
-            self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                         ("glPostingsDetails", glPostingDetail.idNum, "addDetailOf", "glPostings", glPosting.idNum))
-            self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                         ("glPostingsDetails", glPostingDetail.idNum, "addGLAccount", "glAccounts", glPostingDetail.glAccount.idNum))
-            self.parent.dbCursor.execute("INSERT INTO Xref VALUES (?, ?, ?, ?, ?)",
-                                         ("glAccounts", glPostingDetail.glAccount.idNum, "addPosting", "glPostingsDetails", glPostingDetail.idNum))
-            
-            self.parent.dbConnection.commit()
-
-            glPostingDetailIdNum += 1
-        self.updateGLTree.emit()
+        self.dbConn.commit()
+        self.refreshGL()

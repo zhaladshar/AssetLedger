@@ -833,22 +833,19 @@ class AssetDialog(QDialog):
         self.depMethodLbl = QLabel("Depreciation Method:")
         self.salvageValueLbl = QLabel("Salvage Amount:")
         costLbl = QLabel("Cost:")
-        
+
+        companiesList = functions.GetListOfCompanies(dbCur)
         self.companyBox = QComboBox()
-        dbCur.execute("SELECT idNum, ShortName FROM Companies")
-        for idNum, shortName in dbCur:
-            self.companyBox.addItem(constants.ID_DESC % (idNum, shortName))
-        
+        self.companyBox.addItems(companiesList)
+
+        assetTypesList = functions.GetListOfAssetTypes(dbCur)
         self.assetTypeBox = QComboBox()
-        dbCur.execute("SELECT idNum, AssetType FROM AssetTypes")
-        for idNum, desc in dbCur:
-            self.assetTypeBox.addItem(constants.ID_DESC % (idNum, desc))
-        
+        self.assetTypeBox.addItems(assetTypesList)
+
+        assetsList = functions.GetListOfAssets(dbCur)
         self.childOfAssetBox = QComboBox()
         self.childOfAssetBox.addItem("")
-        dbCur.execute("SELECT idNum, Description FROM Assets")
-        for idNum, desc in dbCur:
-            self.childOfAssetBox.addItem(constants.ID_DESC % (idNum, desc))
+        self.childOfAssetBox.addItems(assetsList)
         
         self.depMethodBox = QComboBox()
         self.depMethodBox.addItems(constants.DEP_METHODS)
@@ -1745,18 +1742,22 @@ class PaymentTypeDialog(QDialog):
         self.parent.parent.parent.dbConnection.commit()
         
 class NewGLPostingDialog(QDialog):
-    def __init__(self, mode, companiesDict, glAcctsDict, parent=None, glPosting=None):
+    def __init__(self, mode, dbCur, parent=None, glPosting=None):
         super().__init__(parent)
-        self.glValuesAsList = glAcctsDict.sortedListOfKeysAndNames()
+        self.parent = parent
         self.layout = QGridLayout()
-
+        
         companyLbl = QLabel("Company:")
         dateLbl = QLabel("Date")
         memoLbl = QLabel("Memo:")
-
+        
+        companiesList = functions.GetListOfCompanies(dbCur)
         self.companyBox = QComboBox()
-        self.companyBox.addItems(companiesDict.sortedListOfKeysAndNames())
-        self.postingsWidget = gui_elements.GLPostingsSection(self.glValuesAsList)
+        self.companyBox.addItems(companiesList)
+        self.companyBox.currentIndexChanged.connect(self.refreshCompany)
+        
+        self.postingsWidget = gui_elements.GLPostingsSection(self, dbCur)
+        self.postingsWidget.valid.connect(self.checkValidity)
         
         if mode == "View":
             self.dateText = QLabel(glPosting.date)
@@ -1771,22 +1772,38 @@ class NewGLPostingDialog(QDialog):
         self.layout.addWidget(self.dateText, 1, 1)
         self.layout.addWidget(memoLbl, 2, 0)
         self.layout.addWidget(self.memoText, 2, 1)
-        self.layout.addWidget(self.postingsWidget, 3, 1, 1, 2)
-
-        buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
-        buttonWidget.saveButton.clicked.connect(self.accept)
-        buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
-        buttonWidget.cancelButton.clicked.connect(self.reject)
+        self.layout.addWidget(self.postingsWidget, 3, 0, 1, 2)
         
-        self.layout.addWidget(buttonWidget, 4, 0, 1, 2)
+        self.buttonWidget = gui_elements.SaveViewCancelButtonWidget(mode)
+        self.buttonWidget.saveButton.clicked.connect(self.accept)
+        self.buttonWidget.editButton.clicked.connect(self.makeLabelsEditable)
+        self.buttonWidget.cancelButton.clicked.connect(self.reject)
+        
+        self.layout.addWidget(self.buttonWidget, 4, 0, 1, 2)
         
         self.setLayout(self.layout)
-
+        
         if mode == "View":
             self.setWindowTitle("View/Edit GL Posting")
         else:
             self.setWindowTitle("New GL Posting")
 
+        companyLine = self.companyBox.currentText()
+        company = self.parent.stripAllButNumbers(companyLine)
+        self.company = company
+
+    def checkValidity(self, valid):
+        if valid == True:
+            self.buttonWidget.enableSave()
+        else:
+            self.buttonWidget.disableSave()
+
+    def refreshCompany(self):
+        companyLine = self.companyBox.currentText()
+        company = self.parent.stripAllButNumbers(companyLine)
+        self.company = company
+        self.postingsWidget.clear()
+        
     def makeLabelsEditable(self):
         pass
 

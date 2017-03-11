@@ -67,9 +67,12 @@ def CalculateProposalCost(dbCur, proposalId):
     else:
         return 0.0
 
-def GetListOfAssets(dbCur):
+def GetListOfAssets(dbCur, company=None):
     assets = []
-    dbCur.execute("SELECT idNum, Description FROM Assets")
+    sql = "SELECT idNum, Description FROM Assets"
+    if company:
+        sql += " WHERE CompanyId = %d" % (company,)
+    dbCur.execute(sql)
     for idNum, asset in dbCur:
         assets.append(constants.ID_DESC % (idNum, asset))
     return assets
@@ -88,3 +91,66 @@ def GetListOfGLAccounts(dbCur):
     for idNum, glAccount in dbCur:
         glAccounts.append(constants.ID_DESC % (idNum, glAccount))
     return glAccounts
+
+def GetListOfCompanies(dbCur):
+    companies = []
+    dbCur.execute("SELECT idNum, ShortName FROM Companies")
+    for idNum, company in dbCur:
+        companies.append(constants.ID_DESC % (idNum, company))
+    return companies
+
+def GetListOfProjects(dbCur, company=None):
+    projects = []
+    sql = "SELECT idNum, Description FROM Projects"
+    if company:
+        sql += " WHERE CompanyId = %d" % (company,)
+    dbCur.execute(sql)
+    for idNum, project in dbCur:
+        projects.append(constants.ID_DESC % (idNum, project))
+    return projects
+
+def NextIdNum(dbCur, name):
+    dbCur.execute("""SELECT seq FROM sqlite_sequence
+                          WHERE name = ?""", (name,))
+    largestId = dbCur.fetchone()
+    if largestId:
+        return int(largestId[0]) + 1
+    else:
+        return 1
+
+def InsertIntoDatabase(dbCur, tblName, columns, values):
+    if columns:
+        columnsStr = " " + str(columns).replace("'", "")
+    else:
+        columnsStr = ""
+        
+    valuesStr = "("
+    for n in range(len(values)):
+        valuesStr += "?, "
+    valuesStr = valuesStr[:-2] + ")"
+    
+    sql = "INSERT INTO %s%s VALUES %s" % (tblName, columnsStr, valuesStr)
+    dbCur.execute(sql, values)
+        
+def PostToGL(dbCur, companyId, date, description, reference, listOfDetails):
+    glPostingIdNum = NextIdNum(dbCur, "GLPostings")
+    glPostingDetailIdNum = NextIdNum(dbCur, "GLPostingsDetails")
+    
+    columns = constants.GL_POSTING_COLUMNS
+    values = (date, description, companyId, reference)
+    InsertIntoDatabase(dbCur, "GLPostings", columns, values)
+    
+    for amount, glAcct, type_, type_Id in listOfDetails:
+        columns = ("GLPostingId", "GLAccount", "Amount")
+        values = (glPostingIdNum, glAcct, amount)
+        InsertIntoDatabase(dbCur, "GLPostingsDetails", columns, values)
+        
+        if type_ and type_Id:
+            columns = ("GLPostingDetailId", "ObjectType", "ObjectId")
+            values = (glPostingDetailIdNum, type_, type_Id)
+            InsertIntoDatabase(dbCur,
+                               "GLPostingsDetailsObjects",
+                               columns,
+                               values)
+            
+        glPostingDetailIdNum += 1

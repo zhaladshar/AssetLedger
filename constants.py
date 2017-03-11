@@ -79,3 +79,14 @@ ASSET_HIST_HDR_LIST = ["Date", "Description", "Dollars"]
 ASSET_HIST_HDR_WDTH = [    .1,            .8,        .1]
 DEP_ASSET_HDR_LIST = ["Id", "Description", "Current"]
 DEP_ASSET_HDR_WDTH = [  .1,            .8,        .1]
+
+#############################
+##
+## Database Constants
+##
+#############################
+
+ASSET_HISTORY_COLUMNS = ("Date", "Description", "Dollars", "AssetId", "Reference")
+ASSET_COSTS_COLUMNS = ("Cost", "Date", "AssetId", "Reference")
+GL_POSTING_COLUMNS = ("Date", "Description", "CompanyId", "Reference")
+GL_POSTING_DETAIL_COLUMNS = ("GLPostingId", "GLAccount", "Amount")
